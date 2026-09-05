@@ -82,7 +82,13 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 				FovY:      1.0472,
 				Near:      0.1,
 				Far:       100,
-				Passes:    []scene.Pass{{ClearColor: &clearColor, ClearDepth: clearDepth()}},
+				// A box is lit, so a camera with no sun and no ambient renders
+				// it black. These two fields are the floor of lighting.
+				SunDirection:  m.Vec3{X: -0.3, Y: -1, Z: -0.2},
+				SunColor:      m.NewColorSrgb(1, 0.98, 0.94, 1),
+				AmbientSky:    m.NewColorSrgb(0.18, 0.22, 0.3, 1),
+				AmbientGround: m.NewColorSrgb(0.1, 0.09, 0.08, 1),
+				Passes:        []scene.Pass{{ClearColor: &clearColor, ClearDepth: clearDepth()}},
 			})
 			q.Box(0, scene.At(0, 0, 0).WithRotation(m.QuatAxisAngle(m.Vec3{Y: 1}, p.time)),
 				m.NewColorSrgb(0.42, 0.71, 0.94, 1))
