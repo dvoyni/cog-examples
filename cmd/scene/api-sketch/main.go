@@ -52,14 +52,14 @@ func helloBox(q *OpQueue) {
 		Near:         0.1,
 		Far:          100,
 		SunDirection: m.Vec3{X: -0.3, Y: -1, Z: -0.2},
-		SunColor:     m.Color{R: 1, G: 1, B: 1, A: 1},
+		SunColor:     m.White,
 		Passes: []Pass{{
 			Tag:        TagForward,
-			ClearColor: &m.Color{R: 0.06, G: 0.07, B: 0.09, A: 1},
+			ClearColor: colorPtr(m.NewColorSrgb(0.06, 0.07, 0.09, 1)),
 		}},
 	})
 
-	q.Box(0, At(0, 0, 0), m.Color{R: 0.42, G: 0.71, B: 0.94, A: 1})
+	q.Box(0, At(0, 0, 0), m.NewColorSrgb(0.42, 0.71, 0.94, 1))
 }
 
 // helloTriangle is the same frame from caller-built geometry: the mesh handle
@@ -71,12 +71,12 @@ func helloTriangle(q *OpQueue) {
 		FovY:      1.0472,
 		Near:      0.1,
 		Far:       100,
-		Passes:    []Pass{{Tag: TagForward, ClearColor: &m.Color{R: 0.06, G: 0.07, B: 0.09, A: 1}}},
+		Passes:    []Pass{{Tag: TagForward, ClearColor: colorPtr(m.NewColorSrgb(0.06, 0.07, 0.09, 1))}},
 	})
 
 	q.Mesh(0, triangleMesh, MeshDraw{
 		Params: []gfx.ParameterDescr{
-			gfx.ColorParam("baseColorFactor", m.Color{R: 0.42, G: 0.71, B: 0.94, A: 1}),
+			gfx.ColorParam("baseColorFactor", m.NewColorSrgb(0.42, 0.71, 0.94, 1)),
 		},
 	})
 }
@@ -93,11 +93,11 @@ func animatedCharacter(q *OpQueue, time float32) {
 		Near:         0.1,
 		Far:          200,
 		SunDirection: m.Vec3{X: -0.3, Y: -1, Z: -0.2},
-		SunColor:     m.Color{R: 1, G: 0.97, B: 0.9, A: 1},
-		Ambient:      m.Color{R: 0.05, G: 0.06, B: 0.08, A: 1},
+		SunColor:     m.NewColorSrgb(1, 0.97, 0.9, 1),
+		Ambient:      m.NewColorSrgb(0.05, 0.06, 0.08, 1),
 		Passes: []Pass{{
 			Tag:        TagForward,
-			ClearColor: &m.Color{R: 0.02, G: 0.02, B: 0.03, A: 1},
+			ClearColor: colorPtr(m.NewColorSrgb(0.02, 0.02, 0.03, 1)),
 			ClearDepth: ptr[float32](1),
 		}},
 	})
@@ -110,11 +110,11 @@ func animatedCharacter(q *OpQueue, time float32) {
 		Near:      0.05,
 		Far:       10,
 		CullMask:  layerCharacter,
-		Ambient:   m.Color{R: 0.3, G: 0.3, B: 0.35, A: 1},
+		Ambient:   m.NewColorSrgb(0.3, 0.3, 0.35, 1),
 		Passes: []Pass{{
 			Tag:        TagForward,
 			Target:     TargetRef{Name: "portrait"},
-			ClearColor: &m.Color{A: 0},
+			ClearColor: colorPtr(m.Transparent),
 		}},
 	})
 
@@ -126,7 +126,7 @@ func animatedCharacter(q *OpQueue, time float32) {
 		},
 		MorphWeights: []float32{0.4, 0, 0.1},
 		OverrideParams: []gfx.ParameterDescr{
-			gfx.ColorParam("baseColorFactor", m.Color{R: 1, G: 0.8, B: 0.7, A: 1}),
+			gfx.ColorParam("baseColorFactor", m.NewColorSrgb(1, 0.8, 0.7, 1)),
 		},
 	})
 
@@ -137,14 +137,14 @@ func animatedCharacter(q *OpQueue, time float32) {
 
 	q.PointLight(0, LightDescr{
 		Position:  m.Vec3{X: 1.5, Y: 2, Z: 1},
-		Color:     m.Color{R: 1, G: 0.6, B: 0.3, A: 1},
+		Color:     m.NewColorSrgb(1, 0.6, 0.3, 1),
 		Intensity: 40,
 		Range:     12,
 	})
 
-	q.Plane(0, m.Vec3{}, m.Vec2{X: 20, Y: 20}, m.Color{R: 0.2, G: 0.21, B: 0.23, A: 1})
+	q.Plane(0, m.Vec3{}, m.Vec2{X: 20, Y: 20}, m.NewColorSrgb(0.2, 0.21, 0.23, 1))
 	q.WireBox(0, m.Vec3{Y: 0.9}, m.Vec3{X: 0.8, Y: 1.8, Z: 0.6}, 0.01,
-		m.Color{R: 0, G: 1, B: 0.4, A: 1})
+		m.NewColorSrgb(0, 1, 0.4, 1))
 }
 
 // triangleMesh stands in for the durable mesh handle #22 decides.
@@ -192,3 +192,7 @@ func targetName(t TargetRef) string {
 	}
 	return t.Name
 }
+
+// colorPtr takes the address of a color, which ClearColor needs and a
+// constructor call cannot give directly.
+func colorPtr(color m.Color) *m.Color { return &color }

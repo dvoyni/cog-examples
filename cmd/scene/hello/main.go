@@ -105,13 +105,13 @@ func draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			queue = access.GetWrite[*canvas.OpQueue]()
 		}, func(_ kernel.Kernel, _ app.UpdateEvent) error {
 			q := queue.Get()
-			q.Clear(layerHello, m.Color{R: 0.06, G: 0.07, B: 0.09, A: 1})
+			q.Clear(layerHello, m.NewColorSrgb(0.06, 0.07, 0.09, 1))
 			q.SetLayerTransform(layerHello,
 				m.Rect{Width: screenWidth, Height: screenHeight}, canvas.AspectInscribe)
 			q.FillRect(layerHello, m.Rect{
 				X: screenWidth/2 - 120, Y: screenHeight/2 - 80,
 				Width: 240, Height: 160,
-			}, m.Color{R: 0.42, G: 0.71, B: 0.94, A: 1})
+			}, m.NewColorSrgb(0.42, 0.71, 0.94, 1))
 			return nil
 		}
 }
