@@ -17,6 +17,7 @@ package headless
 import (
 	"context"
 	"io/fs"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -40,9 +41,19 @@ const (
 
 // Engine is a running headless kernel with a demo plugin in it.
 type Engine struct {
-	kernel   kernel.Executioner
-	backend  *Backend
+	kernel  kernel.Executioner
+	backend *Backend
+	// reported is guarded because a model load reports from its own goroutine
+	// rather than from the flush a test drives - which is the whole of "an
+	// error can outlive the draw call that caused it".
+	mu       sync.Mutex
 	reported []error
+}
+
+func (e *Engine) report(err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.reported = append(e.reported, err)
 }
 
 // New starts an engine with storage, input, gfx, canvas and scene, plus the
@@ -55,21 +66,31 @@ type Engine struct {
 // own builtin mounts (canvas's shaders, scene's) install themselves regardless.
 func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
+	return NewOver(t, storage.DefaultConfig("cog-examples").
+		WithReadFS("headless", 10, fs.FS(fstest.MapFS{})), plugins...)
+}
+
+// NewOver is New over a storage configuration the caller chose, which is how a
+// test that loads real assets reaches them: storage's default read mount is the
+// executable's own directory, and `go test` builds into a temporary one.
+//
+//	config, err := assets.Config(storage.DefaultConfig("cog-examples"))
+func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugin) *Engine {
+	t.Helper()
 	engine := &Engine{backend: &Backend{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	config := map[kernel.PluginName]any{
-		storage.Name: storage.DefaultConfig("cog-examples").
-			WithReadFS("headless", 10, fs.FS(fstest.MapFS{})),
-		scene.Name: scene.DefaultConfig(),
+		storage.Name: storageConfig,
+		scene.Name:   scene.DefaultConfig(),
 	}
 	all := append([]kernel.Plugin{
 		storage.New(), input.New(), gfx.New(), canvas.New(), scene.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
-		Handler(func(err error) bool { engine.reported = append(engine.reported, err); return false }).
+		Handler(func(err error) bool { engine.report(err); return false }).
 		WithPlugins(all...)
 	go running.Run(ctx)
 	<-running.Ready()
@@ -112,11 +133,21 @@ func (e *Engine) Ops() []scene.Op {
 }
 
 // Errors is every error the engine reported since it started.
-func (e *Engine) Errors() []error { return e.reported }
+func (e *Engine) Errors() []error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]error(nil), e.reported...)
+}
 
 // Backend is the fake the frame was rendered through, for the rare assertion
 // that wants what actually reached the GPU rather than what scene decided.
 func (e *Engine) Backend() *Backend { return e.backend }
+
+// Lookup runs fn with a scoped LookupAccess, which is how a test preloads a
+// model or asks what is in one - the same facade a demo's own handler builds.
+func (e *Engine) Lookup(fn func(scene.LookupAccess)) {
+	e.kernel.ExecuteCommand[lookupCmd](lookupRequest{run: fn})
+}
 
 // inspect runs fn inside a handler holding scene's OpQueue, so a test reads the
 // queue the way a recorder does rather than racing the update thread.
@@ -131,6 +162,10 @@ type inspectCmd kernel.Command[inspectRequest, inspectResponse]
 type inspectRequest struct{ run func(*scene.OpQueue) }
 type inspectResponse struct{}
 
+type lookupCmd kernel.Command[lookupRequest, lookupResponse]
+type lookupRequest struct{ run func(scene.LookupAccess) }
+type lookupResponse struct{}
+
 func (*probe) Name() kernel.PluginName { return "headless-probe" }
 
 func (*probe) Dependencies() []kernel.PluginName {
@@ -139,6 +174,7 @@ func (*probe) Dependencies() []kernel.PluginName {
 
 func (*probe) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.HandleCommand[inspectCmd](inspectCmdImpl)
+	registrar.HandleCommand[lookupCmd](lookupCmdImpl)
 	return nil
 }
 
@@ -149,5 +185,17 @@ func inspectCmdImpl() (kernel.Lock, kernel.Execute[inspectRequest, inspectRespon
 		}, func(_ kernel.Kernel, req inspectRequest) (inspectResponse, error) {
 			req.run(queue.Get())
 			return inspectResponse{}, nil
+		}
+}
+
+func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]) {
+	var lookup kernel.Write[*scene.Lookup]
+	var filesystem kernel.Read[storage.FileSystem]
+	return func(access kernel.ResourceAccess) {
+			lookup = access.GetWrite[*scene.Lookup]()
+			filesystem = access.GetRead[storage.FileSystem]()
+		}, func(k kernel.Kernel, req lookupRequest) (lookupResponse, error) {
+			req.run(scene.NewLookupAccess(k, lookup.Get(), filesystem.Get()))
+			return lookupResponse{}, nil
 		}
 }

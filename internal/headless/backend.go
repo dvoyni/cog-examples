@@ -8,6 +8,7 @@ import (
 // GPU to do. It renders nothing: every number a demo test asserts was decided
 // in scene's update-thread flush, before anything here was called.
 type Backend struct {
+	BakedTextures int
 	nextTexture gfx.TextureID
 	nextBuffer  gfx.BufferID
 	nextID      uint32
@@ -147,7 +148,12 @@ func (b *Backend) EndPass(gfx.RenderPass) {}
 func (b *Backend) Present()               { b.Presents++ }
 
 func (b *Backend) BakeBuffer(gfx.BufferID, gfx.BufferKind, int, []byte)                 { b.Bakes++ }
-func (b *Backend) BakeTexture(gfx.TextureID, int, int, gfx.TextureFormat, []byte, bool) {}
+// BakedTextures counts durable texture uploads, which is how a test observes
+// scene's texture cache: nine glTF textures over three images have to reach
+// the GPU as three, not nine.
+func (b *Backend) BakeTexture(gfx.TextureID, int, int, gfx.TextureFormat, []byte, bool) {
+	b.BakedTextures++
+}
 func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)                       {}
 func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte)                 {}
 
