@@ -18,8 +18,9 @@
 // The demo starts at a documented fixed pose: the camera orbits orbitTarget at
 // radius orbitRadius, azimuth startAzimuth and elevation startElevation, and
 // stays there until an arrow key is held. reference.png beside this file is the
-// frame at that pose; R returns to it exactly, resetting the step counter with
-// it, so a run that has been orbited around can be brought back to the picture
+// frame at that pose, captured paused at step 238 so the same picture can be
+// retaken; R returns to the pose exactly, resetting the step counter with it,
+// so a run that has been orbited around can be brought back to the picture
 // rather than restarted.
 //
 // Input may orbit and pause freely, and touching it voids nothing: the
