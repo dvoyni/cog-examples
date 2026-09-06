@@ -9,9 +9,9 @@ import (
 // in scene's update-thread flush, before anything here was called.
 type Backend struct {
 	BakedTextures int
-	nextTexture gfx.TextureID
-	nextBuffer  gfx.BufferID
-	nextID      uint32
+	nextTexture   gfx.TextureID
+	nextBuffer    gfx.BufferID
+	nextID        uint32
 	// shaders remembers each shader's label, which is its resource path, so
 	// ShaderLayout can answer for the right one.
 	shaders map[gfx.ShaderID]string
@@ -25,6 +25,28 @@ type Backend struct {
 	// WGSL cannot make otherwise: which of scene's per-draw parameters its
 	// material actually bound, and so that declaring fewer of them is safe.
 	Buffers []BufferBinding
+	// Pipelines is every pipeline the frame created, in creation order. It is
+	// recorded because MaterialState is where glTF's alphaMode, doubleSided and
+	// a mirrored node transform actually land - as Blend, DepthWrite, Cull and
+	// FrontFace - and a pipeline description is the only place a test with no
+	// GPU can read them back. gfx interns pipelines, so this is one entry per
+	// distinct state the frame asked for rather than one per draw.
+	Pipelines []gfx.PipelineDesc
+	// pipelines is the same descriptions by id, and current the pipeline the
+	// replay last set, so a binding can say which pipeline read it.
+	pipelines map[gfx.PipelineID]gfx.PipelineDesc
+	current   gfx.PipelineID
+	// Baked is the bytes of every durable buffer upload, by id. Scene's frame
+	// arenas reach the backend this way, so it is how a test reads back what
+	// the flush packed - the per-pass sceneFrame block above all, whose
+	// sixteen-light array is the only record of which lights survived the cap.
+	// Nothing else can see that: PassView reports how many were packed and the
+	// drop is silent by design.
+	//
+	// The bytes are copied rather than retained, because the queue's arenas are
+	// reused frame to frame and a retained slice would report the newest frame
+	// for every step a test took.
+	Baked map[gfx.BufferID][]byte
 	// TextShaderLayout is the layout reported for a shader built from inline
 	// source rather than from a resource path. Only a demo with its own WGSL
 	// has one, and only that demo knows what it declares, so a test sets this
@@ -35,8 +57,17 @@ type Backend struct {
 }
 
 // BufferBinding is one storage buffer bound to one slot of one draw.
+//
+// Buffer names the buffer the range came from, which is what BoundBytes needs
+// to answer with the bytes rather than only the offsets, and Pipeline the
+// pipeline that was bound when the range was. Neither is part of what a test
+// comparing bindings writes: a demo asking which slots its material bound
+// compares Group and Binding alone, and a demo asking which of them scene's own
+// shader read filters on Pipeline first.
 type BufferBinding struct {
 	Group, Binding int
+	Buffer         gfx.BufferID
+	Pipeline       gfx.PipelineID
 	Offset, Size   int
 }
 
@@ -111,9 +142,36 @@ func (b *Backend) ShaderLayout(id gfx.ShaderID) gfx.ShaderLayout {
 	return gfx.ShaderLayout{}
 }
 
-func (b *Backend) NewPipeline(gfx.PipelineDesc) (gfx.PipelineID, error) {
+func (b *Backend) NewPipeline(desc gfx.PipelineDesc) (gfx.PipelineID, error) {
 	b.nextID++
-	return gfx.PipelineID(b.nextID), nil
+	id := gfx.PipelineID(b.nextID)
+	b.Pipelines = append(b.Pipelines, desc)
+	if b.pipelines == nil {
+		b.pipelines = map[gfx.PipelineID]gfx.PipelineDesc{}
+	}
+	b.pipelines[id] = desc
+	return id, nil
+}
+
+// PipelineOf is one pipeline's description, by the id a binding names.
+func (b *Backend) PipelineOf(id gfx.PipelineID) gfx.PipelineDesc { return b.pipelines[id] }
+
+// ShaderPath is the resource path a shader was built from, which is its label.
+// A shader built from inline source has textShaderLabel instead, so this is also
+// how a test tells a demo's own WGSL from a bundled shader.
+func (b *Backend) ShaderPath(id gfx.ShaderID) string { return b.shaders[id] }
+
+// SceneShaderPath is the bundled scene shader's resource path. It is exported
+// because it is how a test picks scene's own pipelines and bindings out of a
+// frame that also drew a HUD: gfx labels every pipeline "gfx.pipeline", and the
+// shader behind it is what separates them.
+const SceneShaderPath = sceneShaderPath
+
+// IsScenePipeline reports whether a pipeline was built from the bundled scene
+// shader.
+func (b *Backend) IsScenePipeline(id gfx.PipelineID) bool {
+	desc, ok := b.pipelines[id]
+	return ok && b.shaders[desc.Shader] == sceneShaderPath
 }
 
 func (b *Backend) FreePipeline(gfx.PipelineID) {}
@@ -147,17 +205,24 @@ func (b *Backend) BeginPass(desc gfx.GpuPassDesc) gfx.RenderPass {
 func (b *Backend) EndPass(gfx.RenderPass) {}
 func (b *Backend) Present()               { b.Presents++ }
 
-func (b *Backend) BakeBuffer(gfx.BufferID, gfx.BufferKind, int, []byte)                 { b.Bakes++ }
+func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []byte) {
+	b.Bakes++
+	if b.Baked == nil {
+		b.Baked = map[gfx.BufferID][]byte{}
+	}
+	b.Baked[id] = append(b.Baked[id][:0], data...)
+}
+
 // BakedTextures counts durable texture uploads, which is how a test observes
 // scene's texture cache: nine glTF textures over three images have to reach
 // the GPU as three, not nine.
 func (b *Backend) BakeTexture(gfx.TextureID, int, int, gfx.TextureFormat, []byte, bool) {
 	b.BakedTextures++
 }
-func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)                       {}
-func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte)                 {}
+func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)       {}
+func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte) {}
 
-func (b *Backend) SetPipeline(gfx.PipelineID)         {}
+func (b *Backend) SetPipeline(id gfx.PipelineID)      { b.current = id }
 func (b *Backend) SetParams([]byte)                   {}
 func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
 func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
@@ -165,8 +230,20 @@ func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
 func (b *Backend) SetIndexBuffer(gfx.BufferID, int)   {}
 func (b *Backend) SetBuffer(group, binding int, buffer gfx.BufferID, offset, size int) {
 	b.Buffers = append(b.Buffers, BufferBinding{
-		Group: group, Binding: binding, Offset: offset, Size: size,
+		Group: group, Binding: binding, Buffer: buffer, Pipeline: b.current,
+		Offset: offset, Size: size,
 	})
+}
+
+// BoundBytes is the bytes one binding read, sliced out of the buffer it named.
+// It is nil when the buffer was never baked, which is what a temporary that
+// reached the backend by some other route looks like.
+func (b *Backend) BoundBytes(binding BufferBinding) []byte {
+	data := b.Baked[binding.Buffer]
+	if binding.Offset < 0 || binding.Offset+binding.Size > len(data) {
+		return nil
+	}
+	return data[binding.Offset : binding.Offset+binding.Size]
 }
 
 func (b *Backend) Draw(first, count, instances, firstInstance int, indexed bool) {
