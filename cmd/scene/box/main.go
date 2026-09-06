@@ -10,8 +10,8 @@
 // What it exercises: the debug vocabulary (Box, Sphere, Plane, Line3D,
 // WireBox); Transform TRS and the scalar Scale; LookAt; an empty Passes
 // yielding the implicit forward pass at the camera id; sun and hemispheric
-// ambient; the linear pipeline and the present pass; every-zero-value-is-the-
-// default; and the m additions.
+// ambient; a point light and a spot light; the linear pipeline and the present
+// pass; every-zero-value-is-the-default; and the m additions.
 //
 // # The reference pose
 //
@@ -35,6 +35,12 @@
 // terminator, a wrong normal matrix makes the box's shading swim or pop as it
 // turns, and a self-lit shape wrongly routed through the lit path changes
 // brightness with its facing instead of staying the colour it was given.
+//
+// A warm pool of light travels the ground with the orbiting sphere and fades
+// to nothing before it reaches the resting box, and a cool cone sits on the
+// resting box with a soft edge on the ground around it. A pool that reaches
+// everywhere is a Range that did not pack; a cone with a hard edge is a cone
+// whose inner and outer angles collapsed together.
 package main
 
 import (
@@ -191,6 +197,7 @@ type stats struct {
 	recorded  int
 	culled    int
 	instances int
+	lights    int
 	batches   int
 	// sphereVisible is whether the published frustum contains the orbiting
 	// sphere's world bounds, computed here from the pass's own m.Frustum
@@ -249,6 +256,8 @@ var (
 	axisZColor    = m.NewColorSrgb(0.30, 0.45, 0.95, 1)
 	hudColor      = m.NewColorSrgb(0.88, 0.90, 0.94, 1)
 	hudDimColor   = m.NewColorSrgb(0.45, 0.48, 0.55, 1)
+	lampColor     = m.NewColorSrgb(1.00, 0.72, 0.40, 1)
+	coneColor     = m.NewColorSrgb(0.55, 0.75, 1.00, 1)
 )
 
 // The scene's fixed geometry.
@@ -261,7 +270,26 @@ const (
 	axisThickness = 0.02
 )
 
-// draw records the whole frame: the camera, the five debug shapes, and the HUD.
+// The two punctual lights. Intensity is unitless radiance at one world unit,
+// so a lamp a unit above the ground puts about its intensity over pi onto the
+// floor beneath it; Range is where its falloff window closes, so the pool
+// stays a pool.
+const (
+	lampHeight    = 1.0 // above the orbiting sphere's centre
+	lampIntensity = 4
+	lampRange     = 5
+	coneHeight    = 3.5 // above the resting box
+	coneIntensity = 30
+	coneRange     = 8
+	coneInner     = 0.25
+	coneOuter     = 0.45
+)
+
+// restPosition is where the resting box stands, and the point the spot light
+// aims at.
+var restPosition = m.Vec3{X: -3.4, Y: 0.5, Z: -2.1}
+
+// draw records the whole frame: the camera, the eight debug shapes, the two lights, and the HUD.
 func (p *Box) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
@@ -336,7 +364,7 @@ func (p *Box) spinCenter() m.Vec3 {
 	}
 }
 
-// record records the frame's camera and its eight draw calls.
+// record records the frame's camera, its eight draw calls and its two lights.
 func (p *Box) record(q *scene.OpQueue) {
 	q.Camera(CameraMain, scene.CameraDescr{
 		Transform: scene.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
@@ -365,9 +393,28 @@ func (p *Box) record(q *scene.OpQueue) {
 
 	// The resting box is the zero-value case: an unrotated, unscaled transform
 	// whose Scale field is never written, and a zero Scale means 1.
-	q.Box(0, scene.At(-3.4, 0.5, -2.1), restColor)
+	q.Box(0, scene.At(restPosition.X, restPosition.Y, restPosition.Z), restColor)
 
 	q.Sphere(0, p.spinCenter(), sphereRadius, sphereColor)
+
+	// A warm lamp rides above the orbiting sphere, so its pool on the ground
+	// moves, and a cool spot hangs over the resting box pointing straight
+	// down. Neither writes Kind: PointLight and SpotLight set it.
+	q.PointLight(0, scene.LightDescr{
+		Position:  p.spinCenter().Add(m.Vec3{Y: lampHeight}),
+		Color:     lampColor,
+		Intensity: lampIntensity,
+		Range:     lampRange,
+	})
+	q.SpotLight(0, scene.LightDescr{
+		Position:  restPosition.Add(m.Vec3{Y: coneHeight}),
+		Direction: m.Vec3{Y: -1},
+		Color:     coneColor,
+		Intensity: coneIntensity,
+		Range:     coneRange,
+		InnerCone: coneInner,
+		OuterCone: coneOuter,
+	})
 
 	// Self-lit shapes: base colour black, the given colour as emissive, so they
 	// keep their exact colour in a frame with no sun at all.
@@ -382,9 +429,13 @@ func (p *Box) record(q *scene.OpQueue) {
 // the wire box is twelve, because each edge is culled on its own.
 const RecordedDraws = 1 + 2 + 1 + 3 + 12
 
-// RecordedOps is how many operations Ops reports: the camera registration plus
-// the eight recording calls, whatever they flush to.
-const RecordedOps = 1 + 8
+// RecordedOps is how many operations Ops reports: the camera registration, the
+// eight shape calls, whatever they flush to, and the two lights.
+const RecordedOps = 1 + 8 + RecordedLights
+
+// RecordedLights is how many punctual lights the frame records: the lamp and
+// the cone.
+const RecordedLights = 2
 
 // readStats reads the previous frame's flush result back out of the queue.
 // Passes publishes the frame the last flush consumed, so these are the numbers
@@ -397,6 +448,7 @@ func (p *Box) readStats(q *scene.OpQueue) {
 		p.stats.recorded += views[i].Recorded
 		p.stats.culled += views[i].Culled
 		p.stats.instances += views[i].Instances
+		p.stats.lights += views[i].Lights
 		p.stats.batches += len(views[i].Batches)
 	}
 	if len(views) > 0 {

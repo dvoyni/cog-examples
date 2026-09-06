@@ -48,8 +48,8 @@ func (p *Box) hud(q *canvas.OpQueue) {
 	lines := [...]string{
 		fmt.Sprintf("box  step %06d  time %.2fs  fps %.0f  %s",
 			p.step, p.time(), p.rate.perSecond, state),
-		fmt.Sprintf("draws %d  culled %d  packed %d",
-			p.stats.recorded, p.stats.culled, p.stats.instances),
+		fmt.Sprintf("draws %d  culled %d  packed %d  lights %d",
+			p.stats.recorded, p.stats.culled, p.stats.instances, p.stats.lights),
 		fmt.Sprintf("passes %d  batches %d  ops %d",
 			p.stats.passes, p.stats.batches, p.stats.ops),
 		fmt.Sprintf("sphere in frustum %s", visible),

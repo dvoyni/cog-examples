@@ -65,6 +65,7 @@ func TestOpsReportsCallsAndThePassReportsDraws(t *testing.T) {
 	want := map[scene.OpKind]int{
 		scene.OpCamera: 1, scene.OpPlane: 1, scene.OpBox: 2,
 		scene.OpSphere: 1, scene.OpWireBox: 1, scene.OpLine3D: 3,
+		scene.OpPointLight: 1, scene.OpSpotLight: 1,
 	}
 	for kind, count := range want {
 		if kinds[kind] != count {
@@ -94,6 +95,29 @@ func TestNothingIsCulledAtTheDocumentedPose(t *testing.T) {
 	}
 	if total != pass.Instances {
 		t.Errorf("the batches account for %d instances, the pass packed %d", total, pass.Instances)
+	}
+}
+
+// Both lights reach the pass at the documented pose: the point light rides
+// the orbiting sphere, which is in the frustum, and the spot light's range
+// sphere covers the resting box. PointLight and SpotLight set Kind
+// themselves, so the demo writes none.
+func TestBothLightsArePackedAtTheDocumentedPose(t *testing.T) {
+	engine := run(t, referenceStep)
+	if pass := engine.Passes()[0]; pass.Lights != RecordedLights {
+		t.Errorf("the pass packed %d lights, want %d", pass.Lights, RecordedLights)
+	}
+	for _, op := range engine.Ops() {
+		switch op.Kind {
+		case scene.OpPointLight:
+			if op.Light.Kind != scene.LightPoint {
+				t.Errorf("the point light op carries kind %v", op.Light.Kind)
+			}
+		case scene.OpSpotLight:
+			if op.Light.Kind != scene.LightSpot || op.Light.Direction == (m.Vec3{}) {
+				t.Errorf("the spot light op is %+v; want a spot with a direction", op.Light)
+			}
+		}
 	}
 }
 
