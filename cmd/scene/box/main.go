@@ -1,8 +1,9 @@
 // Command box is the scene plugin's zero-asset demo: the whole debug
 // vocabulary, one camera, and a HUD, with no file on disk anywhere in the
-// frame. It is the floor of the API and the smoke test that still works when
-// the asset story breaks, which is why it is kept beside pbr despite covering
-// nothing pbr misses.
+// frame. Even the HUD's text costs nothing: canvas embeds a font and draws with
+// it when a text op names none. It is the floor of the API and the smoke test
+// that still works when the asset story breaks, which is why it is kept beside
+// pbr despite covering nothing pbr misses.
 //
 //	go run ./cmd/scene/box
 //
