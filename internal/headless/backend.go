@@ -19,6 +19,24 @@ type Backend struct {
 	Draws    []DrawCall
 	Presents int
 	Bakes    int
+	// Buffers is every storage-buffer binding the frame made, in the order it
+	// made them. It is recorded for the one assertion a demo carrying its own
+	// WGSL cannot make otherwise: which of scene's per-draw parameters its
+	// material actually bound, and so that declaring fewer of them is safe.
+	Buffers []BufferBinding
+	// TextShaderLayout is the layout reported for a shader built from inline
+	// source rather than from a resource path. Only a demo with its own WGSL
+	// has one, and only that demo knows what it declares, so a test sets this
+	// rather than the file mirroring it the way it mirrors the bundled
+	// shader's below. Left zero, an inline shader reflects nothing, which is
+	// what every demo that has none wants.
+	TextShaderLayout gfx.ShaderLayout
+}
+
+// BufferBinding is one storage buffer bound to one slot of one draw.
+type BufferBinding struct {
+	Group, Binding int
+	Offset, Size   int
 }
 
 // DrawCall is one draw as it reached the backend.
@@ -73,12 +91,21 @@ func (b *Backend) NewShader(desc gfx.ShaderDesc) (gfx.ShaderID, error) {
 
 func (b *Backend) FreeShader(gfx.ShaderID) {}
 
-// ShaderLayout answers for the bundled scene shader and reports nothing for
-// every other shader. Canvas's own bindings are not what a demo test asserts,
-// and a fake union layout would bind canvas's parameters at scene's slots.
+// textShaderLabel is the label gfx gives a shader built from inline source.
+// Every resource shader is labelled by its path instead, so this is exactly the
+// set of shaders a demo wrote itself.
+const textShaderLabel = "gfx.shader"
+
+// ShaderLayout answers for the bundled scene shader, for whatever inline shader
+// the test declared, and for nothing else. Canvas's own bindings are not what a
+// demo test asserts, and a fake union layout would bind canvas's parameters at
+// scene's slots.
 func (b *Backend) ShaderLayout(id gfx.ShaderID) gfx.ShaderLayout {
-	if b.shaders[id] == sceneShaderPath {
+	switch b.shaders[id] {
+	case sceneShaderPath:
 		return sceneShaderLayout
+	case textShaderLabel:
+		return b.TextShaderLayout
 	}
 	return gfx.ShaderLayout{}
 }
@@ -124,13 +151,17 @@ func (b *Backend) BakeTexture(gfx.TextureID, int, int, gfx.TextureFormat, []byte
 func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)                       {}
 func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte)                 {}
 
-func (b *Backend) SetPipeline(gfx.PipelineID)                                          {}
-func (b *Backend) SetParams([]byte)                                                    {}
-func (b *Backend) SetTexture(gfx.TextureID, int, int)                                  {}
-func (b *Backend) SetSampler(gfx.SamplerID, int, int)                                  {}
-func (b *Backend) SetVertexBuffer(gfx.BufferID, int)                                   {}
-func (b *Backend) SetIndexBuffer(gfx.BufferID, int)                                    {}
-func (b *Backend) SetBuffer(group, binding int, buffer gfx.BufferID, offset, size int) {}
+func (b *Backend) SetPipeline(gfx.PipelineID)         {}
+func (b *Backend) SetParams([]byte)                   {}
+func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
+func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
+func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
+func (b *Backend) SetIndexBuffer(gfx.BufferID, int)   {}
+func (b *Backend) SetBuffer(group, binding int, buffer gfx.BufferID, offset, size int) {
+	b.Buffers = append(b.Buffers, BufferBinding{
+		Group: group, Binding: binding, Offset: offset, Size: size,
+	})
+}
 
 func (b *Backend) Draw(first, count, instances, firstInstance int, indexed bool) {
 	b.Draws = append(b.Draws, DrawCall{
