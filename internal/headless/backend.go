@@ -21,6 +21,11 @@ type Backend struct {
 	Draws    []DrawCall
 	Presents int
 	Bakes    int
+	// Transitions is every texture barrier gfx placed, in order, each tagged
+	// with the pass it precedes. It is the only observable for the
+	// render-then-sample ordering: the hazard it fixes is invisible to a
+	// headless run and to any capture taken while the app is redrawing.
+	Transitions []PlacedTransition
 	// Buffers is every storage-buffer binding the frame made, in the order it
 	// made them. It is recorded for the one assertion a demo carrying its own
 	// WGSL cannot make otherwise: which of scene's per-draw parameters its
@@ -229,6 +234,29 @@ func (b *Backend) BeginPass(desc gfx.GpuPassDesc) gfx.RenderPass {
 
 func (b *Backend) EndPass(gfx.RenderPass) {}
 func (b *Backend) Present()               { b.Presents++ }
+
+// TransitionTextures records the barriers gfx placed, each tagged with the pass
+// it precedes, so a demo test can assert that a render target it composites was
+// actually ordered against the pass that wrote it. Without the barrier the
+// failure is a Vulkan-only flicker that no headless run and no screen capture
+// can see, so this is the only place it is observable at all.
+//
+// Like Passes and Draws, these accumulate across every frame since the engine
+// started - scan backwards.
+func (b *Backend) TransitionTextures(transitions []gfx.TextureTransition) {
+	for _, transition := range transitions {
+		b.Transitions = append(b.Transitions, PlacedTransition{
+			TextureTransition: transition, BeforePass: len(b.Passes),
+		})
+	}
+}
+
+// PlacedTransition is one barrier and the index into Passes of the pass it was
+// recorded ahead of.
+type PlacedTransition struct {
+	gfx.TextureTransition
+	BeforePass int
+}
 
 func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []byte) {
 	b.Bakes++
