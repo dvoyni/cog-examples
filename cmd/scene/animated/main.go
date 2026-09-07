@@ -616,20 +616,18 @@ func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
 	var lookup kernel.Write[*scene.Lookup]
-	var filesystem kernel.Read[storage.FileSystem]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
 			lookup = access.GetWrite[*scene.Lookup]()
-			filesystem = access.GetRead[storage.FileSystem]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			a.rate.measure(time.Now())
 			a.readStats(q)
 			a.advance(inputState.Get())
 			a.record(q)
-			a.readLookup(scene.NewLookupAccess(k, lookup.Get(), filesystem.Get()))
+			a.readLookup(scene.NewLookupAccess(k, lookup.Get()))
 			a.hud(canvasQueue.Get())
 			return nil
 		}

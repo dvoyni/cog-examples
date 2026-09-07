@@ -415,20 +415,18 @@ func (p *Procedural) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var lookup kernel.Write[*scene.Lookup]
-	var filesystem kernel.Read[storage.FileSystem]
 	var inputState kernel.Read[*input.State]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			lookup = access.GetWrite[*scene.Lookup]()
-			filesystem = access.GetRead[storage.FileSystem]()
 			inputState = access.GetRead[*input.State]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			p.rate.measure(time.Now())
 			p.readStats(q)
 			p.advance(inputState.Get())
-			p.mint(q, scene.NewLookupAccess(k, lookup.Get(), filesystem.Get()))
+			p.mint(q, scene.NewLookupAccess(k, lookup.Get()))
 			p.record(q)
 			p.hud(canvasQueue.Get())
 			return nil

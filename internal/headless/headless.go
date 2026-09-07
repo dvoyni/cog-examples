@@ -190,12 +190,10 @@ func inspectCmdImpl() (kernel.Lock, kernel.Execute[inspectRequest, inspectRespon
 
 func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]) {
 	var lookup kernel.Write[*scene.Lookup]
-	var filesystem kernel.Read[storage.FileSystem]
 	return func(access kernel.ResourceAccess) {
 			lookup = access.GetWrite[*scene.Lookup]()
-			filesystem = access.GetRead[storage.FileSystem]()
 		}, func(k kernel.Kernel, req lookupRequest) (lookupResponse, error) {
-			req.run(scene.NewLookupAccess(k, lookup.Get(), filesystem.Get()))
+			req.run(scene.NewLookupAccess(k, lookup.Get()))
 			return lookupResponse{}, nil
 		}
 }
