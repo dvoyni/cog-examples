@@ -21,8 +21,8 @@ import (
 //
 // The third, scenePbrMaterial, is bound but useless here: a mesh draw's record
 // is the bundled PBR's white paint, and a MeshDraw carries no colour to change
-// it with until OverrideParams lands. Reading it would bind correctly and say
-// nothing.
+// it with - OverrideParams is a ModelDraw field, and MeshDraw.Params reach gfx
+// rather than the record. Reading it would bind correctly and say nothing.
 //
 // # What it does not get
 //
