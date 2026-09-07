@@ -8,10 +8,11 @@ import (
 // GPU to do. It renders nothing: every number a demo test asserts was decided
 // in scene's update-thread flush, before anything here was called.
 type Backend struct {
-	BakedTextures int
-	nextTexture   gfx.TextureID
-	nextBuffer    gfx.BufferID
-	nextID        uint32
+	BakedTextures  int
+	MippedTextures int
+	nextTexture    gfx.TextureID
+	nextBuffer     gfx.BufferID
+	nextID         uint32
 	// shaders remembers each shader's label, which is its resource path, so
 	// ShaderLayout can answer for the right one.
 	shaders map[gfx.ShaderID]string
@@ -237,11 +238,23 @@ func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []by
 	b.Baked[id] = append(b.Baked[id][:0], data...)
 }
 
-// BakedTextures counts durable texture uploads, which is how a test observes
+// BakeTexture counts durable texture uploads, which is how a test observes
 // scene's texture cache: nine glTF textures over three images have to reach
 // the GPU as three, not nine.
-func (b *Backend) BakeTexture(gfx.TextureID, int, int, gfx.TextureFormat, []byte, bool) {
+//
+// MippedTextures counts the uploads that asked for a mip chain. It is recorded
+// apart from the total because it is the only observable for one of the four
+// WebGPU gaps the loader papers over - there is no mipmap generation API, so
+// the chain is a CPU box filter built at load and handed over with the base
+// level - and a count of uploads alone cannot tell a filtered texture from an
+// unfiltered one.
+func (b *Backend) BakeTexture(
+	_ gfx.TextureID, _, _ int, _ gfx.TextureFormat, _ []byte, mipmaps bool,
+) {
 	b.BakedTextures++
+	if mipmaps {
+		b.MippedTextures++
+	}
 }
 func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)       {}
 func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte) {}
