@@ -143,6 +143,19 @@ func (e *Engine) Errors() []error {
 // that wants what actually reached the GPU rather than what scene decided.
 func (e *Engine) Backend() *Backend { return e.backend }
 
+// Input applies a batch of input changes, exactly as the window backend does
+// when a real key or pointer moves. It is how a test drives a demo's own key
+// handling rather than reaching past it and setting the field the key would
+// have set - which is the difference between asserting the demo and asserting
+// the test.
+//
+// A key stays down until a change says otherwise, and JustPressed is an edge
+// the state clears at the next apply, so holding a key across two frames means
+// two frames between the down change and the up one.
+func (e *Engine) Input(changes ...input.Change) {
+	e.kernel.ExecuteCommand[input.ApplyCmd](input.ApplyRequest{Changes: changes})
+}
+
 // Lookup runs fn with a scoped LookupAccess, which is how a test preloads a
 // model or asks what is in one - the same facade a demo's own handler builds.
 func (e *Engine) Lookup(fn func(scene.LookupAccess)) {
