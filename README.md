@@ -7,9 +7,12 @@ examples are collected here for later publication alongside the engine.
 
 ## Layout
 
-- `cmd/scene/<demo>/main.go` — one `main.go` per scene-plugin demo. Each demo is
-  self-contained: it wires its own plugin list and holds its own gameplay
-  plugin in the same file.
+- `cmd/<plugin>/<demo>/main.go` — one `main.go` per demo, grouped by the plugin
+  it exercises: `cmd/scene/` for the scene plugin, `cmd/canvas/` for canvas.
+  Each demo is self-contained: it wires its own plugin list and holds its own
+  gameplay plugin in the same file. Everything two levels under `cmd/` is a
+  demo, which is what the browser build and its guard walk; the tools beside
+  them - `cmd/prepare-assets/`, `cmd/web/` - are one level and are not.
 - `assets/` — the vendored demo models, one `.glb` per asset, plus
   [`ATTRIBUTION.md`](assets/ATTRIBUTION.md).
 - `cmd/prepare-assets/` — the tool that builds `assets/`, and the manifest that
@@ -45,8 +48,10 @@ go run ./cmd/scene/hello
 and draws one canvas rectangle on a dark background. It proves the module builds
 and runs against the sibling `cog`; every other demo starts from its wiring.
 
-The scene demos each own one part of the plugin's contract, and each carries its
-own `main.go` doc comment saying what it exercises and what only eyes can judge:
+Each demo owns one part of a plugin's contract, and each carries its own
+`main.go` doc comment saying what it exercises and what only eyes can judge.
+
+The scene demos:
 
 | demo | what it is for |
 | --- | --- |
@@ -61,6 +66,12 @@ own `main.go` doc comment saying what it exercises and what only eyes can judge:
 | `loading` | residency, model addressing, and the lookup facade |
 | `api-sketch` | a paper prototype of the recording API; it draws nothing |
 
+The canvas demos:
+
+| demo | what it is for |
+| --- | --- |
+| `rendertexture` | a layer rendered into a texture, drawn back as a sprite and as a shape |
+
 ## Running in a browser
 
 ```
@@ -69,7 +80,8 @@ python -m http.server 8731 --bind 127.0.0.1 --directory cmd/web
 # then open http://127.0.0.1:8731/
 ```
 
-`build.sh` takes any directory under `cmd/scene/` and defaults to `pbr`. It
+`build.sh` takes any demo's name - it is looked up across every family under
+`cmd/`, so `cameras` and `rendertexture` both work - and defaults to `pbr`. It
 writes four generated files into `cmd/web/`, all gitignored: `main.wasm`, the
 `assets.tar.gz` bundle, `demo.js` (the demo's name, for the page title) and a
 copy of the Go runtime's `wasm_exec.js`. Serve the directory with anything that
@@ -109,8 +121,9 @@ canvas element rather than on the document, so `index.html` gives the canvas a
 And `navigator.gpu` is undefined on `about:blank` even in a browser where WebGPU
 works, so probe it on the served page and not on a blank tab.
 
-`go test ./cmd/web` cross-compiles every directory under `cmd/scene` for
-`GOOS=js` and is the guard on all of that. The failure it catches — an import
+`go test ./cmd/web` cross-compiles every demo for `GOOS=js` and is the guard on
+all of that. It walks `cmd/*/*` rather than a list, so a new demo - or a new
+family of them - is covered without anyone remembering the file exists. The failure it catches — an import
 that only exists on the desktop, or a call that assumed a filesystem — costs a
 desktop run nothing and is otherwise found only the next time someone opens a
 browser.

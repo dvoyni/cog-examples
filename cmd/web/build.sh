@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build one scene demo into this directory as a WebAssembly page: main.wasm,
+# Build one demo into this directory as a WebAssembly page: main.wasm,
 # assets.tar.gz, demo.js, and a copy of the Go runtime's wasm_exec.js. Serve this
 # directory with any static server and open index.html in a WebGPU-capable
 # browser (Chrome/Edge 113+, Safari 18+, or Firefox with WebGPU enabled).
@@ -7,9 +7,11 @@
 #   Usage: ./build.sh [demo]        # default: pbr
 #          ./build.sh box
 #
-# Any directory under cmd/scene/ works, and no demo carries a line of code about
-# the browser: internal/assets swaps its mount under GOOS=js for the bundle
-# index.html unpacks, and every demo already reaches the asset set through it.
+# Any demo works - the name is looked up across every family under cmd/, so
+# cmd/scene/box is "box" and cmd/canvas/rendertexture is "rendertexture" - and
+# no demo carries a line of code about the browser: internal/assets swaps its
+# mount under GOOS=js for the bundle index.html unpacks, and every demo already
+# reaches the asset set through it.
 #
 # This exists because a desktop run provably cannot catch a web limit violation.
 # A native device reports hardware limits, which are far above the WebGPU floor;
@@ -22,16 +24,19 @@ demo="${1:-pbr}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$here/../.." && pwd)"
 
-if [[ ! -d "$repo_root/cmd/scene/$demo" ]]; then
-	echo "no such demo: cmd/scene/$demo" >&2
+# A demo is cmd/<family>/<demo>, so the name alone says which one without the
+# caller having to know whether it is a scene demo or a canvas one.
+package_path="$(cd "$repo_root" && ls -d cmd/*/"$demo" 2>/dev/null | head -n 1 || true)"
+if [[ -z "$package_path" ]]; then
+	echo "no such demo: $demo" >&2
 	echo "available:" >&2
-	(cd "$repo_root/cmd/scene" && ls -d */ | sed 's#/##; s#^#  #') >&2
+	(cd "$repo_root" && ls -d cmd/*/*/ | sed 's#cmd/##; s#/$##; s#^#  #') >&2
 	exit 1
 fi
 
-echo "› building main.wasm from cmd/scene/$demo (GOOS=js GOARCH=wasm CGO_ENABLED=0)…"
-GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -C "$repo_root" \
-	-trimpath -buildvcs=false -ldflags="-s -w" -o "$here/main.wasm" "./cmd/scene/$demo"
+echo "› building main.wasm from $package_path (GOOS=js GOARCH=wasm CGO_ENABLED=0)…"
+GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -C "$repo_root" \r
+	-trimpath -buildvcs=false -ldflags="-s -w" -o "$here/main.wasm" "./$package_path"
 
 # The whole assets/ directory, tarred from the repository root so its entries
 # carry the assets/ prefix a demo names a model by. ATTRIBUTION.md goes with it,
