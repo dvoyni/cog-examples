@@ -114,14 +114,21 @@
 // And through the near alpha pane the far one shows tinted rather than
 // punched through (key 3), which is the back-to-front sort doing its only job.
 //
-// The plinths are the one thing here to look at for the normal transform. Each
-// is a slab turned to its own yaw, so each is a rotated non-uniform basis - the
-// first the bundled PBR shades anywhere in this tree - and every top reads as
-// the same flat horizontal surface it is: the sun strikes them all at one angle
-// whatever a plinth is turned to, so two plinths the same distance from the same
-// lamp come out the same brightness. A wrong inverse-transpose tilts each top by
-// its own yaw instead, and the six go out of key with one another, which is a
-// difference between six things in one frame rather than a judgement about one.
+// The plinths are the one thing here that puts a rotated non-uniform basis
+// through the bundled PBR's lit path, and they are worth nothing at all to the
+// eye - which is a correction to what this comment said when the demo landed.
+//
+// It claimed each plinth top would tilt by its own yaw under a wrong
+// inverse-transpose, and that is false. A plinth is an axis-aligned box, so
+// every one of its face normals is an eigenvector of its own scale, and a
+// rotation carries that through: world and its inverse-transpose send such a
+// normal the same way and differ only in a length that normalising removes. The
+// plinths shade identically with SCENE_NONUNIFORM and without it, and a capture
+// of each proves it. What does show the flag is a curved surface under the same
+// escape hatch, which is the instancing demo's eye criterion
+// (https://github.com/dvoyni/cog/issues/96); the claim is retracted here rather
+// than deleted, because a falsifiable sentence that was never falsifiable is
+// worth saying out loud once.
 package main
 
 import (

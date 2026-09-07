@@ -72,9 +72,16 @@ type BufferBinding struct {
 }
 
 // DrawCall is one draw as it reached the backend.
+//
+// Pipeline is the pipeline that was bound when the draw was made, which is the
+// only thing separating scene's draws from canvas's in a frame that also drew a
+// HUD: a draw carries no label of its own, and one canvas Text op is a single
+// instanced draw of a few hundred glyphs, which is indistinguishable by its
+// numbers alone from an instanced field. Filter on IsScenePipeline first.
 type DrawCall struct {
 	First, Count, Instances, FirstInstance int
 	Indexed                                bool
+	Pipeline                               gfx.PipelineID
 }
 
 // sceneShaderPath is the bundled scene shader, the one shader whose reflected
@@ -266,7 +273,7 @@ func (b *Backend) BoundBytes(binding BufferBinding) []byte {
 func (b *Backend) Draw(first, count, instances, firstInstance int, indexed bool) {
 	b.Draws = append(b.Draws, DrawCall{
 		First: first, Count: count, Instances: instances,
-		FirstInstance: firstInstance, Indexed: indexed,
+		FirstInstance: firstInstance, Indexed: indexed, Pipeline: b.current,
 	})
 }
 

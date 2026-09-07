@@ -56,6 +56,7 @@ own `main.go` doc comment saying what it exercises and what only eyes can judge:
 | `procedural` | caller-owned geometry, and a material this program wrote itself |
 | `pbr` | the material and lighting contract, over six Khronos models |
 | `animated` | skinning, morph targets, and the browser canary |
+| `instancing` | one call for five hundred crates, per-instance culling, and the sort key |
 | `api-sketch` | a paper prototype of the recording API; it draws nothing |
 
 ## Running in a browser
