@@ -57,6 +57,8 @@ own `main.go` doc comment saying what it exercises and what only eyes can judge:
 | `pbr` | the material and lighting contract, over six Khronos models |
 | `animated` | skinning, morph targets, and the browser canary |
 | `instancing` | one call for five hundred crates, per-instance culling, and the sort key |
+| `cameras` | two cameras, a texture target, layers, and the coordinate helpers |
+| `loading` | residency, model addressing, and the lookup facade |
 | `api-sketch` | a paper prototype of the recording API; it draws nothing |
 
 ## Running in a browser

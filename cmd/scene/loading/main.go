@@ -577,6 +577,12 @@ func (r *rate) measure(now time.Time) {
 // stats is what the previous frame's flush decided, read back out of the scene
 // queue at the top of each update and printed by the HUD. It is the previous
 // frame's because Passes publishes the frame the last flush consumed.
+//
+// resident belongs here rather than beside the table the HUD prints because it
+// is the residency *that* flush drew against, and a draw count is only
+// interpretable against the residency of its own frame. The two are read in the
+// same breath at the top of the update, which is the first moment after the
+// flush at which either can be observed at all.
 type stats struct {
 	passes    int
 	ops       int
@@ -584,6 +590,11 @@ type stats struct {
 	culled    int
 	instances int
 	batches   int
+	// resident is each station's residency as of the frame these counts
+	// describe, and known is false before the first flush, when there is no
+	// such frame.
+	resident [len(stations)]bool
+	known    bool
 }
 
 // New builds the demo plugin.
@@ -639,7 +650,7 @@ func (p *Loading) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			q := sceneQueue.Get()
 			la := scene.NewLookupAccess(k, lookup.Get())
 			p.rate.measure(time.Now())
-			p.readStats(q)
+			p.readStats(q, la)
 			p.advance(inputState.Get())
 			p.applyUnloads(la)
 			p.preload(la)
@@ -835,19 +846,50 @@ func stationPlacement(s *station) scene.Transform {
 	return scene.At(pad.X, pad.Y-s.minY*s.scale, pad.Z).WithScale(s.scale)
 }
 
-// readStats reads the previous frame's flush result back out of the queue.
+// readStats reads the previous frame's flush result back out of the queue,
+// together with the residency that flush drew against.
+//
 // Passes publishes the frame the last flush consumed, so these are the numbers
 // for the frame before this one - which is what a HUD can print without
 // stalling the pipeline to ask about the frame it is still recording.
-func (p *Loading) readStats(q *scene.OpQueue) {
+//
+// The residency is read here, and not from the table readLookup fills, because
+// a load lands at a frame boundary: readLookup runs inside the update, before
+// scene's own flush handler, so a model that installs between the two is one
+// this frame's flush draws and that table calls loading. Judging a draw count
+// against a residency read on the wrong side of the flush is a skew, not a
+// substitution, and it is what made this demo's own substitution test flake.
+// Here both numbers describe the same frame: nothing can install between the
+// flush and this update's start without also being visible to the query below.
+//
+// The first update has no flush behind it, so it takes no snapshot at all -
+// which also keeps Preload the first thing in the demo that names a path,
+// rather than a query fired to fill a table for a frame that does not exist.
+func (p *Loading) readStats(q *scene.OpQueue, la scene.LookupAccess) {
+	if p.step == 0 {
+		return
+	}
 	views := q.Passes(nil)
-	p.stats = stats{passes: len(views), ops: len(q.Ops(nil))}
+	p.stats = stats{passes: len(views), ops: len(q.Ops(nil)), known: true}
 	for i := range views {
 		p.stats.recorded += views[i].Recorded
 		p.stats.culled += views[i].Culled
 		p.stats.instances += views[i].Instances
 		p.stats.batches += len(views[i].Batches)
 	}
+	for i := range stations {
+		p.stats.resident[i] = la.State(stations[i].path) == scene.ModelResident
+	}
+}
+
+// LastFlush is the frame the last flush consumed: how many draws it recorded
+// and which stations were resident when it recorded them. ok is false until a
+// frame has flushed.
+//
+// Exported as one value rather than as two queries because the pairing is the
+// whole point - see readStats.
+func (p *Loading) LastFlush() (recorded int, resident [len(stations)]bool, ok bool) {
+	return p.stats.recorded, p.stats.resident, p.stats.known
 }
 
 // readLookup asks the facade what it knows, once per frame, for the HUD.

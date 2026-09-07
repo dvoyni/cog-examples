@@ -158,37 +158,62 @@ func TestEveryPadIsDrawnAndOnlyResolvedStationsDrawAModel(t *testing.T) {
 func TestNothingIsSubstitutedForAModelThatIsNotResident(t *testing.T) {
 	engine, demo := start(t)
 	// Every frame from the first to settled. On each one the draw count has to
-	// be at most the pads plus the primitives of the stations resident right
-	// now. A substitute is the one thing that could push it over, and it would
-	// push it over on precisely the frames this loop covers and no others.
+	// be at most the pads plus the primitives of the stations resident on that
+	// frame. A substitute is the one thing that could push it over, and it
+	// would push it over on precisely the frames this loop covers and no
+	// others.
+	//
+	// Both numbers come from LastFlush, which reads them together. Taking them
+	// separately - the count from the queue, the residency from the demo's own
+	// table - compares two different frames, because a load installs at a frame
+	// boundary that falls between the two reads; that skew failed this
+	// assertion about one run in nine with nothing substituted anywhere.
 	deadline := time.Now().Add(60 * time.Second)
-	sawIncomplete := false
+	incomplete := 0
 	for frames := 0; !demo.Settled(); frames++ {
 		if time.Now().After(deadline) {
 			t.Fatalf("stations never settled: %s", unsettled(demo))
 		}
 		engine.Steps(1)
-		want, resident := len(stations), 0
-		for i := range stations {
-			if demo.State(i) == scene.ModelResident {
-				want += stations[i].draws
-				resident++
-			}
-		}
-		if resident < len(stations) {
-			sawIncomplete = true
-		}
-		if view := pass(t, engine); view.Recorded > want {
-			t.Fatalf("frame %d recorded %d draws with %d of %d stations resident; "+
-				"at most %d can be real, so something was substituted",
-				frames, view.Recorded, resident, len(stations), want)
-		}
+		incomplete += checkNothingSubstituted(t, demo, frames)
 		time.Sleep(time.Millisecond)
 	}
-	if !sawIncomplete {
+	// The loop's last flush is described by the update after it, so one more
+	// step is what brings the final unsettled frame - the one with the most
+	// resident stations and so the tightest bound of all of them - into view.
+	engine.Steps(1)
+	incomplete += checkNothingSubstituted(t, demo, -1)
+	if incomplete == 0 {
 		t.Error("every station was resident on the very first frame, so this test saw " +
 			"no frame in which anything could have been substituted")
 	}
+}
+
+// checkNothingSubstituted holds the bound for the frame the last flush
+// consumed, and returns 1 if that frame was one in which a substitution was
+// possible at all - that is, one with a station still not resident.
+func checkNothingSubstituted(t *testing.T, demo *Loading, frame int) int {
+	t.Helper()
+	recorded, residency, ok := demo.LastFlush()
+	if !ok {
+		return 0
+	}
+	want, resident := len(stations), 0
+	for i := range stations {
+		if residency[i] {
+			want += stations[i].draws
+			resident++
+		}
+	}
+	if recorded > want {
+		t.Fatalf("frame %d recorded %d draws with %d of %d stations resident; "+
+			"at most %d can be real, so something was substituted",
+			frame, recorded, resident, len(stations), want)
+	}
+	if resident < len(stations) {
+		return 1
+	}
+	return 0
 }
 
 // Preload names every path the grid draws. A station whose path was missing
