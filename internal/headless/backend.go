@@ -84,10 +84,24 @@ type DrawCall struct {
 // declares.
 const sceneShaderPath = "builtin/scene/scene.wgsl"
 
-// sceneShaderLayout mirrors scene/builtin/scene/scene.wgsl's declared bindings.
+// sceneShaderLayout mirrors scene/builtin/scene/scene.wgsl's declared bindings,
+// all seventeen of them.
+//
+// It has to be all seventeen rather than the ones a given assertion cares
+// about, because gfx resolves a recorder's parameters by name against the
+// reflected layout: a binding this list omits is silently dropped on the way to
+// the backend, which is indistinguishable here from a flush that never packed
+// it. Group 2 and sceneAnim were missing until the animated demo needed to
+// assert that a skinned draw binds its poses, and the omission read as scene
+// not binding them at all.
+//
+// The seven storage buffers are also the whole of scene's budget against the
+// browser floor of eight, so a mirror that has drifted short of the real
+// shader would let a demo pass a limit check the browser will fail.
 var sceneShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
 	{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
 	{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
+	{Name: "sceneAnim", StorageBuffer: true, Group: 0, Binding: 2},
 	{Name: "scenePbrMaterial", StorageBuffer: true, Group: 1, Binding: 0},
 	{Name: "baseColorTexture", Group: 1, Binding: 1},
 	{Name: "baseColorSampler", Sampler: true, Group: 1, Binding: 2},
@@ -99,6 +113,9 @@ var sceneShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
 	{Name: "occlusionSampler", Sampler: true, Group: 1, Binding: 8},
 	{Name: "emissiveTexture", Group: 1, Binding: 9},
 	{Name: "emissiveSampler", Sampler: true, Group: 1, Binding: 10},
+	{Name: "scenePoses", StorageBuffer: true, Group: 2, Binding: 0},
+	{Name: "sceneSkinJoints", StorageBuffer: true, Group: 2, Binding: 1},
+	{Name: "sceneMorphDeltas", StorageBuffer: true, Group: 2, Binding: 2},
 }}
 
 func (b *Backend) NewTexture() gfx.TextureID { b.nextTexture++; return b.nextTexture }

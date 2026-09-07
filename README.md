@@ -45,10 +45,23 @@ go run ./cmd/scene/hello
 and draws one canvas rectangle on a dark background. It proves the module builds
 and runs against the sibling `cog`; every other demo starts from its wiring.
 
+The scene demos each own one part of the plugin's contract, and each carries its
+own `main.go` doc comment saying what it exercises and what only eyes can judge:
+
+| demo | what it is for |
+| --- | --- |
+| `hello` | the smallest cog app, and the wiring every scene demo starts from |
+| `tracer` | the narrowest complete path through every layer, made to be looked at |
+| `box` | the whole debug vocabulary, with no file on disk anywhere in the frame |
+| `procedural` | caller-owned geometry, and a material this program wrote itself |
+| `pbr` | the material and lighting contract, over six Khronos models |
+| `animated` | skinning, morph targets, and the browser canary |
+| `api-sketch` | a paper prototype of the recording API; it draws nothing |
+
 ## Running in a browser
 
 ```
-bash cmd/web/build.sh pbr
+bash cmd/web/build.sh animated
 python -m http.server 8731 --bind 127.0.0.1 --directory cmd/web
 # then open http://127.0.0.1:8731/
 ```
@@ -73,6 +86,19 @@ runs in a browser by being named to `build.sh`.
 provably cannot catch a web limit violation — and scene's storage-buffer budget
 has no spare, where a single unbound binding kills the whole frame with nothing
 logged. One demo has to actually run in a browser for that to be checked at all.
+
+**That demo is `animated`.** It is the one that binds all seven of the bundled
+scene shader's storage buffers — group 2's three exist only for animation — and
+the first thing in the tree to compile that shader at all, so it carries both
+the binding risk and the compile risk, and the two fail identically on the web.
+
+```
+bash cmd/web/build.sh animated
+```
+
+Every other demo builds and runs in a browser too, and `go test ./cmd/web`
+keeps them that way; running a second one is doubled verification rather than
+new coverage.
 
 **Two things that will otherwise read as bugs.** gogpu binds `keydown` on the
 canvas element rather than on the document, so `index.html` gives the canvas a
