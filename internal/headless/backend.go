@@ -1,6 +1,8 @@
 package headless
 
 import (
+	"strings"
+
 	"github.com/dvoyni/cog/gfx"
 )
 
@@ -97,8 +99,9 @@ type DrawCall struct {
 // declares.
 const sceneShaderPath = "builtin/scene/scene.wgsl"
 
-// sceneShaderLayout mirrors scene/builtin/scene/scene.wgsl's declared bindings,
-// all seventeen of them.
+// sceneShaderLayout mirrors scene/builtin/scene/scene.wgsl's declared bindings
+// with both defines supplied, all seventeen of them. sceneVariantLayout cuts it
+// down to what a variant actually declares.
 //
 // It has to be all seventeen rather than the ones a given assertion cares
 // about, because gfx resolves a recorder's parameters by name against the
@@ -158,15 +161,51 @@ func (b *Backend) FreeShader(gfx.ShaderID) {}
 // set of shaders a demo wrote itself.
 const textShaderLabel = "gfx.shader"
 
+// sceneVariantLayout answers for one variant of the bundled scene shader, read
+// off the label's supply.
+//
+// The bundled shader is four modules, not one: a draw declares only the bindings
+// it reads, so a debug line or a static prop declares thirteen and three storage
+// buffers where a skinned, morphed draw declares seventeen and seven. A mirror
+// that answered seventeen for every variant would bind group 2 on a draw that
+// never declared it, which is the one thing this fake exists to catch.
+func sceneVariantLayout(label string) (gfx.ShaderLayout, bool) {
+	supply, ok := strings.CutPrefix(label, sceneShaderPath)
+	if !ok {
+		return gfx.ShaderLayout{}, false
+	}
+	skin := strings.Contains(supply, "SCENE_SKIN")
+	morph := strings.Contains(supply, "SCENE_MORPH")
+	declared := func(resource gfx.ShaderResource) bool {
+		switch resource.Name {
+		case "scenePoses", "sceneSkinJoints":
+			return skin
+		case "sceneMorphDeltas":
+			return morph
+		case "sceneAnim":
+			return skin || morph
+		}
+		return true
+	}
+	layout := gfx.ShaderLayout{Resources: make([]gfx.ShaderResource, 0, len(sceneShaderLayout.Resources))}
+	for _, resource := range sceneShaderLayout.Resources {
+		if declared(resource) {
+			layout.Resources = append(layout.Resources, resource)
+		}
+	}
+	return layout, true
+}
+
 // ShaderLayout answers for the bundled scene shader, for whatever inline shader
 // the test declared, and for nothing else. Canvas's own bindings are not what a
 // demo test asserts, and a fake union layout would bind canvas's parameters at
 // scene's slots.
 func (b *Backend) ShaderLayout(id gfx.ShaderID) gfx.ShaderLayout {
-	switch b.shaders[id] {
-	case sceneShaderPath:
-		return sceneShaderLayout
-	case textShaderLabel:
+	label := b.shaders[id]
+	if layout, ok := sceneVariantLayout(label); ok {
+		return layout
+	}
+	if strings.HasPrefix(label, textShaderLabel) {
 		return b.TextShaderLayout
 	}
 	return gfx.ShaderLayout{}
@@ -186,10 +225,26 @@ func (b *Backend) NewPipeline(desc gfx.PipelineDesc) (gfx.PipelineID, error) {
 // PipelineOf is one pipeline's description, by the id a binding names.
 func (b *Backend) PipelineOf(id gfx.PipelineID) gfx.PipelineDesc { return b.pipelines[id] }
 
-// ShaderPath is the resource path a shader was built from, which is its label.
-// A shader built from inline source has textShaderLabel instead, so this is also
-// how a test tells a demo's own WGSL from a bundled shader.
-func (b *Backend) ShaderPath(id gfx.ShaderID) string { return b.shaders[id] }
+// ShaderPath is the root source a shader was built from. A label carries the
+// variant's supply after the path, and this drops it: what a test picks out of a
+// frame is scene's shader, whichever variant this draw needed. A shader built
+// from inline source has textShaderLabel instead, so this is also how a test
+// tells a demo's own WGSL from a bundled shader.
+func (b *Backend) ShaderPath(id gfx.ShaderID) string {
+	path, _, _ := strings.Cut(b.shaders[id], " [")
+	return path
+}
+
+// ShaderSupply is the defines and consts a shader was built with, as the label
+// spells them, and empty for a shader built with none. It is what a test uses to
+// tell one variant of the bundled shader from another.
+func (b *Backend) ShaderSupply(id gfx.ShaderID) string {
+	_, supply, ok := strings.Cut(b.shaders[id], " [")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSuffix(supply, "]")
+}
 
 // SceneShaderPath is the bundled scene shader's resource path. It is exported
 // because it is how a test picks scene's own pipelines and bindings out of a
@@ -201,7 +256,26 @@ const SceneShaderPath = sceneShaderPath
 // shader.
 func (b *Backend) IsScenePipeline(id gfx.PipelineID) bool {
 	desc, ok := b.pipelines[id]
-	return ok && b.shaders[desc.Shader] == sceneShaderPath
+	return ok && b.ShaderPath(desc.Shader) == sceneShaderPath
+}
+
+// PipelineSupply is the supply of the shader a pipeline was built from, which is
+// what says which variant of the bundled scene shader it draws. Draws through
+// one pipeline all share one variant, so it is also how a test groups a frame's
+// bindings by what the shader declared.
+func (b *Backend) PipelineSupply(id gfx.PipelineID) string {
+	desc, ok := b.pipelines[id]
+	if !ok {
+		return ""
+	}
+	return b.ShaderSupply(desc.Shader)
+}
+
+// SceneVariantResources is the bindings one variant of the bundled scene shader
+// declares, named by the supply PipelineSupply reports.
+func SceneVariantResources(supply string) []gfx.ShaderResource {
+	layout, _ := sceneVariantLayout(sceneShaderPath + " [" + supply + "]")
+	return layout.Resources
 }
 
 func (b *Backend) FreePipeline(gfx.PipelineID) {}

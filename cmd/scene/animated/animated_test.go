@@ -97,55 +97,68 @@ func TestEveryModelBecomesResidentAndEveryPrimitiveBecomesADraw(t *testing.T) {
 
 // # The canary assertion
 //
-// Every draw binds all seven of the bundled shader's storage buffers, group 2's
-// three included. This is the failure the whole demo exists to catch: a
-// declared binding that is never bound kills the entire frame in a browser with
-// nothing logged, and a desktop adapter's hardware limits sit far above the
-// floor where it would show.
+// Every draw binds exactly the bindings its variant declares, and nothing is
+// left over. This is the failure the whole demo exists to catch: a declared
+// binding that is never bound kills the entire frame in a browser with nothing
+// logged, and a desktop adapter's hardware limits sit far above the floor where
+// it would show.
 //
-// It is asserted per draw rather than per frame because the failure is
-// per draw: a skinned model binds its poses and a morph-only one binds its
-// deltas, and the flush fills whichever half a model does not have from the
-// null skin. A frame-wide "were all seven seen" would pass while a single
-// morph-only draw left scenePoses unbound.
-func TestEveryDrawBindsAllSevenStorageBuffers(t *testing.T) {
+// It is asserted per variant rather than per frame because the failure is per
+// draw, and a variant is what a draw declares: a skinned model declares its
+// poses and a morph-only one its deltas, and a static prop declares neither. A
+// frame-wide "were all seventeen seen" would pass while a single skinned draw
+// left scenePoses unbound.
+func TestEveryDrawBindsExactlyWhatItsVariantDeclares(t *testing.T) {
 	engine, _ := run(t)
 	backend := engine.Backend()
 
 	// The frame's own bindings, not every frame's since the engine started:
 	// Buffers accumulates, and the frames before residency bound less.
-	want := [][2]int{{0, 0}, {0, 1}, {0, 2}, {1, 0}, {2, 0}, {2, 1}, {2, 2}}
-	seen := map[[2]int]int{}
-	scenePipelineBindings := 0
+	seen := map[string]map[[2]int]int{}
 	for _, binding := range backend.Buffers {
 		if !backend.IsScenePipeline(binding.Pipeline) {
 			continue
 		}
-		seen[[2]int{binding.Group, binding.Binding}]++
-		scenePipelineBindings++
-	}
-	if len(seen) != len(want) {
-		t.Fatalf("the frame bound %d distinct slots, want the shader's %d: %v",
-			len(seen), len(want), seen)
-	}
-	for _, slot := range want {
-		if seen[slot] == 0 {
-			t.Errorf("group %d binding %d was never bound; on the web that is a blank canvas",
-				slot[0], slot[1])
+		supply := backend.PipelineSupply(binding.Pipeline)
+		if seen[supply] == nil {
+			seen[supply] = map[[2]int]int{}
 		}
+		seen[supply][[2]int{binding.Group, binding.Binding}]++
 	}
-	// Every slot bound the same number of times is what "every draw bound all
-	// seven" means without counting draws: the counts can only agree if no
-	// draw skipped one.
-	for _, slot := range want {
-		if seen[slot] != seen[want[0]] {
-			t.Errorf("group %d binding %d bound %d times against %d for group 0 binding 0; some draw skipped it",
-				slot[0], slot[1], seen[slot], seen[want[0]])
+	// The demo draws a skinned walk cycle, a morphing face and static props, so
+	// it is also where the variants themselves are exercised rather than only
+	// described: three distinct modules, each declaring its own group 2.
+	if len(seen) < 3 {
+		t.Fatalf("the frame drew %d variants of the bundled shader, want the skinned, the morphed and the static: %v",
+			len(seen), seen)
+	}
+	for supply, bound := range seen {
+		declared := headless.SceneVariantResources(supply)
+		want := make([][2]int, 0, len(declared))
+		for _, resource := range declared {
+			if resource.StorageBuffer {
+				want = append(want, [2]int{resource.Group, resource.Binding})
+			}
 		}
-	}
-	if scenePipelineBindings != len(want)*seen[want[0]] {
-		t.Errorf("scene pipelines made %d bindings, want %d slots x %d draws",
-			scenePipelineBindings, len(want), seen[want[0]])
+		if len(bound) != len(want) {
+			t.Errorf("variant %q bound %d distinct slots, want the %d it declares: %v",
+				supply, len(bound), len(want), bound)
+			continue
+		}
+		// Every slot bound the same number of times is what "every draw bound all
+		// of them" means without counting draws: the counts can only agree if no
+		// draw skipped one.
+		for _, slot := range want {
+			if bound[slot] == 0 {
+				t.Errorf("variant %q never bound group %d binding %d; on the web that is a blank canvas",
+					supply, slot[0], slot[1])
+				continue
+			}
+			if bound[slot] != bound[want[0]] {
+				t.Errorf("variant %q bound group %d binding %d %d times against %d for %v; some draw skipped it",
+					supply, slot[0], slot[1], bound[slot], bound[want[0]], want[0])
+			}
+		}
 	}
 }
 

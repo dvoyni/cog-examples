@@ -13,8 +13,9 @@
 //
 // What it exercises: TemporaryMesh against BakeMesh; the generic VertexLayout;
 // UpdateMesh at a changing size; ReleaseMesh and the generations that make a
-// stale ref detectable; MeshDraw.Bounds and NeverCull; the null skin and
-// SCENE_NOSKIN, which every buffer-built draw carries; and, one layer down,
+// stale ref detectable; MeshDraw.Bounds and NeverCull; the static shader
+// variant and SCENE_NOSKIN, which every buffer-built draw carries; and, one
+// layer down,
 // gfx's BakeBuffer, ReBakeBuffer and BufferWithBytes - which is what the three
 // mesh surfaces are:
 //

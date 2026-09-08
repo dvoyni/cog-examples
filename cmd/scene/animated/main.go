@@ -459,8 +459,8 @@ const (
 
 // The morph stress station. Eight named shapes on a two-primitive mesh, and
 // three weights-only clips - a weights channel produces no joint, so the file
-// bakes no poses at all and every draw of it binds the null skin's pose row
-// while binding its own deltas.
+// bakes no poses at all and every draw of it takes the morph-only variant:
+// group 2 binding 2 alone, with no pose bindings declared at all.
 const (
 	stressScale  = 0.70
 	stressLift   = 1.30
