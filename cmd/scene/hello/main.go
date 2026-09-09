@@ -111,7 +111,7 @@ func draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			q.FillRect(layerHello, m.Rect{
 				X: screenWidth/2 - 120, Y: screenHeight/2 - 80,
 				Width: 240, Height: 160,
-			}, m.NewColorSrgb(0.42, 0.71, 0.94, 1))
+			}, canvas.ShapeDraw{Color: m.NewColorSrgb(0.42, 0.71, 0.94, 1)})
 			return nil
 		}
 }
