@@ -671,10 +671,49 @@ func report(all []geo) {
 	perPrimitive(all)
 	perFile(live)
 	axes(live)
+	occupancy(live)
 	contentSubtotal(live)
 	duplicates(live)
 	quantizedTwins(live)
 	extras(all)
+}
+
+// occupancy is how often each attribute slot actually carries something, by
+// primitive and weighted by vertex. It is what turns "we could drop tangents"
+// into a number, which is what cog#173 needs to weigh an axis against the
+// variants it costs.
+//
+// The vertex-weighted column is the one that matters: dropping an attribute
+// from a 4-vertex test quad saves nothing, and the primitive-counted column
+// over-represents the sixty small feature-test primitives in this set.
+func occupancy(live []geo) {
+	fmt.Println("### Per-attribute occupancy")
+	fmt.Println()
+	fmt.Println("| attribute | bytes today | primitives carrying | vertices carrying | wasted bytes today |")
+	fmt.Println("| --- | ---: | ---: | ---: | ---: |")
+	widths := map[string]int{
+		gltf.POSITION: todayPosition, gltf.NORMAL: todayNormal, gltf.TANGENT: todayTangent,
+		gltf.TEXCOORD_0: todayUV, gltf.TEXCOORD_1: todayUV, gltf.COLOR_0: todayColor,
+		gltf.JOINTS_0: todayJoints, gltf.WEIGHTS_0: todayWeights,
+	}
+	allVertices, allPrimitives := 0, len(live)
+	for _, g := range live {
+		allVertices += g.vertices
+	}
+	for _, name := range attrOrder {
+		primitives, vertices := 0, 0
+		for _, g := range live {
+			if g.has(name) {
+				primitives++
+				vertices += g.vertices
+			}
+		}
+		fmt.Printf("| %s | %d | %d / %d | %s / %s (%s) | %s |\n",
+			name, widths[name], primitives, allPrimitives,
+			comma(vertices), comma(allVertices), pct(vertices, allVertices),
+			bytes((allVertices-vertices)*widths[name]))
+	}
+	fmt.Println()
 }
 
 // contentWeighted is the subset of the vendored set that resembles a game's
