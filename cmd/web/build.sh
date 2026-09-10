@@ -35,7 +35,7 @@ if [[ -z "$package_path" ]]; then
 fi
 
 echo "› building main.wasm from $package_path (GOOS=js GOARCH=wasm CGO_ENABLED=0)…"
-GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -C "$repo_root" \r
+GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -C "$repo_root" \
 	-trimpath -buildvcs=false -ldflags="-s -w" -o "$here/main.wasm" "./$package_path"
 
 # The whole assets/ directory, tarred from the repository root so its entries
