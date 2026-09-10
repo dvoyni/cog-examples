@@ -21,3 +21,12 @@ require (
 )
 
 replace github.com/dvoyni/cog => ../cog
+
+// The same override cog carries in its own go.mod (4ed0b85). A replace
+// directive in a dependency does not apply to the main module, so without this
+// line every demo here compiles against a naga whose SPIR-V backend drops a
+// module-scope vector used as an operand and hands the shader (0, 0, 0) - which
+// zeroes SCENE_DIELECTRIC_F0 in the bundled PBR on every Vulkan machine, and
+// zeroed the frame ladder's METAL_F0 too. See dvoyni/cog#181, gogpu/naga#92.
+// Comes back out once a fixed naga is released.
+replace github.com/gogpu/naga => github.com/dvoyni/naga v0.19.1-0.20260909205556-fee6c529ac74
