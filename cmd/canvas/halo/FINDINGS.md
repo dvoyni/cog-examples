@@ -92,3 +92,37 @@ creation with `unsupported expression kind: ir.ExprRelational`. Every comparison
 in `shader.go` is spelled out component-wise because of it. Same family as the
 module-scope vector bug this repo already overrides naga for (dvoyni/cog#181,
 gogpu/naga#92).
+
+## It runs in a browser, which is the part a desktop run cannot prove
+
+`cmd/web/build.sh halo`, served static, opened in Chrome: the demo renders and
+reads correctly, confirmed by eye. This matters more than "it also works over
+there".
+
+A native adapter reports hardware limits far above the WebGPU floor, so a
+desktop run cannot catch a floor violation — which is exactly why `cmd/web`
+exists. This material is the first thing in the repos to **widen its own
+inter-stage struct**, the mechanism [#189](https://github.com/dvoyni/cog/issues/189)
+blessed, and [#189](https://github.com/dvoyni/cog/issues/189) also found that
+`checkWebLimits` (`gfx/limits.go:11-43`) counts storage buffers, bind groups and
+uniform size and **never counts inter-stage variables or components** — so a
+material that overran the floor would pass every test cog has and fail only in a
+browser.
+
+`HaloVertexOut` spends **7 locations and 16 components** (2+2+1+4+4+1+2), against
+a floor of 16 variables and 60 components. Well inside, and now demonstrated
+rather than arithmetic: a real WebGPU implementation validated this pipeline. The
+gap in `checkWebLimits` is still a gap — the next material to widen further has
+nothing catching it — but the halo is not the thing that trips it.
+
+The bindings hold too. Group 1/0, 1/1 and 2/0 bound correctly under a real
+implementation, with no silent short bind group of the kind
+`materials.md:12-15` describes.
+
+### One bug found getting there, not ours
+
+`cmd/web/build.sh:38` ends its line continuation with `\r` — a literal backslash
+and the letter r, not an escape — so `go build` is handed `r` as a package and
+the script dies with `package r is not in std`. It is on `main`, introduced in
+`b752594`, which means the browser build has been broken for every demo since
+that commit. Fixed here in one character; it wants to land on `main` on its own.
