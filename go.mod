@@ -21,3 +21,5 @@ require (
 )
 
 replace github.com/dvoyni/cog => ../cog
+
+replace github.com/gogpu/gogpu => github.com/dvoyni/gogpu v0.54.1-0.20260910171621-041de1a5716f
