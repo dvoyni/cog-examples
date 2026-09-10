@@ -89,6 +89,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"math"
 	"os"
 	"os/signal"
@@ -396,6 +397,7 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			inputState = access.GetRead[*input.State]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			p.rate.measure(time.Now())
+			p.reportRate()
 			p.mint(scene.NewLookupAccess(k, lookup.Get()))
 			p.advance(inputState.Get())
 			p.record(sceneQueue.Get())
@@ -707,6 +709,20 @@ type rate struct {
 }
 
 const ratePeriod = 250 * time.Millisecond
+
+// reportRate prints the frame rate to the log when VN_FPS is set. The HUD has
+// carried it since issue 172, but a number on screen cannot be read by anything
+// that is not a human, and "is 44 fps normal for this scene" is a question
+// about frame TIME rather than about the picture. Gated rather than always on,
+// because a line every two seconds ruins the log for everything else.
+var reportFPS = os.Getenv("VN_FPS") != ""
+
+func (p *Demo) reportRate() {
+	if !reportFPS || p.step%120 != 0 || p.rate.perSecond == 0 {
+		return
+	}
+	log.Printf("station=%d fps=%.1f frame=%.2fms", p.station, p.rate.perSecond, 1000/p.rate.perSecond)
+}
 
 func (r *rate) measure(now time.Time) {
 	if r.window.IsZero() {

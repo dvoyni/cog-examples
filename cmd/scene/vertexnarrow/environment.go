@@ -178,9 +178,11 @@ func frameSphere(slices, stacks int, radius float32) ([]FrameVertex, []uint32) {
 // out by azimuth quadrant, so orbiting the camera walks the reflection through
 // all four:
 //
-//	  0..90    a frequency ladder: vertical bars at 1, 2, 4 and 8 degrees of
+//	  0..90    a frequency ladder: vertical bars at 2, 4, 8 and 16 degrees of
 //	           angular period, stacked in elevation bands. This is the one that
-//	           says WHICH spatial frequency a 1.8 degree swim destroys.
+//	           says WHICH spatial frequency a 1.8 degree swim destroys - the
+//	           finest band is just under one full period of phase flip, and the
+//	           coarsest is a ninth of one.
 //	 90..180   one hard-edged white softbox. A single straight edge is the
 //	           classic thing a reflection is judged against.
 //	180..270   a 6 degree checkerboard: edges in both axes at once.
@@ -190,18 +192,34 @@ func frameSphere(slices, stacks int, radius float32) ([]FrameVertex, []uint32) {
 // A bright horizon line runs the whole way round at elevation zero, unbroken,
 // so one edge can be followed through all four quadrants and compared with
 // itself.
+// The size is 1024 x 512 and that is a MEASURED limit rather than a taste.
+// gfx has no public way to bake a texture from bytes durably: the only two
+// entries are TextureWithBytes, which is a frame-lifetime temporary re-baked on
+// every draw that names it (gfx/opqueue.go bakeTextureIfNeeded), and
+// TextureWithResource, which needs a file. A re-bake with mipmaps runs
+// wgpu/gfxbackend.go uploadMipChain, which box-filters the whole chain on the
+// CPU. At 2048 x 1024 that measured +5.8 ms a frame - 60 fps became 44 - while
+// the same panorama with mipmaps off, and this one with them on, both hold 60.
+//
+// Mips are not optional here: without them a mirror sphere minifies the
+// panorama hard toward its rim, and the aliasing that produces shimmers under
+// exactly the camera motion the third case is trying to judge.
+//
+// 1024 gives 2.84 texels a degree, so the finest ladder band at 2 degrees is
+// 5.7 texels a cycle - comfortably above Nyquist, where a 1 degree band would
+// not have been.
 const (
-	envWidth  = 2048
-	envHeight = 1024
+	envWidth  = 1024
+	envHeight = 512
 )
 
 // The bands of the frequency ladder, in degrees: the elevation window each one
 // occupies and the angular period of its bars.
 var envLadder = [...]struct{ Low, High, Period float64 }{
-	{54, 76, 1},
-	{30, 52, 2},
-	{6, 28, 4},
-	{-30, -8, 8},
+	{54, 76, 2},
+	{30, 52, 4},
+	{6, 28, 8},
+	{-30, -8, 16},
 }
 
 func environmentTexture() []byte {

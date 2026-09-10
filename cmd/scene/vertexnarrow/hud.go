@@ -76,7 +76,7 @@ func (p *Demo) hudReflect(q *canvas.OpQueue) {
 		"a reflection carries twice the normal's angular error; the swim view is on a "+
 			"2x ramp so it reads against the error view", hudDimColor)
 	p.text(q, hudTop+float32(len(frames)+5)*hudLine,
-		"panorama by azimuth: 0-90 bars at 1/2/4/8 deg, 90-180 one hard softbox, "+
+		"panorama by azimuth: 0-90 bars at 2/4/8/16 deg, 90-180 one hard softbox, "+
 			"180-270 a 6 deg checker, 270-360 a gradient and no edge at all (the control)",
 		hudDimColor)
 	p.text(q, hudTop+float32(len(frames)+6)*hudLine,
