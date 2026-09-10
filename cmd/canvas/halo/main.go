@@ -74,15 +74,20 @@ const (
 	infantryInkPath = "assets/halo/infantryman-ink.png"
 )
 
-// Four layers, and which of them the material set covers is the point. Only
-// layerMarks gets it; the reference units on layerReference are drawn by the
-// built-in material with their halos already in their pixels, and the readout
-// on layerHUD must not be haloed or it could not be read against itself.
+// Which layers the material set covers is the point. The reference units on
+// layerReference are drawn by the built-in material with their halos already in
+// their pixels, and the readout on layerHUD must not be haloed or it could not
+// be read against itself.
+//
+// layerMarks and layerInk are one mark layer or two, depending on the mode - see
+// recordMarks. In one-pass mode nothing is recorded on layerInk at all, and
+// canvas declares no gfx pass for a layer that neither draws nor clears.
 const (
 	layerBackdrop  canvas.Layer = 0
 	layerReference canvas.Layer = 1
 	layerMarks     canvas.Layer = 2
-	layerHUD       canvas.Layer = 3
+	layerInk       canvas.Layer = 3
+	layerHUD       canvas.Layer = 4
 )
 
 // InkColor is feuds' mark colour, and haloBaked is the colour measured out of
@@ -164,6 +169,7 @@ type Demo struct {
 
 	color    int
 	backdrop int
+	twoPass  bool
 	off      bool // the A/B's other side
 	haloOnly bool
 	bounds   bool
@@ -174,7 +180,7 @@ func New() *Demo {
 	return &Demo{
 		reach: startReach, exponent: startExponent, plateau: startPlateau,
 		alpha: startAlpha, spokes: startSpokes, rings: startRings,
-		help: true,
+		twoPass: true, help: true,
 	}
 }
 
@@ -239,12 +245,12 @@ var haloMaterial = gfx.MaterialWithState(gfx.ShaderWithText(haloShader), gfx.Sta
 // a Sprite call would have become a per-sprite storage array instead. Putting
 // them here also means a knob change re-fingerprints the set rather than
 // rebuilding a material, so twenty presses of R cost nothing.
-func (p *Demo) params() []gfx.ParameterDescr {
+func (p *Demo) params(haloOnly bool) []gfx.ParameterDescr {
 	debug := m.Vec4{}
 	if p.off {
 		debug.X = 1
 	}
-	if p.haloOnly {
+	if p.haloOnly || haloOnly {
 		debug.Y = 1
 	}
 	if p.bounds {
@@ -335,26 +341,54 @@ var rowScales = [...]float32{1.0, 0.55, 1.9}
 
 func rowY(row int) float32 { return 205 + float32(row)*185 }
 
-// recordMarks is the whole of the caller's side of the effect: one
-// SetLayerMaterial, and then ordinary draws that name nothing.
+// recordMarks is the whole of the caller's side of the effect, and the M key
+// switches between the two shapes it can take.
+//
+// ONE PASS. One SetLayerMaterial, then ordinary draws that name nothing. Each
+// fragment composites its own halo under its own mark, so the whole cluster
+// costs one batch - and a mark drawn later brings its band over the ink of one
+// drawn earlier. A StrokeRect is four bars that overlap at four corners, so it
+// is where that shows worst: the vertical bar's band cuts a notch out of the
+// horizontal bar's ink.
+//
+// TWO PASSES. The same draws recorded twice, on two layers: the lower one under
+// the halo material in halo-only mode, painting every band with no ink at all,
+// and the upper one under the built-in material, painting every mark over the
+// finished bands. No band can reach any ink, because no ink exists yet when the
+// bands are drawn.
+//
+// The cost is two batches instead of one and the ops recorded twice - and NO cog
+// change whatsoever, because it is a pattern a caller can write today with the
+// material set that already exists.
 func (p *Demo) recordMarks(q *canvas.OpQueue) {
 	q.SetLayerTransform(layerMarks, screen(), canvas.AspectInscribe)
 	q.SetLayerMaterial(layerMarks, canvas.MaterialSet{
 		Sprite: &haloMaterial,
-		Params: p.params(),
+		Params: p.params(p.twoPass),
 	})
+	p.cluster(q, layerMarks)
+	if !p.twoPass {
+		return
+	}
+	// The ink pass names no material, so it is the built-in sprite material: the
+	// marks exactly as they would look with no halo at all.
+	q.SetLayerTransform(layerInk, screen(), canvas.AspectInscribe)
+	p.cluster(q, layerInk)
+}
 
+// cluster records every mark once, onto whichever layer it is handed.
+func (p *Demo) cluster(q *canvas.OpQueue, layer canvas.Layer) {
 	for row, scale := range rowScales {
 		y := rowY(row)
 		// A glyph, and more than one of them, because adjacent glyphs are the
 		// case where one mark's expanded quad reaches over its neighbour's ink.
-		p.number(q, "7", m.Vec2{X: 110, Y: y}, scale)
-		p.number(q, "18", m.Vec2{X: 215, Y: y}, scale)
-		p.number(q, "247", m.Vec2{X: 355, Y: y}, scale)
+		p.number(q, layer, "7", m.Vec2{X: 110, Y: y}, scale)
+		p.number(q, layer, "18", m.Vec2{X: 215, Y: y}, scale)
+		p.number(q, layer, "247", m.Vec2{X: 355, Y: y}, scale)
 
 		// A sprite with a real silhouette, packed in the same atlas as the tree
 		// art above, which is what puts a neighbour next to it to bleed from.
-		q.Sprite(layerMarks, anchorPath, canvas.SpriteTransform{
+		q.Sprite(layer, anchorPath, canvas.SpriteTransform{
 			Position: m.Vec2{X: 520, Y: y},
 			Size:     m.Vec2{X: 46 * scale, Y: 46 * scale},
 			Origin:   m.Vec2{X: 0.5, Y: 0.5},
@@ -362,15 +396,15 @@ func (p *Demo) recordMarks(q *canvas.OpQueue) {
 
 		// The fill: feuds' city flag, which is two FillRects and nothing else.
 		// Its frame is a degenerate point, so this is the analytic branch.
-		flag(q, m.Vec2{X: 640, Y: y}, scale)
+		flag(q, layer, m.Vec2{X: 640, Y: y}, scale)
 
 		// The other two shape helpers, which are fills too, and are here because
 		// a rule one world unit thick is the narrowest thing the analytic branch
 		// will ever be asked for.
-		q.StrokeRect(layerMarks, m.Rect{
+		q.StrokeRect(layer, m.Rect{
 			X: 745, Y: y - 26*scale, Width: 66 * scale, Height: 52 * scale,
 		}, canvas.ShapeDraw{Color: inkColor, Thickness: 2 * scale})
-		q.Line(layerMarks,
+		q.Line(layer,
 			m.Vec2{X: 850, Y: y + 22*scale}, m.Vec2{X: 950, Y: y - 22*scale},
 			canvas.ShapeDraw{Color: inkColor, Thickness: 3 * scale})
 
@@ -378,7 +412,7 @@ func (p *Demo) recordMarks(q *canvas.OpQueue) {
 		// to supply one from the same silhouette the painter started from. Side
 		// by side with the untouched original at 1150, this is the comparison
 		// that settles the ticket.
-		q.Sprite(layerMarks, inkArt[row], canvas.SpriteTransform{
+		q.Sprite(layer, inkArt[row], canvas.SpriteTransform{
 			Position: m.Vec2{X: 1030, Y: y},
 			Size:     m.Vec2{X: unitIconSize * scale, Y: unitIconSize * scale},
 			Origin:   m.Vec2{X: 0.5, Y: 0.5},
@@ -388,9 +422,9 @@ func (p *Demo) recordMarks(q *canvas.OpQueue) {
 
 // number draws a score exactly as feuds draws one: centred, in the board face,
 // at the board size.
-func (p *Demo) number(q *canvas.OpQueue, text string, at m.Vec2, scale float32) {
+func (p *Demo) number(q *canvas.OpQueue, layer canvas.Layer, text string, at m.Vec2, scale float32) {
 	size := scoreFontSize * scale
-	q.Text(layerMarks, fontPath, text, canvas.TextDraw{
+	q.Text(layer, fontPath, text, canvas.TextDraw{
 		Position: m.Vec2{X: at.X, Y: at.Y - size/2},
 		Size:     size,
 		Color:    inkColor,
@@ -399,10 +433,10 @@ func (p *Demo) number(q *canvas.OpQueue, text string, at m.Vec2, scale float32) 
 }
 
 // flag is feuds' city flag: a pole and a pennant, two FillRects.
-func flag(q *canvas.OpQueue, at m.Vec2, scale float32) {
+func flag(q *canvas.OpQueue, layer canvas.Layer, at m.Vec2, scale float32) {
 	pole := m.Rect{X: at.X, Y: at.Y - 30*scale, Width: 3 * scale, Height: 60 * scale}
-	q.FillRect(layerMarks, pole, canvas.ShapeDraw{Color: inkColor})
-	q.FillRect(layerMarks, m.Rect{
+	q.FillRect(layer, pole, canvas.ShapeDraw{Color: inkColor})
+	q.FillRect(layer, m.Rect{
 		X: at.X + 3*scale, Y: at.Y - 30*scale, Width: 34 * scale, Height: 22 * scale,
 	}, canvas.ShapeDraw{Color: inkColor})
 }
@@ -419,8 +453,12 @@ func (p *Demo) recordHUD(q *canvas.OpQueue) {
 	if p.off {
 		state = "OFF  (A/B)"
 	}
-	line := fmt.Sprintf("halo %s   reach %.1f   plateau %.2f   exp %.2f   alpha %.2f   %d spokes x %d rings   %s   %s",
-		state, p.reach, p.plateau, p.exponent, p.alpha, p.spokes, p.rings,
+	pass := "two passes (halo layer under ink layer)"
+	if !p.twoPass {
+		pass = "one pass (halo composited per mark)"
+	}
+	line := fmt.Sprintf("halo %s   %s   reach %.1f   plateau %.2f   exp %.2f   alpha %.2f   %d x %d   %s   %s",
+		state, pass, p.reach, p.plateau, p.exponent, p.alpha, p.spokes, p.rings,
 		haloColors[p.color].name, backdrops[p.backdrop])
 	q.Text(layerHUD, fontPath, line, canvas.TextDraw{
 		Position: m.Vec2{X: 24, Y: 24}, Size: 21, Color: ink,
@@ -433,7 +471,7 @@ func (p *Demo) recordHUD(q *canvas.OpQueue) {
 		return
 	}
 	q.Text(layerHUD, fontPath,
-		"H halo on/off   R/F reach   T/G plateau   E/D exponent   A/Z alpha   "+
+		"H halo on/off   M one pass/two   R/F reach   T/G plateau   E/D exponent   A/Z alpha   "+
 			"1/2 spokes   3/4 rings   C colour   B backdrop   O halo only   Q quad bounds   P print   ? help",
 		canvas.TextDraw{Position: m.Vec2{X: 24, Y: 682}, Size: 17, Color: ink})
 }
@@ -482,6 +520,9 @@ func (p *Demo) advance(state *input.State) {
 	}
 	if state.JustPressed(input.KeyO) {
 		p.haloOnly = !p.haloOnly
+	}
+	if state.JustPressed(input.KeyM) {
+		p.twoPass = !p.twoPass
 	}
 	if state.JustPressed(input.KeyQ) {
 		p.bounds = !p.bounds

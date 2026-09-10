@@ -42,14 +42,31 @@ the reach is a per-sprite parameter, or it is expressed as a fraction of the
 sprite rather than in world units. The map had this as fog ("whether the halo's
 softness is resolution-aware"); it is now sharp and it is bigger than DPI.
 
-**One mark's halo paints over its neighbour's ink, visibly.** The corners of the
-`StrokeRect` are where it shows: the vertical bar's band cuts a notch into the
-horizontal bar's ink, because each fragment composites its own halo under its own
-mark and a bar drawn later brings its band over the one drawn before. Adjacent
-digits do not show it — their bands merge cleanly with no seam — but they are
-far enough apart to be lucky. This is [#192](https://github.com/dvoyni/cog/issues/192)'s
-question, and the prototype now has a reproducible case of it rather than a
-hypothesis.
+**One mark's halo paints over its neighbour's ink, visibly — and two layers fix
+it for nothing.** The corners of the `StrokeRect` are where it showed: the
+vertical bar's band cut a notch into the horizontal bar's ink, because each
+fragment composites its own halo under its own mark and a bar drawn later brings
+its band over the one drawn before. A `StrokeRect` is four bars overlapping at
+four corners, so the shape helper is the family's worst case, not its
+friendliest; adjacent digits never showed it, being far enough apart to be lucky.
+
+**M switches modes and the artefact is gone in the two-pass one.** Record the
+same draws twice: the lower layer under the halo material in halo-only mode,
+painting every band and no ink at all, the upper layer under the built-in
+material, painting every mark over the finished bands. No band can reach any ink
+because no ink exists yet when the bands are drawn. `z-corner-ab.png` is the
+pair — the one-pass corner is notched and open, the two-pass corner is a clean
+solid right angle.
+
+It costs two batches instead of one and the ops recorded twice, and **no cog
+change whatsoever**: it is a pattern a caller can write today against the
+material set that already exists. Overlapping bands on the halo layer do not
+compound into a visible seam — `z-digits-ab.png` shows the two modes are
+indistinguishable on the glyphs.
+
+This does not close [#192](https://github.com/dvoyni/cog/issues/192), it reframes
+it. The question is no longer "what happens where two halos meet" but "which of
+the two shapes is the API, and does the caller choose or does the effect".
 
 **Ring banding at low tap counts, but not where it was expected.** 4 rings and 12
 onto 12 rings is nearly indistinguishable at a small reach
