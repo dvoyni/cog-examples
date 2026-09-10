@@ -576,6 +576,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     } else if which == 3 {
         n = normalize(in.n16);
         t = vec4<f32>(normalize(in.t16.xyz), in.t16.w);
+    } else if which == 4 {
+        n = normalize(in.n32);
+        t = vec4<f32>(normalize(in.t16.xyz), in.t16.w);
     }
 
     let exactN = normalize(in.nExact);

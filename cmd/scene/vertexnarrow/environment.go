@@ -99,7 +99,25 @@ var frames = [...]frame{
 	{"oct32 n + oct30 t", 8, 40, 16, 15},
 	{"oct16 n + oct30 t", 6, 38, 8, 15},
 	{"oct16 n + oct16 t", 4, 36, 8, 8},
+	// Added after the first captures. The whole-frame A/B showed the two rungs
+	// failing in different WAYS - the normal's difference is coherent and
+	// edge-shaped, the tangent's is incoherent speckle - so narrowing only the
+	// tangent is a candidate the first four never put on screen. It is the same
+	// 38 bytes as frame 3 and a different 38: that one narrows the normal and
+	// keeps the tangent, this one does the opposite.
+	//
+	// The two bytes are notional. oct16 plus a handedness bit is seventeen, so a
+	// two-byte tangent needs that bit housed somewhere else - in the normal's
+	// spare bits, or in a slot this prototype has no opinion about. Where it
+	// lives is a packing question with no picture attached; whether the eye
+	// minds losing the accuracy is this one.
+	{"oct32 n + oct16 t", 6, 38, 16, 8},
 }
+
+// stripeFrames is how many of them the four-stripe view can show. The fifth is
+// reachable only on its own, with 5 or VN_SOLO=4, because the seam arrangement
+// cuts the screen into four and the fifth candidate has nowhere to stand.
+const stripeFrames = 4
 
 // --- the surface -------------------------------------------------------------
 

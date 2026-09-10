@@ -63,6 +63,12 @@ func (p *Demo) hudReflect(q *canvas.OpQueue) {
 		if p.solo == i {
 			colour, mark = hudMarkColor, ">"
 		}
+		if i >= stripeFrames {
+			mark = "-"
+			if p.solo == i {
+				mark = ">"
+			}
+		}
 		line := fmt.Sprintf("%s %d  %-22s %2d B frame, %2d B vertex   exact", mark, i+1, f.Name, f.Bytes, f.Stride)
 		if f.NBits != 0 {
 			line = fmt.Sprintf(

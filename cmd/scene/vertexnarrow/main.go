@@ -524,7 +524,11 @@ func (p *Demo) advance(state *input.State) {
 		if state.JustPressed(input.Key0) {
 			p.solo = stripesAll
 		}
-		for i := range rungs {
+		candidates := len(rungs)
+		if p.station == stationReflect {
+			candidates = len(frames)
+		}
+		for i := 0; i < candidates; i++ {
 			if state.JustPressed(input.Key1 + input.Key(i)) {
 				p.solo = i
 			}
