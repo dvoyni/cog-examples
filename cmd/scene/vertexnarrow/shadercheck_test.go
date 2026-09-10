@@ -30,6 +30,20 @@ func TestShadersCompile(t *testing.T) {
 	for _, mode := range uvModeNames {
 		sources["uv "+mode] = uvShader(mode, [2]float32{18.5, 1}, [2]float32{0, 0})
 	}
+	// The frame ladder, in both lighting arrangements and with the map on and
+	// off, because every one of those is a different generated source.
+	for _, mode := range reflectModeNames {
+		for _, envMix := range []float32{0, 1} {
+			for _, strength := range []float32{0, 1} {
+				name := fmt.Sprintf("reflect %s env=%.0f map=%.0f", mode, envMix, strength)
+				sources[name] = reflectShader(mode, 0.06, envLod(0.06), strength, envMix, stripesAll)
+			}
+		}
+	}
+	for solo := range frames {
+		sources[fmt.Sprintf("reflect lit solo=%d", solo)] =
+			reflectShader("lit", 0.06, envLod(0.06), 1, 1, solo)
+	}
 
 	for name, source := range sources {
 		t.Run(name, func(t *testing.T) {

@@ -229,3 +229,24 @@ func (r uvRange) encodePacked(uv m.Vec2) uint32 {
 	pair := r.encode(uv)
 	return uint32(pair[0]) | uint32(pair[1])<<16
 }
+
+// encodeOctWord packs an octahedral direction plus a handedness bit into one
+// u32: bits per axis on the low bits, x then y, and the handedness bit
+// immediately above them. Everything above that is reserved and written as
+// zero.
+//
+// This is issue 171's tangent word at bits=15 - oct 15+15, handedness, one
+// spare bit - and its oct16 counterpart at bits=8, where the handedness bit
+// lands at 16 and fifteen bits go unused. Two bytes of a four-byte attribute
+// sitting empty is not a saving anyone would ship; the oct16 tangent is only
+// two bytes if the handedness bit finds somewhere else to live, and where that
+// is, is a packing question with no picture attached. The prototype spends the
+// whole word and the HUD quotes the two bytes the frame would actually weigh.
+func encodeOctWord(direction m.Vec3, bits uint, handedness bool) uint32 {
+	p := octEncode(direction)
+	word := quantizeUnorm(p.X, bits) | quantizeUnorm(p.Y, bits)<<bits
+	if handedness {
+		word |= 1 << (2 * bits)
+	}
+	return word
+}

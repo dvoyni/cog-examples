@@ -30,14 +30,58 @@ func (p *Demo) hud(q *canvas.OpQueue) {
 	q.Clear(layerBackdrop, backdropColor)
 	q.SetLayerTransform(layerHUD, m.Rect{Width: screenWidth, Height: screenHeight}, canvas.AspectInscribe)
 
-	if p.station == stationNormals {
+	switch p.station {
+	case stationNormals:
 		p.hudNormals(q)
-	} else {
+	case stationUV:
 		p.hudUV(q)
+	default:
+		p.hudReflect(q)
 	}
 	p.text(q, screenHeight-hudFoot,
-		"tab station   m view   q roughness   1-4 one rung   0 stripes   arrows orbit/pan   r reset",
+		"tab station   m view   q roughness   1-4 one rung   0 stripes   "+
+			"e environment   n normal map   o orbit   arrows orbit/pan   r reset",
 		hudDimColor)
+}
+
+func (p *Demo) hudReflect(q *canvas.OpQueue) {
+	environment := "OFF (one sun, dielectric)"
+	if p.envOn {
+		environment = "ON (metal, equirect panorama)"
+	}
+	p.text(q, hudTop, fmt.Sprintf(
+		"vertexnarrow  TANGENT FRAME LADDER   view %s   roughness %.2f   orbit %s   fps %.0f",
+		reflectModeNames[p.reflectMode], reflectRoughness[p.reflectRough],
+		orbitRateNames[p.orbitRate], p.rate.perSecond), hudColor)
+	p.text(q, hudTop+hudLine, fmt.Sprintf(
+		"environment %s   normal map %s   env mip %.2f of %dx%d",
+		environment, mapPresetNames[p.mapPreset], envLod(reflectRoughness[p.reflectRough]),
+		envWidth, envHeight), hudDimColor)
+
+	for i, f := range frames {
+		colour, mark := hudColor, " "
+		if p.solo == i {
+			colour, mark = hudMarkColor, ">"
+		}
+		line := fmt.Sprintf("%s %d  %-22s %2d B frame, %2d B vertex   exact", mark, i+1, f.Name, f.Bytes, f.Stride)
+		if f.NBits != 0 {
+			line = fmt.Sprintf(
+				"%s %d  %-22s %2d B frame, %2d B vertex   n max %.4f deg   t max %.4f deg",
+				mark, i+1, f.Name, f.Bytes, f.Stride,
+				p.frameStats[i].NormalMax, p.frameStats[i].TangentMax)
+		}
+		p.text(q, hudTop+float32(i+3)*hudLine, line, colour)
+	}
+	p.text(q, hudTop+float32(len(frames)+4)*hudLine,
+		"a reflection carries twice the normal's angular error; the swim view is on a "+
+			"2x ramp so it reads against the error view", hudDimColor)
+	p.text(q, hudTop+float32(len(frames)+5)*hudLine,
+		"panorama by azimuth: 0-90 bars at 1/2/4/8 deg, 90-180 one hard softbox, "+
+			"180-270 a 6 deg checker, 270-360 a gradient and no edge at all (the control)",
+		hudDimColor)
+	p.text(q, hudTop+float32(len(frames)+6)*hudLine,
+		"probe view: four bands from the pole down - oct32 n, oct16 n, oct30 t, oct16 t. "+
+			"a band of flat colour is an attribute that arrived as zero", hudDimColor)
 }
 
 func (p *Demo) hudNormals(q *canvas.OpQueue) {

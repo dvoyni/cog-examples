@@ -1,5 +1,6 @@
 // Command vertexnarrow is a THROWAWAY prototype for
-// https://github.com/dvoyni/cog/issues/172. It is not a demo of anything cog
+// https://github.com/dvoyni/cog/issues/172 and, in its third station,
+// https://github.com/dvoyni/cog/issues/179. It is not a demo of anything cog
 // does, it is not meant to be merged, and nothing in this directory should be
 // read as a proposal for an API.
 //
@@ -25,6 +26,23 @@
 // There is no pixel readback anywhere in gfx or wgpu, so neither of these can
 // be a test. Both are pictures, and the answer is whatever a human says while
 // looking at them.
+//
+// # The question the third station asks
+//
+// Issue 172 looked at the octahedral ladder and found NO visible artefact at
+// any rung, oct16 included, at three roughnesses and in the raw-normal view. It
+// then named exactly three cases where oct16 would fail if it fails, and could
+// build none of them: a reflected environment, where a reflection vector
+// carries twice the normal's angular error so 0.91 degrees becomes 1.8 of swim;
+// a normal-mapped surface, which is also the only case that exercises the
+// TANGENT, whose encoding is not the normal's; and motion, because every
+// capture in that session was a still and a terrace invisible in one frame can
+// crawl visibly across many.
+//
+// The third station is those three. Its stripes are four candidate vertex
+// FRAMES rather than four rungs of one ladder - see environment.go - because
+// the answer the decision needs is 40 bytes, 38 or 36, and the middle one is a
+// split that only exists once the tangent is on screen.
 //
 // # How it is arranged
 //
@@ -53,14 +71,20 @@
 //
 // # Controls
 //
-//	tab      switch station: normals / texture coordinates
-//	1-4      normals: fill the frame with one rung alone
-//	0        normals: the four stripes again
+//	tab      switch station: normals / texture coordinates / tangent frames
+//	1-4      normals and frames: fill the screen with one candidate alone
+//	0        normals and frames: the four stripes again
 //	1-2      coordinates: the ordinary case (u 0..1) or the worst (u 0..18.5)
 //	m        cycle the view: the lit surface, the error, the raw normal
 //	q        cycle roughness, which is what sharpens or hides a normal error
+//	e        frames: environment on (metal) or off (one sun, dielectric)
+//	n        frames: normal map off / fine grain / dents
+//	o        auto-orbit: still / slow / fast - this is the motion case
 //	arrows   orbit the sphere / pan along u and zoom
 //	r        back to the documented starting pose
+//
+// The three modifiers have environment twins for capture, alongside the ones
+// issue 172 documented: VN_ENV (0 or 1), VN_MAP (0, 1, 2) and VN_ORBIT.
 package main
 
 import (
@@ -150,14 +174,46 @@ var bandCases = [...]struct {
 // the judgement from being an artefact of one arbitrary material.
 var roughnessPresets = [...]float32{0.08, 0.22, 0.45}
 
+// The reflect station's own presets. They are a separate list rather than an
+// extension of the one above so that every capture issue 172 documented is
+// still reproducible from the same VN_ROUGH index. They start lower, because a
+// reflected environment is the case where a near-mirror is the interesting
+// material and 0.08 is already blurring the panorama.
+var reflectRoughness = [...]float32{0.02, 0.06, 0.15, 0.35}
+
+// envLod maps a roughness to a mip of the environment. It is a stand-in for
+// prefiltering, not prefiltering: the chain is a plain box reduction of an
+// equirectangular panorama, so it blurs across the poles wrongly and across
+// azimuth about right. The mirror rung is what the question turns on and it
+// reads mip zero.
+func envLod(roughness float32) float32 { return 4 * float32(math.Sqrt(float64(roughness))) }
+
+// The auto-orbit rates, in radians a second. Motion is the third case issue 172
+// could not build, and it is a modifier rather than a station: it applies
+// wherever there is something to orbit. Slow is about one degree a frame at 60
+// Hz, which is where a crawling terrace is easiest to catch; fast is where it
+// smears instead.
+var orbitRates = [...]float32{0, 0.15, 0.6}
+
+var orbitRateNames = [...]string{"still", "slow", "fast"}
+
 var (
-	ladderModeNames = [...]string{"lit", "error", "raw", "ndl", "probe"}
-	uvModeNames     = [...]string{"textured", "error", "probe"}
+	ladderModeNames  = [...]string{"lit", "error", "raw", "ndl", "probe"}
+	uvModeNames      = [...]string{"textured", "error", "probe"}
+	reflectModeNames = [...]string{"lit", "swim", "error", "tangent", "raw", "env", "probe"}
 )
+
+// The normal map's slope scale. It is one number and it is the one thing at
+// this station that was tuned by eye rather than derived: enough perturbation
+// that the map is plainly the dominant detail on the surface, not so much that
+// the vertex frame stops mattering at all.
+const mapStrength = 0.35
 
 const (
 	stationNormals = 0
 	stationUV      = 1
+	stationReflect = 2
+	stationCount   = 3
 )
 
 const (
@@ -220,6 +276,21 @@ type Demo struct {
 	grid      gfx.TextureDescr
 	minted    bool
 
+	// The reflect station.
+	frameSphere scene.MeshRef
+	env         gfx.TextureDescr
+	maps        [mapPresetCount]gfx.TextureDescr
+	reflectMode int
+	reflectRough int
+	mapPreset   int
+	envOn       bool
+	orbitRate   int
+
+	// frameStats is each candidate frame's angular error on this sphere, the
+	// normal and the tangent separately, so the HUD can say which of the two
+	// the third stripe is actually trading.
+	frameStats [len(frames)]struct{ NormalMean, NormalMax, TangentMean, TangentMax float32 }
+
 	// octStats is each rung's angular error over the sphere's own normals,
 	// computed once at bake. It is not the judgement, but a picture with no
 	// number beside it is hard to argue with six months later.
@@ -232,6 +303,7 @@ func New() *Demo {
 	d := &Demo{
 		azimuth: startAzimuth, elevation: startElevation,
 		panU: startPan, zoom: startZoom, solo: stripesAll,
+		envOn: true, mapPreset: mapOff,
 	}
 	d.configure()
 	return d
@@ -257,7 +329,7 @@ func (d *Demo) configure() {
 		}
 		return v
 	}
-	d.station = int(number("VN_STATION", 0))
+	d.station = int(number("VN_STATION", 0)) % stationCount
 	d.solo = int(number("VN_SOLO", stripesAll))
 	d.roughness = int(number("VN_ROUGH", 0))
 	d.bandCase = int(number("VN_CASE", 0))
@@ -267,11 +339,18 @@ func (d *Demo) configure() {
 	d.elevation = float32(number("VN_EL", startElevation))
 	d.sunUp = float32(number("VN_SUNUP", 1.15))
 	d.sunRight = float32(number("VN_SUNRIGHT", -0.35))
+	d.mapPreset = int(number("VN_MAP", float64(mapOff))) % mapPresetCount
+	d.envOn = number("VN_ENV", 1) != 0
+	d.orbitRate = int(number("VN_ORBIT", 0)) % len(orbitRates)
+	d.reflectRough = int(number("VN_ROUGH", 0)) % len(reflectRoughness)
 	mode := int(number("VN_MODE", 0))
-	if d.station == stationNormals {
+	switch d.station {
+	case stationNormals:
 		d.ladderMode = mode % len(ladderModeNames)
-	} else {
+	case stationUV:
 		d.uvMode = mode % len(uvModeNames)
+	default:
+		d.reflectMode = mode % len(reflectModeNames)
 	}
 }
 
@@ -363,6 +442,38 @@ func (p *Demo) mint(la scene.LookupAccess) {
 	}
 
 	p.grid = gfx.TextureWithBytes(gridWidth, gridHeight, gfx.FormatRGBA8Srgb, gridTexture(), true, false)
+
+	// --- the reflect station -------------------------------------------------
+
+	frameVertices, frameIndices := frameSphere(sphereSlices, sphereStacks, sphereRadius)
+	p.frameSphere = la.BakeMesh(frameVertices, frameIndices, gfx.TopologyTriangleList)
+
+	for i, f := range frames {
+		if f.NBits == 0 {
+			continue
+		}
+		var nTotal, nWorst, tTotal, tWorst float32
+		for _, v := range frameVertices {
+			normal, tangent := sphereFrame(v.Position)
+			ne := octError(normal, f.NBits)
+			te := octError(tangent, f.TBits)
+			nTotal, tTotal = nTotal+ne, tTotal+te
+			nWorst, tWorst = max(nWorst, ne), max(tWorst, te)
+		}
+		count := float32(len(frameVertices))
+		p.frameStats[i].NormalMean, p.frameStats[i].NormalMax = nTotal/count, nWorst
+		p.frameStats[i].TangentMean, p.frameStats[i].TangentMax = tTotal/count, tWorst
+	}
+
+	// The panorama is sRGB because it is radiance the eye will look at; the
+	// normal maps are LINEAR because they are directions, and reading a
+	// direction through an sRGB decode is exactly the silent kind of wrong this
+	// map's Notes say there is no readback to catch.
+	p.env = gfx.TextureWithBytes(envWidth, envHeight, gfx.FormatRGBA8Srgb, environmentTexture(), true, true)
+	for preset := range p.maps {
+		p.maps[preset] = gfx.TextureWithBytes(normalMapWidth, normalMapHeight,
+			gfx.FormatRGBA8, normalMapTexture(preset, mapStrength), true, true)
+	}
 }
 
 func (p *Demo) advance(state *input.State) {
@@ -370,25 +481,44 @@ func (p *Demo) advance(state *input.State) {
 		return
 	}
 	if state.JustPressed(input.KeyTab) {
-		p.station = 1 - p.station
+		p.station = (p.station + 1) % stationCount
 	}
 	if state.JustPressed(input.KeyM) {
-		if p.station == stationNormals {
+		switch p.station {
+		case stationNormals:
 			p.ladderMode = (p.ladderMode + 1) % len(ladderModeNames)
-		} else {
+		case stationUV:
 			p.uvMode = (p.uvMode + 1) % len(uvModeNames)
+		default:
+			p.reflectMode = (p.reflectMode + 1) % len(reflectModeNames)
 		}
 	}
 	if state.JustPressed(input.KeyQ) {
-		p.roughness = (p.roughness + 1) % len(roughnessPresets)
+		if p.station == stationReflect {
+			p.reflectRough = (p.reflectRough + 1) % len(reflectRoughness)
+		} else {
+			p.roughness = (p.roughness + 1) % len(roughnessPresets)
+		}
 	}
+	// The three modifiers. Orbit is deliberately available everywhere, because
+	// motion is the one case issue 172 named that is not about a surface.
+	if state.JustPressed(input.KeyO) {
+		p.orbitRate = (p.orbitRate + 1) % len(orbitRates)
+	}
+	if state.JustPressed(input.KeyE) {
+		p.envOn = !p.envOn
+	}
+	if state.JustPressed(input.KeyN) {
+		p.mapPreset = (p.mapPreset + 1) % mapPresetCount
+	}
+	p.azimuth += orbitRates[p.orbitRate] * fixedStep
 	if state.JustPressed(input.KeyR) {
 		p.azimuth, p.elevation = startAzimuth, startElevation
 		p.panU, p.zoom, p.solo = startPan, startZoom, stripesAll
 	}
 
 	step := orbitSpeed * fixedStep
-	if p.station == stationNormals {
+	if p.station == stationNormals || p.station == stationReflect {
 		if state.JustPressed(input.Key0) {
 			p.solo = stripesAll
 		}
@@ -433,11 +563,71 @@ func (p *Demo) advance(state *input.State) {
 }
 
 func (p *Demo) record(q *scene.OpQueue) {
-	if p.station == stationNormals {
+	switch p.station {
+	case stationNormals:
 		p.recordNormals(q)
-		return
+	case stationUV:
+		p.recordUV(q)
+	default:
+		p.recordReflect(q)
 	}
-	p.recordUV(q)
+}
+
+// recordReflect draws the frame ladder. The camera rig is the sphere station's,
+// with one deliberate difference: the environment is WORLD-fixed, so orbiting
+// sweeps the reflection across the panorama instead of carrying it along. That
+// is the whole of the motion case - a still frame cannot show a reflection
+// crawling, and a camera-rigged environment would not crawl.
+func (p *Demo) recordReflect(q *scene.OpQueue) {
+	cosElevation := float32(math.Cos(float64(p.elevation)))
+	eye := m.Vec3{
+		X: orbitRadius * cosElevation * float32(math.Sin(float64(p.azimuth))),
+		Y: orbitRadius * float32(math.Sin(float64(p.elevation))),
+		Z: orbitRadius * cosElevation * float32(math.Cos(float64(p.azimuth))),
+	}
+
+	q.Camera(CameraMain, scene.CameraDescr{
+		Transform:     scene.LookAt(eye, m.Vec3{}, m.Vec3{Y: 1}),
+		FovY:          fieldOfViewY,
+		Near:          0.05,
+		Far:           50,
+		SunDirection:  p.sun(eye).Negate(),
+		SunIntensity:  3.0,
+		SunColor:      m.NewColorSrgb(1, 0.98, 0.94, 1),
+		AmbientSky:    m.NewColorSrgb(0.10, 0.13, 0.18, 1),
+		AmbientGround: m.NewColorSrgb(0.05, 0.045, 0.04, 1),
+	})
+
+	roughness := reflectRoughness[p.reflectRough]
+	strength := float32(0)
+	if p.mapPreset != mapOff {
+		strength = 1
+	}
+	envMix := float32(0)
+	if p.envOn {
+		envMix = 1
+	}
+
+	// mapOff still binds a map texture and still samples it, at a strength of
+	// zero. Binding nothing would leave the shader's texture declaration
+	// unused, and an unused binding is one naga is free to drop - after which
+	// the material carries a parameter the pipeline has no slot for.
+	preset := p.mapPreset
+	if preset == mapOff {
+		preset = mapGrain
+	}
+
+	q.Mesh(0, p.frameSphere, scene.MeshDraw{
+		Material: newReflectMaterial(reflectModeNames[p.reflectMode],
+			roughness, envLod(roughness), strength, envMix, p.solo),
+		Params: []gfx.ParameterDescr{
+			gfx.TextureParam("envTexture", p.env),
+			gfx.SamplerParam("envSampler", gfx.SamplerDesc{AddressU: gfx.AddressRepeat}),
+			gfx.TextureParam("mapTexture", p.maps[preset]),
+			gfx.SamplerParam("mapSampler", gfx.SamplerDesc{
+				AddressU: gfx.AddressRepeat, AddressV: gfx.AddressRepeat}),
+		},
+	})
 }
 
 func (p *Demo) recordNormals(q *scene.OpQueue) {

@@ -385,3 +385,260 @@ func newUVMaterial(mode string, rng uvRange) scene.Material {
 			})),
 	}}
 }
+
+// --- the tangent-frame ladder, under an environment and a normal map --------
+//
+// Added for https://github.com/dvoyni/cog/issues/179. Same one-mesh-one-draw
+// arrangement and the same view-space seam as the normal ladder above, for the
+// same inherited reason: a frame recording more than one custom-material draw
+// never reaches the GPU on this machine.
+//
+// What changes is what the stripes are. They are no longer four rungs of the
+// normal's ladder but four candidate vertex FRAMES - normal and tangent
+// together - because issue 171 gave the tangent its own encoding and issue 179
+// leaves a split on the table. See environment.go for the four.
+
+// tangentPrelude decodes the two tangent words. The handedness bit is decoded
+// and carried through even though this sphere's is +1 everywhere: the probe
+// view reads it back, so a word that arrives wrong shows as a tinted band
+// rather than as a tangent frame that happens to look plausible.
+const tangentPrelude = `
+fn decodeTangent15(word: u32) -> vec4<f32> {
+    let x = f32(word & 0x7FFFu) / 32767.0 * 2.0 - 1.0;
+    let y = f32((word >> 15u) & 0x7FFFu) / 32767.0 * 2.0 - 1.0;
+    return vec4<f32>(octDecode(vec2<f32>(x, y)), select(-1.0, 1.0, (word & 0x40000000u) != 0u));
+}
+
+fn decodeTangent8(word: u32) -> vec4<f32> {
+    let x = f32(word & 0xFFu) / 255.0 * 2.0 - 1.0;
+    let y = f32((word >> 8u) & 0xFFu) / 255.0 * 2.0 - 1.0;
+    return vec4<f32>(octDecode(vec2<f32>(x, y)), select(-1.0, 1.0, (word & 0x10000u) != 0u));
+}
+
+// dirToEquirect is the environment's only geometry. gfx has no cube view
+// dimension, so the panorama is a plain 2D texture and this is what turns a
+// reflection vector into a texel: azimuth across u, elevation down v.
+fn dirToEquirect(d: vec3<f32>) -> vec2<f32> {
+    return vec2<f32>(atan2(d.z, d.x) / (2.0 * PI) + 0.5, acos(clamp(d.y, -1.0, 1.0)) / PI);
+}
+
+fn angleBetween(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    return acos(clamp(dot(normalize(a), normalize(b)), -1.0, 1.0)) * 180.0 / PI;
+}
+`
+
+// reflectShader builds the frame ladder.
+//
+// envMix is 1 for the metal-under-environment case and 0 for the dielectric
+// under a single sun, which is the first prototype's own lighting and therefore
+// the way to look at the normal map alone. Both textures are sampled either
+// way, at a weight of zero where they are switched off, so neither binding can
+// be optimised out from under the material's parameter list.
+func reflectShader(mode string, roughness, envLod, mapStrength, envMix float32, solo int) string {
+	return fmt.Sprintf(`%s%s%s
+@group(1) @binding(0) var envTexture: texture_2d<f32>;
+@group(1) @binding(1) var envSampler: sampler;
+@group(1) @binding(2) var mapTexture: texture_2d<f32>;
+@group(1) @binding(3) var mapSampler: sampler;
+
+const ROUGHNESS: f32 = %f;
+const ENV_LOD: f32 = %f;
+const MAP_STRENGTH: f32 = %f;
+const ENV_MIX: f32 = %f;
+const SOLO: i32 = %d;
+const ERROR_FULL: f32 = %f;
+const SWIM_FULL: f32 = %f;
+const ENV_EXPOSURE: f32 = 1.7;
+const METAL_F0: vec3<f32> = vec3<f32>(0.94, 0.91, 0.86);
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) nOct32: vec2<f32>,
+    @location(3) nOct16: vec2<f32>,
+    @location(4) tOct30: u32,
+    @location(5) tOct16: u32,
+};
+
+struct VertexOut {
+    @builtin(position) clipPosition: vec4<f32>,
+    @location(0) world: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) nExact: vec3<f32>,
+    @location(3) tExact: vec3<f32>,
+    @location(4) n32: vec3<f32>,
+    @location(5) n16: vec3<f32>,
+    @location(6) t30: vec4<f32>,
+    @location(7) t16: vec4<f32>,
+    @location(8) viewX: f32,
+};
+
+@vertex
+fn vs_main(vertex: VertexIn, @builtin(instance_index) index: u32) -> VertexOut {
+    let instance = sceneInstances.data[index];
+    var out: VertexOut;
+    out.world = worldOf(instance, vertex.position);
+    out.clipPosition = sceneFrame.viewProjection * vec4<f32>(out.world, 1.0);
+    out.uv = vertex.uv;
+
+    // The exact frame is DERIVED here rather than carried as two attributes:
+    // on a unit sphere at the origin the normal is the position, and the
+    // tangent is one cross product. Both sides compute it the same way, so the
+    // reference stripe is exact rather than float32-rounded, and it is
+    // interpolated exactly like the candidates rather than evaluated per
+    // fragment - a per-fragment reference would differ from the candidates by
+    // the interpolation and not by the quantisation.
+    let nLocal = normalize(vertex.position);
+    var tLocal = cross(vec3<f32>(0.0, 1.0, 0.0), nLocal);
+    if length(tLocal) < 1e-4 {
+        tLocal = vec3<f32>(1.0, 0.0, 0.0);
+    } else {
+        tLocal = normalize(tLocal);
+    }
+    out.nExact = worldNormal(instance, nLocal);
+    out.tExact = worldNormal(instance, tLocal);
+
+    out.n32 = worldNormal(instance, octDecode(vertex.nOct32 * 2.0 - 1.0));
+    out.n16 = worldNormal(instance, octDecode(vertex.nOct16 * 2.0 - 1.0));
+    let d30 = decodeTangent15(vertex.tOct30);
+    let d16 = decodeTangent8(vertex.tOct16);
+    out.t30 = vec4<f32>(worldNormal(instance, d30.xyz), d30.w);
+    out.t16 = vec4<f32>(worldNormal(instance, d16.xyz), d16.w);
+
+    out.viewX = (sceneFrame.view * vec4<f32>(out.world, 1.0)).x;
+    return out;
+}
+
+fn stripe(viewX: f32) -> i32 {
+    if SOLO >= 0 { return SOLO; }
+    return clamp(i32(floor((viewX + 1.0) * 2.0)), 0, 3);
+}
+
+// mapped applies the tangent-space normal map to one frame. It is called twice
+// per fragment - once for the candidate frame and once for the exact one - so
+// every error view compares two surfaces that have had the same map applied,
+// and what is left is the frame.
+fn mapped(n: vec3<f32>, tangent: vec4<f32>, uv: vec2<f32>) -> vec3<f32> {
+    let t = normalize(tangent.xyz - n * dot(n, tangent.xyz));
+    let b = cross(n, t) * tangent.w;
+    let sampled = textureSample(mapTexture, mapSampler, uv).xyz * 2.0 - 1.0;
+    let perturbed = normalize(t * sampled.x + b * sampled.y + n * sampled.z);
+    return normalize(mix(n, perturbed, MAP_STRENGTH));
+}
+
+// shade is a metal under the environment when ENV_MIX is 1 and the first
+// prototype's dielectric under one sun when it is 0. Both paths sample the
+// environment; the dielectric one weights it to nothing.
+fn shade(n: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+    let v = normalize(sceneFrame.cameraPosition.xyz - world);
+    let r = reflect(-v, n);
+
+    let sampled = textureSampleLevel(envTexture, envSampler, dirToEquirect(r), ENV_LOD).rgb;
+    let plain = mix(sceneFrame.ambientGround.rgb, sceneFrame.ambientSky.rgb, r.y * 0.5 + 0.5);
+    let incoming = mix(plain, sampled * ENV_EXPOSURE, ENV_MIX);
+
+    let f0 = mix(vec3<f32>(0.04, 0.04, 0.04), METAL_F0, ENV_MIX);
+    let nDotV = max(dot(n, v), 1e-4);
+    let fresnel = f0 + (vec3<f32>(1.0, 1.0, 1.0) - f0) * pow(1.0 - nDotV, 5.0);
+
+    // The sun lobe is kept on both paths so the roughness key means the same
+    // thing at this station as at the last one.
+    let l = -normalize(sceneFrame.sunDirection.xyz);
+    let h = normalize(l + v);
+    let nDotL = max(dot(n, l), 0.0);
+    let nDotH = max(dot(n, h), 0.0);
+    let a = ROUGHNESS * ROUGHNESS;
+    let a2 = a * a;
+    let denominator = nDotH * nDotH * (a2 - 1.0) + 1.0;
+    let distribution = a2 / (PI * denominator * denominator);
+    let k = a * 0.5;
+    let geometry = (nDotV / (nDotV * (1.0 - k) + k)) * (nDotL / (nDotL * (1.0 - k) + k));
+    let specular = distribution * geometry / (4.0 * nDotV * nDotV + 1e-4);
+
+    let albedo = mix(vec3<f32>(0.60, 0.61, 0.64), vec3<f32>(0.0, 0.0, 0.0), ENV_MIX);
+    let direct = (albedo / PI * nDotL + vec3<f32>(specular, specular, specular) * nDotL * (1.0 - ENV_MIX * 0.75))
+        * sceneFrame.sunColor.rgb;
+    return incoming * fresnel + direct;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    let which = stripe(in.viewX);
+
+    var n = normalize(in.nExact);
+    var t = vec4<f32>(normalize(in.tExact), 1.0);
+    if which == 1 {
+        n = normalize(in.n32);
+        t = vec4<f32>(normalize(in.t30.xyz), in.t30.w);
+    } else if which == 2 {
+        n = normalize(in.n16);
+        t = vec4<f32>(normalize(in.t30.xyz), in.t30.w);
+    } else if which == 3 {
+        n = normalize(in.n16);
+        t = vec4<f32>(normalize(in.t16.xyz), in.t16.w);
+    }
+
+    let exactN = normalize(in.nExact);
+    let exactT = vec4<f32>(normalize(in.tExact), 1.0);
+    let shadingN = mapped(n, t, in.uv);
+    let exactShadingN = mapped(exactN, exactT, in.uv);
+    let v = normalize(sceneFrame.cameraPosition.xyz - in.world);
+    %s
+}
+`, scenePrelude, octPrelude, tangentPrelude,
+		roughness, envLod, mapStrength, envMix, solo, ladderErrorFull, swimErrorFull, reflectModes[mode])
+}
+
+// swimErrorFull is the top of the reflection-error ramp, in degrees. A
+// reflection vector carries twice the normal's angular error, which is the
+// whole reason this station exists, so its ramp is twice the normal ramp's and
+// the two views can be read against each other.
+const swimErrorFull = 2 * ladderErrorFull
+
+var reflectModes = map[string]string{
+	// The picture the decision is about.
+	"lit": `return vec4<f32>(shade(shadingN, in.world), 1.0);`,
+	// The angle between the candidate shading normal and the exact one, after
+	// the same normal map has been applied to both.
+	"error": `return vec4<f32>(heat(angleBetween(shadingN, exactShadingN) / ERROR_FULL), 1.0);`,
+	// The quantity this station is actually about: the angle between the
+	// candidate REFLECTION vector and the exact one, which is about twice the
+	// normal error and is what moves an edge in the environment.
+	"swim": `let a = reflect(-v, shadingN);
+    let b = reflect(-v, exactShadingN);
+    return vec4<f32>(heat(angleBetween(a, b) / SWIM_FULL), 1.0);`,
+	// The tangent alone, which is the only thing the second and third stripes
+	// differ by and the only readout that isolates issue 171's tangent word.
+	"tangent": `return vec4<f32>(heat(angleBetween(t.xyz, exactT.xyz) / ERROR_FULL), 1.0);`,
+	// The shading normal straight out as colour: no cosine to flatten it and no
+	// albedo to hide it.
+	"raw": `return vec4<f32>(shadingN * 0.5 + 0.5, 1.0);`,
+	// What actually arrived. Four horizontal bands from the north pole down -
+	// oct32 normal, oct16 normal, oct30 tangent, oct16 tangent - each shown as
+	// the decoded direction in colour. An attribute that arrives as exactly
+	// zero decodes to one constant direction, so a dead attribute is a BAND OF
+	// FLAT COLOUR rather than a shaded surface, which is the check issue 185
+	// makes a precondition. A band tinted red is a handedness bit that came
+	// back negative, which on this sphere it never should.
+	"probe": `let band = i32(clamp(floor(in.uv.y * 4.0), 0.0, 3.0));
+    var d = normalize(in.n32);
+    var bad = false;
+    if band == 1 { d = normalize(in.n16); }
+    else if band == 2 { d = normalize(in.t30.xyz); bad = in.t30.w < 0.0; }
+    else if band == 3 { d = normalize(in.t16.xyz); bad = in.t16.w < 0.0; }
+    let tint = select(vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(1.0, 0.25, 0.25), bad);
+    return vec4<f32>((d * 0.5 + 0.5) * tint, 1.0);`,
+	// The environment itself, sampled straight through the surface normal
+	// rather than through a reflection, so the panorama can be read and its
+	// four quadrants located before anything is judged on top of it.
+	"env": `let e = textureSampleLevel(envTexture, envSampler, dirToEquirect(shadingN), ENV_LOD).rgb;
+    return vec4<f32>(e * ENV_EXPOSURE, 1.0);`,
+}
+
+func newReflectMaterial(mode string, roughness, envLod, mapStrength, envMix float32, solo int) scene.Material {
+	return scene.Material{{
+		Descr: gfx.MaterialWithState(
+			gfx.ShaderWithText(reflectShader(mode, roughness, envLod, mapStrength, envMix, solo)),
+			gfx.StateOpaque3D),
+	}}
+}
