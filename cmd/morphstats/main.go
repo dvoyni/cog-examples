@@ -142,7 +142,37 @@ type prim struct {
 	srcBytes  int
 	srcSparse int
 	srcTypes  map[string]bool
+	shape     sparseShape
 }
+
+// sparseShape describes where a target's non-zero records sit, which is what
+// decides whether a sparse scheme can address them cheaply.
+//
+// The unit is the whole record, not the slot: a vertex is live for a target if
+// any of that target's slots moves it, because the record is what the shader
+// addresses. slotDisagree counts live records where one slot moves and another
+// does not - the waste record granularity costs against per-slot granularity.
+type sparseShape struct {
+	recordBytes  int   // under the chosen per-slot widths: 8 pos + 4 nrm + 4 tan
+	live         []int // per target, records with any non-zero slot
+	span         []int // per target, last live index - first + 1
+	runs         []int // per target, maximal runs of consecutive live indices
+	slotDisagree int
+}
+
+func (s sparseShape) sum(of []int) int {
+	total := 0
+	for _, v := range of {
+		total += v
+	}
+	return total
+}
+
+// costs, in bytes, of the schemes that could address it.
+func (s sparseShape) dense(verts int) int { return len(s.live) * verts * s.recordBytes }
+func (s sparseShape) byRange() int        { return s.sum(s.span)*s.recordBytes + len(s.span)*8 }
+func (s sparseShape) byRuns() int         { return s.sum(s.live)*s.recordBytes + s.sum(s.runs)*8 }
+func (s sparseShape) byIndex() int        { return s.sum(s.live) * (s.recordBytes + 4) }
 
 // bytesToday is what scene stores for this primitive's deltas now.
 func (p prim) bytesToday() int { return p.targets * p.verts * p.stride * 16 }
@@ -342,6 +372,7 @@ func measurePrim(doc *gltf.Document, primitive *gltf.Primitive) (prim, error) {
 		}
 		p.slot[s] = statsFor(deltas[s], verts)
 	}
+	p.shape = shapeOf(deltas, mask, verts, p.targets)
 	return p, nil
 }
 
@@ -385,6 +416,57 @@ func statsFor(targets [][]float64, verts int) slotStats {
 		}
 	}
 	return st
+}
+
+// slotWidth is the stored width this measurement assumes per slot: position
+// earns 16-bit fixed point, normal and tangent 8-bit, both against a
+// per-primitive per-slot range.
+var slotWidth = [slotCount]int{8, 4, 4}
+
+func shapeOf(deltas [slotCount][][]float64, mask [slotCount]bool, verts, targets int) sparseShape {
+	shape := sparseShape{
+		live: make([]int, targets), span: make([]int, targets), runs: make([]int, targets),
+	}
+	for s := range slotCount {
+		if mask[s] {
+			shape.recordBytes += slotWidth[s]
+		}
+	}
+	for t := range targets {
+		first, last, wasLive := -1, -1, false
+		for i := range verts {
+			live, all := false, true
+			for s := range slotCount {
+				if !mask[s] {
+					continue
+				}
+				values := deltas[s][t]
+				moved := values[i*3] != 0 || values[i*3+1] != 0 || values[i*3+2] != 0
+				live = live || moved
+				all = all && moved
+			}
+			if !live {
+				wasLive = false
+				continue
+			}
+			if !all {
+				shape.slotDisagree++
+			}
+			shape.live[t]++
+			if first < 0 {
+				first = i
+			}
+			last = i
+			if !wasLive {
+				shape.runs[t]++
+			}
+			wasLive = true
+		}
+		if first >= 0 {
+			shape.span[t] = last - first + 1
+		}
+	}
+	return shape
 }
 
 func accessorOf(doc *gltf.Document, attributes map[string]int, name string) (*gltf.Accessor, bool) {
@@ -517,6 +599,7 @@ func report(all []prim) {
 	fmt.Println()
 
 	reportShape(all)
+	reportSparse(all)
 	reportRanges(all)
 	reportError(all)
 	reportBytes(all)
@@ -566,6 +649,72 @@ func reportShape(all []prim) {
 	fmt.Printf("| **all** | | | | | **%s** | **%d** | **%.1f%%** | **%s** | |\n",
 		bytes(total), zero, pct(zero, records), bytes(src))
 	fmt.Println()
+}
+
+// reportSparse says where a target's live records sit, and what each addressing
+// scheme would cost against a record narrowed to 8/4/4 bytes per slot.
+func reportSparse(all []prim) {
+	fmt.Println("## Where the live records sit")
+	fmt.Println()
+	fmt.Println("A record is live for a target if any of that target's slots moves the vertex:")
+	fmt.Println("the record is what the shader addresses, so it is the unit a sparse scheme")
+	fmt.Println("would keep or drop. `span` is the index distance from the first live record to")
+	fmt.Println("the last, `runs` the number of maximal consecutive stretches. `disagree` counts")
+	fmt.Println("live records where one slot moves and another does not - what record")
+	fmt.Println("granularity wastes against per-slot granularity.")
+	fmt.Println()
+	fmt.Println("| asset | mesh/prim | verts | targets | record B | live/target | span/target | runs/target | disagree |")
+	fmt.Println("|---|---|---|---|---|---|---|---|---|")
+	for _, p := range all {
+		sh := p.shape
+		fmt.Printf("| %s | %d/%d | %d | %d | %d | %s | %s | %s | %d |\n",
+			p.file, p.meshIdx, p.primAt, p.verts, p.targets, sh.recordBytes,
+			spread(sh.live), spread(sh.span), spread(sh.runs), sh.slotDisagree)
+	}
+	fmt.Println()
+	fmt.Println("| scheme | total | of today |")
+	fmt.Println("|---|---|---|")
+	today := 0
+	for _, p := range all {
+		today += p.bytesToday()
+	}
+	schemes := []struct {
+		name string
+		of   func(p prim) int
+	}{
+		{"dense, 8/4/4 per slot (narrowing alone)", func(p prim) int { return p.shape.dense(p.verts) }},
+		{"live span per target, at today's 16 B slots (sparsity alone)", func(p prim) int {
+			return p.shape.sum(p.shape.span)*p.stride*16 + p.targets*8
+		}},
+		{"live span per target, 8/4/4 slots (both)", func(p prim) int { return p.shape.byRange() }},
+		{"runs of live records, 8 B per run", func(p prim) int { return p.shape.byRuns() }},
+		{"live records + a 4 B vertex index each", func(p prim) int { return p.shape.byIndex() }},
+	}
+	fmt.Printf("| vec4<f32>, dense (today) | %s | 100%% |\n", bytes(today))
+	for _, scheme := range schemes {
+		sum := 0
+		for _, p := range all {
+			sum += scheme.of(p)
+		}
+		fmt.Printf("| %s | %s | %.1f%% |\n", scheme.name, bytes(sum), 100*float64(sum)/float64(today))
+	}
+	fmt.Println()
+}
+
+// spread renders a per-target series as min..max, or a single value where every
+// target agrees.
+func spread(of []int) string {
+	if len(of) == 0 {
+		return "-"
+	}
+	lo, hi, sum := of[0], of[0], 0
+	for _, v := range of {
+		lo, hi, sum = min(lo, v), max(hi, v), sum+v
+	}
+	if lo == hi {
+		return fmt.Sprintf("%d", lo)
+	}
+	return fmt.Sprintf("%d..%d (mean %d)", lo, hi, sum/len(of))
 }
 
 func slotsOf(p prim) string {

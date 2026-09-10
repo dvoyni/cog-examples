@@ -15,6 +15,31 @@ does not move that vertex. scene stores them anyway, one full record each.
 | MorphStressTest | 0/1 | 1504 | 8 | POS+NOR | 376.0 KiB | 22392 | 93.1% | 282.0 KiB | f32 |
 | **all** | | | | | **385.8 KiB** | **22972** | **93.0%** | **288.6 KiB** | |
 
+## Where the live records sit
+
+A record is live for a target if any of that target's slots moves the vertex:
+the record is what the shader addresses, so it is the unit a sparse scheme
+would keep or drop. `span` is the index distance from the first live record to
+the last, `runs` the number of maximal consecutive stretches. `disagree` counts
+live records where one slot moves and another does not - what record
+granularity wastes against per-slot granularity.
+
+| asset | mesh/prim | verts | targets | record B | live/target | span/target | runs/target | disagree |
+|---|---|---|---|---|---|---|---|---|
+| AnimatedMorphCube | 0/0 | 24 | 2 | 16 | 8..12 (mean 10) | 15..18 (mean 16) | 4..5 (mean 4) | 20 |
+| AnimatedMorphCube-Quantized | 0/0 | 24 | 2 | 12 | 8..12 (mean 10) | 16..20 (mean 18) | 4..5 (mean 4) | 18 |
+| MorphStressTest | 0/0 | 24 | 8 | 12 | 0 | 0 | 0 | 0 |
+| MorphStressTest | 0/1 | 1504 | 8 | 12 | 115 | 187 | 16 | 168 |
+
+| scheme | total | of today |
+|---|---|---|
+| vec4<f32>, dense (today) | 385.8 KiB | 100% |
+| dense, 8/4/4 per slot (narrowing alone) | 144.6 KiB | 37.5% |
+| live span per target, at today's 16 B slots (sparsity alone) | 49.6 KiB | 12.9% |
+| live span per target, 8/4/4 slots (both) | 18.6 KiB | 4.8% |
+| runs of live records, 8 B per run | 12.5 KiB | 3.2% |
+| live records + a 4 B vertex index each | 15.1 KiB | 3.9% |
+
 ## The magnitudes, per slot
 
 `max |c|` is the largest absolute component, the symmetric range a per-primitive
