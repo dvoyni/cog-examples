@@ -7,9 +7,8 @@
 //	go run ./cmd/scene/procedural
 //
 // custom-shader is merged into this demo rather than dropped: a custom vertex
-// layout *requires* a custom material - the bundled PBR is one module with one
-// vertex stage reading scene.Vertex's eight attributes - so the two cannot be
-// demonstrated apart.
+// layout *requires* a custom material - the bundled PBR knows the two named
+// layouts and nothing else - so the two cannot be demonstrated apart.
 //
 // What it exercises: TemporaryMesh against BakeMesh; the generic VertexLayout;
 // UpdateMesh at a changing size; ReleaseMesh and the generations that make a

@@ -9,11 +9,11 @@ import (
 )
 
 // Vertex is the demo's own vertex, and the reason it needs a material of its
-// own: 36 bytes and three attributes, where scene.Vertex is 84 and eight. A
-// mesh built from it cannot take the bundled PBR, whose vertex stage reads
-// locations 0..7 at glTF's types; pairing the two is reported and the draw
-// skipped, which is a contract this demo would rather demonstrate the right
-// side of.
+// own: 36 bytes and three attributes, where scene.Vertex is 72 and six. A mesh
+// built from it cannot take the bundled PBR, which knows two layouts and no
+// others - the standard six and the glTF loader's skinned eight; pairing the
+// two is reported and the draw skipped, which is a contract this demo would
+// rather demonstrate the right side of.
 //
 // Tint is linear RGB, not sRGB. Colour rides in the vertices because the
 // material declares no parameters of its own - see material.go for why - so

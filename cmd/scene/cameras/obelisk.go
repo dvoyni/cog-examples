@@ -163,7 +163,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 // carries no fragment stage, so there is no fs_main to find.
 //
 // It reads only location 0. A shader may read fewer attributes than the
-// pipeline's vertex layout supplies, so the other seven of scene.Vertex cost
+// pipeline's vertex layout supplies, so the other five of scene.Vertex cost
 // nothing to leave undeclared.
 const obeliskDepthShader = obeliskShared + `
 @vertex
@@ -204,7 +204,7 @@ const (
 // which needs its own four vertices per face rather than eight shared corners.
 //
 // It uses scene.Vertex - the standard layout - even though the shaders read two
-// of its eight attributes. A custom layout would oblige every consumer of this
+// of its six attributes. A custom layout would oblige every consumer of this
 // mesh to match it, and the twenty vertices here are not where this demo's
 // bytes go.
 func obeliskMesh() ([]scene.Vertex, []uint32) {

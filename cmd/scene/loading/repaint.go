@@ -29,7 +29,7 @@ import (
 //
 // Two of the three parameters scene binds on every draw, and no textures. The
 // vertex stage reads locations 0 and 1 of scene.Vertex; a shader may read fewer
-// attributes than the pipeline's vertex layout supplies, so the other six cost
+// attributes than the pipeline's vertex layout supplies, so the other four cost
 // nothing to leave undeclared. Group 2 - the pose, joint and morph buffers -
 // is undeclared too, which is why this station draws the truck's body rather
 // than its wheels: the body node is not animated, so its placement is in the
