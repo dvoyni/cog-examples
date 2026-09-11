@@ -54,9 +54,9 @@ import (
 
 // obeliskShared is the declarations both shaders need: scene's frame block and
 // its instance record. It is a string constant concatenated into each shader
-// rather than shared through an include, because gfx does no shader
-// preprocessing of any kind - a ShaderDescr is inline text or a storage path
-// handed straight to the backend.
+// rather than shared through an include, because these declarations are this
+// demo's own and scene publishes no source for them. What scene does publish is
+// included by absolute storage name - see VertexDecodePath below.
 const obeliskShared = `
 struct SceneFrame {
     view: mat4x4<f32>,
@@ -102,7 +102,15 @@ fn worldOf(instance: SceneInstance, local: vec3<f32>) -> vec3<f32> {
 // a rough dielectric with the specular lobe left off. The ground beside it
 // takes the bundled PBR, and two materials reading the same sun out of the same
 // sceneFrame should agree about where it is.
-const obeliskForwardShader = obeliskShared + `
+//
+// It includes scene's published vertex decode, because the standard layout
+// stores the normal as oct32 in four bytes: @location(1) is a vec2<f32> and
+// sceneDecodeNormal makes a direction of it. Declaring the vec3<f32> this used
+// to be is refused at pipeline time - gfx requires a declared input's type to
+// equal what the layout supplies - which is the only reason it is not a silent
+// mis-shade, since WebGPU would have filled the third component with zero and
+// lit the obelisk from a direction lying in the XY plane.
+const obeliskForwardShader = "//#include " + scene.VertexDecodePath + obeliskShared + `
 const PI: f32 = 3.14159265359;
 
 // Linear, not sRGB: everything past the vertex stage is.
@@ -110,7 +118,7 @@ const stone: vec3<f32> = vec3<f32>(0.62, 0.44, 0.26);
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
+    @location(1) normal: vec2<f32>,
 };
 
 struct VertexOut {
@@ -121,14 +129,17 @@ struct VertexOut {
 @vertex
 fn vs_main(vertex: VertexIn, @builtin(instance_index) index: u32) -> VertexOut {
     let instance = sceneInstances.data[index];
+    // The decode first, before anything else touches the normal, which is
+    // where the bundled shader puts it too.
+    let normal = sceneDecodeNormal(vertex.normal);
     var out: VertexOut;
     out.clipPosition = sceneFrame.viewProjection * vec4<f32>(worldOf(instance, vertex.position), 1.0);
     // The obelisk scales uniformly, so its basis is its own normal matrix and
     // no inverse-transpose is needed.
     out.normal = normalize(vec3<f32>(
-        dot(instance.world0.xyz, vertex.normal),
-        dot(instance.world1.xyz, vertex.normal),
-        dot(instance.world2.xyz, vertex.normal),
+        dot(instance.world0.xyz, normal),
+        dot(instance.world1.xyz, normal),
+        dot(instance.world2.xyz, normal),
     ));
     return out;
 }
