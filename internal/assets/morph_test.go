@@ -55,11 +55,23 @@ func TestMorphStressTestDeclaresItsEightNamedShapes(t *testing.T) {
 	// requires every primitive of a mesh to carry the same targets in the same
 	// order, which is why a two-primitive eight-shape mesh is eight slots.
 	//
-	// The deltas are the other half: both primitives carry POSITION and NORMAL
-	// deltas over an authored NORMAL, so a record is two slots of 16 bytes and
-	// both primitives' targets concatenate into the model's one buffer.
-	if want := morphStressVertices * 2 * 16 * len(names); bytes != want {
-		t.Errorf("MorphBytes = %d, want %d: two slots a vertex across both primitives", bytes, want)
+	// The deltas are the other half, and they are stored sparse: a block is a
+	// range per slot and a base/first/count per target, then only the records
+	// inside each target's live span. Both primitives carry POSITION and NORMAL
+	// deltas over an authored NORMAL, so a record is three words.
+	//
+	// This file is the case sparsity was for. Primitive 0 is eight targets that
+	// are entirely zero - it stores nothing but its header. Primitive 1's eight
+	// targets each touch 187 of its 1,504 vertices, so it stores 187 records
+	// rather than 1,504. Dense, the two came to 391,168 bytes.
+	const (
+		headerWords = 2*3 + 8*3 // two slots' ranges, eight targets' headers
+		liveSpan    = 187       // primitive 1; primitive 0's targets are all zero
+		recordWords = 3         // position and normal
+	)
+	wantBytes := 4 * (headerWords + (headerWords + 8*liveSpan*recordWords))
+	if bytes != wantBytes {
+		t.Errorf("MorphBytes = %d, want %d: a header a primitive, records only where a target reaches", bytes, wantBytes)
 	}
 }
 
@@ -75,11 +87,19 @@ func TestTheMorphCubeAndItsQuantizedTwinDifferByTheirAuthoredTangent(t *testing.
 	if len(plain) != 2 || len(quantized) != 2 {
 		t.Fatalf("targets = %d and %d, want the cube's two either way", len(plain), len(quantized))
 	}
-	// 24 vertices, two targets: three slots a record against two.
-	if want := 24 * 3 * 16 * 2; plainBytes != want {
+	// 24 vertices, two targets: three slots a record against two, and a record
+	// is one word a slot plus one more for the position's second half.
+	//
+	// The live counts are the sparsity, and they are not what the stride would
+	// suggest: the plain cube stores 33 records between its two targets and the
+	// quantized twin 36. The quantized file's deltas are SHORT and BYTE, so
+	// fewer of them land on exactly zero and its spans are wider - it stores
+	// more records in narrower slots and still comes out smaller. Dense, the two
+	// were 2,304 and 1,536 bytes.
+	if want := 4 * (3*3 + 2*3 + 33*4); plainBytes != want {
 		t.Errorf("MorphBytes = %d, want %d for position, normal and tangent", plainBytes, want)
 	}
-	if want := 24 * 2 * 16 * 2; quantizedBytes != want {
+	if want := 4 * (2*3 + 2*3 + 36*3); quantizedBytes != want {
 		t.Errorf("quantized MorphBytes = %d, want %d for position and normal", quantizedBytes, want)
 	}
 }

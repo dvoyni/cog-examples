@@ -17,7 +17,8 @@ import (
 // reference screenshot was taken of.
 //
 // The wait is wall clock rather than a frame count on purpose: a load does not
-// run on the frame's thread, and MorphStressTest is half a megabyte of deltas.
+// run on the frame's thread, and MorphStressTest reads half a megabyte of
+// float deltas to pack its 18 KiB of them.
 // That is exactly the hitch the asynchronous path exists to keep out of the
 // frame, and a test that waited in frames would be asserting it does not exist.
 //
@@ -513,17 +514,23 @@ func TestTheCapKeepsTheTranslationRowAndOneRotation(t *testing.T) {
 func TestTheTwoMorphCubesDifferByTheirAuthoredTangent(t *testing.T) {
 	engine, demo := run(t)
 	plain, quantized := demo.memory.morph[2], demo.memory.morph[3]
+	// A block is its per-slot ranges, a base/first/count per target, and the
+	// records each target's live span covers - so the two files differ in both
+	// the range words and the record width, and the span counts are the cube's
+	// own: 33 records over two targets in the plain file, 36 in the quantized
+	// one, whose second target moves a wider run.
 	const (
-		cubeVertices = 24
-		cubeTargets  = 2
-		slot         = 16
+		word        = 4
+		rangeWords  = 3
+		headerWords = 3
+		cubeTargets = 2
 	)
-	if want := cubeVertices * 3 * slot * cubeTargets; plain != want {
-		t.Errorf("the plain cube's deltas are %d bytes, want %d for position, normal and tangent",
+	if want := word * (3*rangeWords + cubeTargets*headerWords + 33*4); plain != want {
+		t.Errorf("the plain cube's deltas are %d bytes, want %d: sixteen-byte records for position, normal and tangent",
 			plain, want)
 	}
-	if want := cubeVertices * 2 * slot * cubeTargets; quantized != want {
-		t.Errorf("the quantized cube's deltas are %d bytes, want %d for position and normal",
+	if want := word * (2*rangeWords + cubeTargets*headerWords + 36*3); quantized != want {
+		t.Errorf("the quantized cube's deltas are %d bytes, want %d: twelve-byte records for position and normal",
 			quantized, want)
 	}
 	// The pair is the point: identical geometry, identical motion, different

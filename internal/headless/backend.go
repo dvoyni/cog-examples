@@ -309,6 +309,15 @@ func (b *Backend) BeginPass(desc gfx.GpuPassDesc) gfx.RenderPass {
 func (b *Backend) EndPass(gfx.RenderPass) {}
 func (b *Backend) Present()               { b.Presents++ }
 
+// Capture and TakeCapture exist so a recording backend satisfies gfx's
+// interfaces, and do nothing else. This backend records the calls gfx makes and
+// rasterizes nothing, so there are no pixels to hand back: TakeCapture always
+// says it has none, which is the honest answer rather than an empty image that
+// a differencing test could mistake for a frame.
+func (b *Backend) Capture(gfx.GpuCaptureDesc) {}
+
+func (b *Backend) TakeCapture() (gfx.GpuCapture, bool) { return gfx.GpuCapture{}, false }
+
 // TransitionTextures records the barriers gfx placed, each tagged with the pass
 // it precedes, so a demo test can assert that a render target it composites was
 // actually ordered against the pass that wrote it. Without the barrier the
@@ -366,7 +375,10 @@ func (b *Backend) SetParams([]byte)                   {}
 func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
 func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
 func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
-func (b *Backend) SetIndexBuffer(gfx.BufferID, int)   {}
+// SetIndexBuffer takes the width scene derived from the mesh's vertex count.
+// A recording backend has no index buffer to bind, so the width is recorded
+// nowhere - it is here because gfx.RenderPass carries it.
+func (b *Backend) SetIndexBuffer(gfx.BufferID, int, gfx.IndexWidth) {}
 func (b *Backend) SetBuffer(group, binding int, buffer gfx.BufferID, offset, size int) {
 	b.Buffers = append(b.Buffers, BufferBinding{
 		Group: group, Binding: binding, Buffer: buffer, Pipeline: b.current,
