@@ -112,6 +112,7 @@ import (
 	"github.com/dvoyni/cog/input"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/mcpserver"
 	"github.com/dvoyni/cog/scene"
 	"github.com/dvoyni/cog/storage"
 	"github.com/dvoyni/cog/wgpu"
@@ -174,6 +175,7 @@ func main() {
 		canvas.New(),
 		scene.New(),
 		wgpu.New(),
+		mcpserver.New(),
 		New(),
 	}
 
