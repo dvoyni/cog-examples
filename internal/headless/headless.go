@@ -24,6 +24,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/bundles/scene"
@@ -92,7 +93,7 @@ func NewOver(t testing.TB, storageConfig storageimpl.Config, plugins ...kernel.P
 		scene.Name:   scene.DefaultConfig(),
 	}
 	all := append([]kernel.Plugin{
-		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), adapter{engine.backend}, canvas.New(), scene.New(), &probe{},
+		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), adapter{engine.backend}, canvasimpl.New(), scene.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).

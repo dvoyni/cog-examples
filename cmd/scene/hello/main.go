@@ -13,6 +13,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
@@ -51,7 +52,7 @@ func main() {
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputimpl.New(),
 		gfximpl.New(),
-		canvas.New(),
+		canvasimpl.New(),
 		wgpu.New(),
 		newHello(),
 	}

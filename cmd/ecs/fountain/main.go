@@ -30,6 +30,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/input/inputimpl"
@@ -84,7 +85,7 @@ func main() {
 	}
 
 	kernel.New(config).WithPlugins(
-		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), canvas.New(), scene.New(), wgpu.New(),
+		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), canvasimpl.New(), scene.New(), wgpu.New(),
 		ecs.Plugin(), ecsscene.New(), New(),
 	).Run(ctx)
 }
