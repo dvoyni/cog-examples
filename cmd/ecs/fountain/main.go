@@ -32,6 +32,7 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsimpl"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/bundles/scene"
@@ -82,12 +83,12 @@ func main() {
 	config := map[kernel.PluginName]any{
 		storage.Name: assetConfig,
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: ecs fountain"),
-		ecs.Name:     ecs.DefaultConfig().WithPrewarmEntities(prewarmEntities),
+		ecs.Name:     ecsimpl.Config{PrewarmEntities: prewarmEntities},
 	}
 
 	kernel.New(config).WithPlugins(
 		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), canvasimpl.New(), sceneimpl.New(), wgpu.New(),
-		ecs.Plugin(), ecsscene.New(), New(),
+		ecsimpl.New(), ecsscene.New(), New(),
 	).Run(ctx)
 }
 
@@ -99,7 +100,7 @@ type Velocity struct{ V m.Vec3 }
 // Life is how much longer a mote lasts, and how long it had.
 type Life struct{ Remaining, Span float32 }
 
-// The Bundles: one per act of creation.
+// The Component sets: one per act of creation.
 type (
 	mote struct {
 		Place  ecsscene.Transform

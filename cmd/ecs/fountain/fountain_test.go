@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsimpl"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
@@ -23,7 +23,7 @@ func run(t *testing.T, n int) *headless.Engine {
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	engine := headless.NewOver(t, assetConfig, ecs.Plugin(), ecsscene.New(), New())
+	engine := headless.NewOver(t, assetConfig, ecsimpl.New(), ecsscene.New(), New())
 
 	deadline := time.Now().Add(60 * time.Second)
 	for {
