@@ -20,7 +20,7 @@
 // at that step, and that its HUD reads as the image's does.
 //
 // Why the binding is shaped the way it is lives in ecsscene's README:
-// https://github.com/dvoyni/cog/blob/main/ecsscene/README.md
+// https://github.com/dvoyni/cog/blob/main/bundles/ecsscene/README.md
 package main
 
 import (
@@ -34,6 +34,7 @@ import (
 	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecs/ecsimpl"
 	"github.com/dvoyni/cog/bundles/ecsscene"
+	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneimpl"
 	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
@@ -88,7 +89,7 @@ func main() {
 
 	kernel.New(config).WithPlugins(
 		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), canvasimpl.New(), sceneimpl.New(), wgpu.New(),
-		ecsimpl.New(), ecsscene.New(), New(),
+		ecsimpl.New(), ecssceneimpl.New(), New(),
 	).Run(ctx)
 }
 
@@ -169,13 +170,13 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 	// recording System, so a step draws the world as that step left it rather
 	// than whichever side of the tie the scheduler happened to break.
 	registrar.Subscribe[driftSystem](ecs.ToHandler[app.UpdateEvent](registrar, drift)).
-		After[accelerateSystem]().Before[ecsscene.UpdateEventHandler]()
+		After[accelerateSystem]().Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[reapSystem](ecs.ToHandler[app.UpdateEvent](registrar, reap)).
-		After[driftSystem]().Before[ecsscene.UpdateEventHandler]()
+		After[driftSystem]().Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[prowlSystem](ecs.ToHandler[app.UpdateEvent](registrar, prowl)).
-		Before[ecsscene.UpdateEventHandler]()
+		Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[orbitSystem](ecs.ToHandler[app.UpdateEvent](registrar, orbit)).
-		Before[ecsscene.UpdateEventHandler]()
+		Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
 		After[reapSystem]()
 	registrar.HandleCommand[HUDCmd](ecs.ToExecute[HUDRequest, HUD](registrar, readHUD))
