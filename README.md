@@ -8,7 +8,8 @@ examples are collected here for later publication alongside the engine.
 ## Layout
 
 - `cmd/<plugin>/<demo>/main.go` — one `main.go` per demo, grouped by the plugin
-  it exercises: `cmd/scene/` for the scene plugin, `cmd/canvas/` for canvas.
+  it exercises: `cmd/scene/` for the scene plugin, `cmd/canvas/` for canvas,
+  `cmd/ecs/` for the entity-component plugin and its scene binding.
   Each demo is self-contained: it wires its own plugin list and holds its own
   gameplay plugin in the same file. Everything two levels under `cmd/` is a
   demo, which is what the browser build and its guard walk; the tools beside
@@ -72,6 +73,12 @@ The canvas demos:
 | --- | --- |
 | `rendertexture` | a layer rendered into a texture, drawn back as a sprite and as a shape |
 
+The ecs demos:
+
+| demo | what it is for |
+| --- | --- |
+| `fountain` | the ecsscene showcase: every binding Component in one frame, spawned and retired by Systems |
+
 ## Running in a browser
 
 ```
@@ -81,13 +88,13 @@ python -m http.server 8731 --bind 127.0.0.1 --directory cmd/web
 ```
 
 `build.sh` takes any demo's name - it is looked up across every family under
-`cmd/`, so `cameras` and `rendertexture` both work - and defaults to `pbr`. It
-writes four generated files into `cmd/web/`, all gitignored: `main.wasm`, the
-`assets.tar.gz` bundle, `demo.js` (the demo's name, for the page title) and a
-copy of the Go runtime's `wasm_exec.js`. Serve the directory with anything that
-sends `Content-Type: application/wasm` for `.wasm` — Python's `http.server`
-does — and open it in a WebGPU-capable browser: Chrome or Edge 113+, Safari 18+,
-or Firefox with WebGPU enabled.
+`cmd/`, so `cameras`, `rendertexture` and `fountain` all work - and defaults to
+`pbr`. It writes four generated files into `cmd/web/`, all gitignored:
+`main.wasm`, the `assets.tar.gz` bundle, `demo.js` (the demo's name, for the
+page title) and a copy of the Go runtime's `wasm_exec.js`. Serve the directory
+with anything that sends `Content-Type: application/wasm` for `.wasm` —
+Python's `http.server` does — and open it in a WebGPU-capable browser: Chrome
+or Edge 113+, Safari 18+, or Firefox with WebGPU enabled.
 
 **No demo carries a line of code about the browser.** The whole of the platform
 difference is `internal/assets.Config`: on disk it walks up to the checkout's

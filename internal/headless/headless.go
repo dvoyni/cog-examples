@@ -143,6 +143,18 @@ func (e *Engine) Errors() []error {
 // that wants what actually reached the GPU rather than what scene decided.
 func (e *Engine) Backend() *Backend { return e.backend }
 
+// Executioner is the running engine's dispatch handle, which is how a test
+// invokes a demo's own command:
+//
+//	reply, err := engine.Executioner().ExecuteCommand[fountain.HUDCmd](fountain.HUDRequest{})
+//
+// It is the undeclared synchronous dispatch, and a test harness is one of the
+// two callers that legitimately holds one - the other being a host callback. A
+// handler inside the engine receives a plain kernel.Kernel and cannot obtain
+// this, which is the rule this method does not weaken: it lets a test stand
+// where the host stands, not where a plugin does.
+func (e *Engine) Executioner() kernel.Executioner { return e.kernel }
+
 // Input applies a batch of input changes, exactly as the window backend does
 // when a real key or pointer moves. It is how a test drives a demo's own key
 // handling rather than reaching past it and setting the field the key would
