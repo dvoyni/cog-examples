@@ -15,6 +15,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
@@ -38,7 +39,7 @@ func main() {
 	plugins := []kernel.Plugin{
 		storage.New(),
 		input.New(),
-		gfx.New(),
+		gfximpl.New(),
 		scene.New(),
 		wgpu.New(),
 		newTracer(),

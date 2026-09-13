@@ -125,6 +125,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
@@ -181,7 +182,7 @@ func main() {
 	plugins := []kernel.Plugin{
 		storage.New(),
 		input.New(),
-		gfx.New(),
+		gfximpl.New(),
 		canvas.New(),
 		scene.New(),
 		wgpu.New(),
@@ -432,9 +433,9 @@ func (p *Instancing) Register(registrar *kernel.Registrar, _ any) error {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, app.SetDesiredViewportRequest) (app.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
 	return func(access kernel.ResourceAccess) {
-			setDesiredViewport = access.Uses[app.SetDesiredViewportCmd]()
+			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
 		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
 			if event.Width <= 0 || event.Height <= 0 {
 				return nil
@@ -444,7 +445,7 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 				width, height = height, width
 			}
 			_, err := setDesiredViewport(k,
-				app.SetDesiredViewportRequest{Mode: app.ViewportFit, Width: width, Height: height})
+				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
 			return err
 		}
 }

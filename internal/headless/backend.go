@@ -134,6 +134,9 @@ var sceneShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
 	{Name: "sceneMorphDeltas", StorageBuffer: true, Group: 2, Binding: 2},
 }}
 
+// Ready is true from the start: the fake has no device to wait for.
+func (b *Backend) Ready() bool { return true }
+
 func (b *Backend) NewTexture() gfx.TextureID { b.nextTexture++; return b.nextTexture }
 func (b *Backend) NewBuffer() gfx.BufferID   { b.nextBuffer++; return b.nextBuffer }
 
@@ -375,6 +378,7 @@ func (b *Backend) SetParams([]byte)                   {}
 func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
 func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
 func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
+
 // SetIndexBuffer takes the width scene derived from the mesh's vertex count.
 // A recording backend has no index buffer to bind, so the width is recorded
 // nowhere - it is here because gfx.RenderPass carries it.

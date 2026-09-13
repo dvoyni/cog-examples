@@ -105,6 +105,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/mcpserver"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/wgpu"
@@ -152,7 +153,7 @@ func main() {
 	plugins := []kernel.Plugin{
 		storage.New(),
 		input.New(),
-		gfx.New(),
+		gfximpl.New(),
 		canvas.New(),
 		scene.New(),
 		wgpu.New(),
@@ -267,9 +268,9 @@ func (p *Cameras) report(err error) bool {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, app.SetDesiredViewportRequest) (app.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
 	return func(access kernel.ResourceAccess) {
-			setDesiredViewport = access.Uses[app.SetDesiredViewportCmd]()
+			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
 		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
 			if event.Width <= 0 || event.Height <= 0 {
 				return nil
@@ -279,7 +280,7 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 				width, height = height, width
 			}
 			_, err := setDesiredViewport(k,
-				app.SetDesiredViewportRequest{Mode: app.ViewportFit, Width: width, Height: height})
+				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
 			return err
 		}
 }
@@ -298,14 +299,14 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var gfxQueue kernel.Write[*gfx.OpQueue]
 	var lookup kernel.Write[*scene.Lookup]
 	var inputState kernel.Read[*input.State]
-	var viewport kernel.Read[*app.Viewport]
+	var viewport kernel.Read[*gfx.Viewport]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			gfxQueue = access.GetWrite[*gfx.OpQueue]()
 			lookup = access.GetWrite[*scene.Lookup]()
 			inputState = access.GetRead[*input.State]()
-			viewport = access.GetRead[*app.Viewport]()
+			viewport = access.GetRead[*gfx.Viewport]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			la := scene.NewLookupAccess(k, lookup.Get())
@@ -388,7 +389,7 @@ func (p *Cameras) buildTargets(la scene.LookupAccess) {
 // The two panels are two cameras and one world, so clicking the same cube in
 // either picks the same entry. That is the criterion, and it is also the
 // reason nothing here is written twice.
-func (p *Cameras) click(state *input.State, view *app.Viewport) {
+func (p *Cameras) click(state *input.State, view *gfx.Viewport) {
 	if state == nil || view == nil || view.WindowWidth <= 0 || view.WindowHeight <= 0 {
 		return
 	}

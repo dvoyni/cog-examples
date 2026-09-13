@@ -3,8 +3,9 @@
 //
 // This is available because scene decides everything a demo asserts - culling,
 // sorting, packing - in the update-thread flush, publishes the result as
-// Passes(dst []PassView) including the frustum, and gfx installs a Backend
-// through SetBackendCmd without the wgpu plugin being present at all. What the
+// Passes(dst []PassView) including the frustum, and gfx takes its Backend
+// adapter from whichever plugin provides one, so the adapter plugin below stands
+// in for the wgpu plugin without it being present at all. What the
 // fake backend below does with the translated queue is therefore beside the
 // point: it exists so the frame reaches the end of the pipe, and the numbers a
 // test reads were already decided before it was called.
@@ -25,6 +26,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/slots/app"
@@ -57,7 +59,7 @@ func (e *Engine) report(err error) {
 }
 
 // New starts an engine with storage, input, gfx, canvas and scene, plus the
-// given demo plugins, installs a fake backend and sets the viewport. Every
+// given demo plugins, composes a fake backend adapter and sets the viewport. Every
 // error the engine reports is collected rather than fatal, so a test can assert
 // on the whole list at once.
 //
@@ -86,7 +88,7 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 		scene.Name:   scene.DefaultConfig(),
 	}
 	all := append([]kernel.Plugin{
-		storage.New(), input.New(), gfx.New(), canvas.New(), scene.New(), &probe{},
+		storage.New(), input.New(), gfximpl.New(), adapter{engine.backend}, canvas.New(), scene.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
@@ -97,8 +99,7 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 
 	engine.kernel = running.Executioner()
 	engine.kernel.PublishEvent(app.InitEvent{}).Wait()
-	engine.kernel.ExecuteCommand[gfx.SetBackendCmd](gfx.SetBackendRequest{Backend: engine.backend})
-	engine.kernel.ExecuteCommand[app.SetViewportCmd](app.SetViewportRequest{
+	engine.kernel.ExecuteCommand[gfx.SetViewportCmd](gfx.SetViewportRequest{
 		Width: WindowWidth, Height: WindowHeight,
 		FramebufferWidth: FramebufferWidth, FramebufferHeight: FramebufferHeight,
 	})
@@ -221,4 +222,16 @@ func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]
 			req.run(scene.NewLookupAccess(k, lookup.Get()))
 			return lookupResponse{}, nil
 		}
+}
+
+// adapter provides the fake Backend to gfx, which is a Port and takes its
+// backend from whichever plugin provides one - on a desktop, the wgpu plugin.
+type adapter struct{ backend *Backend }
+
+func (adapter) Name() kernel.PluginName           { return "headlessbackend" }
+func (adapter) Dependencies() []kernel.PluginName { return nil }
+
+func (a adapter) Register(registrar *kernel.Registrar, _ any) error {
+	registrar.ProvideAdapter[gfx.Backend](a.backend)
+	return nil
 }
