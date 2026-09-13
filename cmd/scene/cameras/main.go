@@ -101,6 +101,7 @@ import (
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
+	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
@@ -108,6 +109,7 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/mcpserver"
 	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -131,7 +133,7 @@ func main() {
 	// the demo refuses to start without it. A cameras demo that came up with a
 	// missing model would render two viewports of an empty flank and blame the
 	// loader.
-	storageConfig, err := assets.Config(storage.DefaultConfig("cog-examples"))
+	storageConfig, err := assets.Config(storageimpl.DefaultConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -151,7 +153,8 @@ func main() {
 	// before it declare.
 	demo := New()
 	plugins := []kernel.Plugin{
-		storage.New(),
+		storageimpl.New(),
+		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		input.New(),
 		gfximpl.New(),
 		canvas.New(),

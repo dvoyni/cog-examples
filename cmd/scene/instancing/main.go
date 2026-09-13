@@ -121,12 +121,14 @@ import (
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
+	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -160,11 +162,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	// The vendored asset set is not reachable through storage's default read
-	// mount - that is the executable's own directory, and `go run` builds into
-	// a temporary one - so the demo mounts it explicitly and refuses to start
-	// without it.
-	storageConfig, err := assets.Config(storage.DefaultConfig("cog-examples"))
+	// storage mounts nothing by default, and the vendored asset set lives in
+	// the repository rather than beside the executable, which `go run` builds
+	// into a temporary directory - so the demo mounts it explicitly and refuses
+	// to start without it.
+	storageConfig, err := assets.Config(storageimpl.DefaultConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -180,7 +182,8 @@ func main() {
 	// The demo plugin is last because it records into the queues the plugins
 	// before it declare.
 	plugins := []kernel.Plugin{
-		storage.New(),
+		storageimpl.New(),
+		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		input.New(),
 		gfximpl.New(),
 		canvas.New(),

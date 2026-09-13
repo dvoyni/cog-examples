@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 )
 
 // EnvDir overrides the search, for a demo run from somewhere unusual. It is a
@@ -17,7 +18,7 @@ import (
 const EnvDir = "COG_EXAMPLES_ASSETS"
 
 // Config adds the vendored asset set to base as a read mount.
-func Config(base storage.Config) (storage.Config, error) {
+func Config(base storageimpl.Config) (storageimpl.Config, error) {
 	dir, err := Locate()
 	if err != nil {
 		return base, err

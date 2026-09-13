@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -37,14 +39,15 @@ func main() {
 	defer stop()
 
 	config := map[kernel.PluginName]any{
-		storage.Name: storage.DefaultConfig("cog-examples"),
+		storage.Name: storageimpl.DefaultConfig(),
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: hello"),
 	}
 
 	// hello is last because it records into the op queue the plugins before it
 	// declare.
 	plugins := []kernel.Plugin{
-		storage.New(),
+		storageimpl.New(),
+		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		input.New(),
 		gfximpl.New(),
 		canvas.New(),

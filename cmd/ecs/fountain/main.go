@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
@@ -36,6 +37,7 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -71,7 +73,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	assetConfig, err := assets.Config(storage.DefaultConfig("cog-examples"))
+	assetConfig, err := assets.Config(storageimpl.DefaultConfig())
 	if err != nil {
 		panic(err)
 	}
@@ -82,7 +84,7 @@ func main() {
 	}
 
 	kernel.New(config).WithPlugins(
-		storage.New(), input.New(), gfximpl.New(), canvas.New(), scene.New(), wgpu.New(),
+		storageimpl.New(), permanentfs.New(), input.New(), gfximpl.New(), canvas.New(), scene.New(), wgpu.New(),
 		ecs.Plugin(), ecsscene.New(), New(),
 	).Run(ctx)
 }

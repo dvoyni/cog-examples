@@ -9,7 +9,7 @@ import (
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 )
 
 // run starts the demo headless over the vendored asset set and steps until
@@ -29,7 +29,7 @@ import (
 // everything else is.
 func run(t *testing.T) (*headless.Engine, *Animated) {
 	t.Helper()
-	config, err := assets.Config(storage.DefaultConfig("cog-examples"))
+	config, err := assets.Config(storageimpl.DefaultConfig())
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

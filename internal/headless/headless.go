@@ -22,12 +22,14 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/slots/app"
 )
@@ -59,7 +61,8 @@ func (e *Engine) report(err error) {
 }
 
 // New starts an engine with storage, input, gfx, canvas and scene, plus the
-// given demo plugins, composes a fake backend adapter and sets the viewport. Every
+// given demo plugins, composes storage's diskfs Adapter (through permanentfs)
+// and a fake backend adapter, and sets the viewport. Every
 // error the engine reports is collected rather than fatal, so a test can assert
 // on the whole list at once.
 //
@@ -68,16 +71,16 @@ func (e *Engine) report(err error) {
 // own builtin mounts (canvas's shaders, scene's) install themselves regardless.
 func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
-	return NewOver(t, storage.DefaultConfig("cog-examples").
+	return NewOver(t, storageimpl.DefaultConfig().
 		WithReadFS("headless", 10, fs.FS(fstest.MapFS{})), plugins...)
 }
 
 // NewOver is New over a storage configuration the caller chose, which is how a
-// test that loads real assets reaches them: storage's default read mount is the
-// executable's own directory, and `go test` builds into a temporary one.
+// test that loads real assets reaches them: storage mounts nothing by default,
+// and `go test` runs from a package directory rather than the module root.
 //
-//	config, err := assets.Config(storage.DefaultConfig("cog-examples"))
-func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugin) *Engine {
+//	config, err := assets.Config(storageimpl.DefaultConfig())
+func NewOver(t testing.TB, storageConfig storageimpl.Config, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
 	engine := &Engine{backend: &Backend{}}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -88,7 +91,7 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 		scene.Name:   scene.DefaultConfig(),
 	}
 	all := append([]kernel.Plugin{
-		storage.New(), input.New(), gfximpl.New(), adapter{engine.backend}, canvas.New(), scene.New(), &probe{},
+		storageimpl.New(), permanentfs.New(), input.New(), gfximpl.New(), adapter{engine.backend}, canvas.New(), scene.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).

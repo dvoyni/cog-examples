@@ -1,13 +1,13 @@
 // Package assets mounts the vendored demo asset set through storage.
 //
-// It exists because storage.DefaultConfig on its own does not reach it. The
-// default read mount is the executable's own directory, and `go run` builds
-// into a temporary directory, so a demo that configures nothing finds no
-// models - and finds them by silently loading zero of them, which is the worst
+// It exists because storage mounts nothing by default: a read mount is an fs.FS
+// the composition root chooses, and `go run` builds into a temporary directory,
+// so a demo that configures nothing finds no models - and finds them by
+// silently loading zero of them, which is the worst
 // available failure mode for a set of demos whose whole subject is that a model
 // which fails to load is skipped rather than substituted.
 //
-//	config, err := assets.Config(storage.DefaultConfig("cog-examples"))
+//	config, err := assets.Config(storageimpl.DefaultConfig())
 //
 // Paths keep the assets/ prefix the repository uses, so a demo names a model
 // exactly as ATTRIBUTION.md and the manifest do:

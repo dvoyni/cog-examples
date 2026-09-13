@@ -13,7 +13,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/libs/m"
 )
 
@@ -26,7 +26,7 @@ import (
 // the asynchronous path does not exist.
 func run(t *testing.T) (*headless.Engine, *Cameras) {
 	t.Helper()
-	config, err := assets.Config(storage.DefaultConfig("cog-examples"))
+	config, err := assets.Config(storageimpl.DefaultConfig())
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

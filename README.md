@@ -19,6 +19,8 @@ examples are collected here for later publication alongside the engine.
 - `cmd/prepare-assets/` — the tool that builds `assets/`, and the manifest that
   says where each model comes from and what its licence obliges.
 - `internal/assets` — mounts `assets/` through `storage`.
+- `internal/permanentfs` — storage's `PermanentFS` Adapter for the platform a
+  demo is built for: `diskfs` on the desktop, `jsfs` in a browser.
 - `internal/headless` — runs a cog engine with no GPU, so a demo's assertions
   can be a plain `go test` beside its `main.go`.
 - `cmd/web/` — the WebAssembly page any demo can be built into. See
@@ -160,12 +162,15 @@ manifest in that command, or to check that upstream has not relicensed anything
 underneath the set — it verifies that before it writes a byte, and stops if the
 terms have moved.
 
-A demo reaches the set through `internal/assets`, because
-`storage.DefaultConfig` alone does not: its default read mount is the
-executable's own directory, and `go run` builds into a temporary one.
+A demo reaches the set through `internal/assets`, because storage mounts
+nothing by default and `go run` builds into a temporary directory.
 
 ```go
-config, err := assets.Config(storage.DefaultConfig("cog-examples"))
+config, err := assets.Config(storageimpl.DefaultConfig())
 ```
+
+storage also requires a `PermanentFS` Adapter. Every demo composes
+`permanentfs.New()`, which is `diskfs` on the desktop and `jsfs` in a browser
+build, so no demo names a platform.
 
 Paths keep the repository's spelling — `assets/Fox/Fox.glb`.
