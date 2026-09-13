@@ -32,7 +32,7 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
-	"github.com/dvoyni/cog/bundles/input"
+	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
@@ -84,7 +84,7 @@ func main() {
 	}
 
 	kernel.New(config).WithPlugins(
-		storageimpl.New(), permanentfs.New(), input.New(), gfximpl.New(), canvas.New(), scene.New(), wgpu.New(),
+		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), canvas.New(), scene.New(), wgpu.New(),
 		ecs.Plugin(), ecsscene.New(), New(),
 	).Run(ctx)
 }

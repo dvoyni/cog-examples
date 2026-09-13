@@ -14,6 +14,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/input"
+	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
@@ -41,7 +42,7 @@ func main() {
 	plugins := []kernel.Plugin{
 		storageimpl.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
-		input.New(),
+		inputimpl.New(),
 		gfximpl.New(),
 		scene.New(),
 		wgpu.New(),
