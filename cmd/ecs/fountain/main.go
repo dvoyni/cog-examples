@@ -58,9 +58,10 @@ const (
 	foxPath    = "assets/Fox/Fox.glb"
 )
 
-// maxIDs is the peak concurrent Entity count: the spray settles near a hundred
-// and twenty motes, plus six Entities of furniture.
-const maxIDs = 512
+// prewarmEntities is how many Entities the world reserves room for up front,
+// which is a hint and not a limit: the spray settles near a hundred and twenty
+// motes, plus six Entities of furniture.
+const prewarmEntities = 512
 
 // peakMotes is the population the mote Stores reserve for.
 const peakMotes = 256
@@ -76,12 +77,12 @@ func main() {
 	config := map[kernel.PluginName]any{
 		storage.Name: assetConfig,
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: ecs fountain"),
+		ecs.Name:     ecs.DefaultConfig().WithPrewarmEntities(prewarmEntities),
 	}
 
-	world := ecs.NewEntities(maxIDs)
 	kernel.New(config).WithPlugins(
 		storage.New(), input.New(), gfx.New(), canvas.New(), scene.New(), wgpu.New(),
-		ecs.Plugin(world), ecsscene.New(world), New(world),
+		ecs.Plugin(), ecsscene.New(), New(),
 	).Run(ctx)
 }
 
@@ -127,14 +128,9 @@ type (
 	}
 )
 
-type Demo struct{ world *ecs.Entities }
+type Demo struct{}
 
-func New(world *ecs.Entities) *Demo {
-	if world == nil {
-		panic("fountain: New needs the Entities its Components belong to")
-	}
-	return &Demo{world: world}
-}
+func New() *Demo { return &Demo{} }
 
 func (p *Demo) Name() kernel.PluginName { return Name }
 
@@ -156,27 +152,27 @@ type (
 )
 
 func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
-	ecs.RegisterComponent[Velocity](registrar, p.world, peakMotes)
-	ecs.RegisterComponent[Life](registrar, p.world, peakMotes)
+	ecs.RegisterComponent[Velocity](registrar, peakMotes)
+	ecs.RegisterComponent[Life](registrar, peakMotes)
 	registrar.InitResource(&Fountain{random: randomSeed})
 
-	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](p.world, setup))
-	registrar.Subscribe[hatchSystem](ecs.ToHandler[app.UpdateEvent](p.world, hatch)).First()
-	registrar.Subscribe[accelerateSystem](ecs.ToHandler[app.UpdateEvent](p.world, accelerate))
+	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
+	registrar.Subscribe[hatchSystem](ecs.ToHandler[app.UpdateEvent](registrar, hatch)).First()
+	registrar.Subscribe[accelerateSystem](ecs.ToHandler[app.UpdateEvent](registrar, accelerate))
 	// Every System that moves or retires an Entity runs Before the binding's
 	// recording System, so a step draws the world as that step left it rather
 	// than whichever side of the tie the scheduler happened to break.
-	registrar.Subscribe[driftSystem](ecs.ToHandler[app.UpdateEvent](p.world, drift)).
+	registrar.Subscribe[driftSystem](ecs.ToHandler[app.UpdateEvent](registrar, drift)).
 		After[accelerateSystem]().Before[ecsscene.UpdateEventHandler]()
-	registrar.Subscribe[reapSystem](ecs.ToHandler[app.UpdateEvent](p.world, reap)).
+	registrar.Subscribe[reapSystem](ecs.ToHandler[app.UpdateEvent](registrar, reap)).
 		After[driftSystem]().Before[ecsscene.UpdateEventHandler]()
-	registrar.Subscribe[prowlSystem](ecs.ToHandler[app.UpdateEvent](p.world, prowl)).
+	registrar.Subscribe[prowlSystem](ecs.ToHandler[app.UpdateEvent](registrar, prowl)).
 		Before[ecsscene.UpdateEventHandler]()
-	registrar.Subscribe[orbitSystem](ecs.ToHandler[app.UpdateEvent](p.world, orbit)).
+	registrar.Subscribe[orbitSystem](ecs.ToHandler[app.UpdateEvent](registrar, orbit)).
 		Before[ecsscene.UpdateEventHandler]()
-	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](p.world, hud)).
+	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
 		After[reapSystem]()
-	registrar.HandleCommand[HUDCmd](ecs.ToExecute[HUDRequest, HUD](p.world, readHUD))
+	registrar.HandleCommand[HUDCmd](ecs.ToExecute[HUDRequest, HUD](registrar, readHUD))
 
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
 	return nil

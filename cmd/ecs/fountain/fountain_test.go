@@ -23,8 +23,7 @@ func run(t *testing.T, n int) *headless.Engine {
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	world := ecs.NewEntities(maxIDs)
-	engine := headless.NewOver(t, assetConfig, ecs.Plugin(world), ecsscene.New(world), New(world))
+	engine := headless.NewOver(t, assetConfig, ecs.Plugin(), ecsscene.New(), New())
 
 	deadline := time.Now().Add(60 * time.Second)
 	for {
