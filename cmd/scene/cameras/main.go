@@ -110,6 +110,7 @@ import (
 	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/mcp/mcpimpl"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
@@ -464,9 +465,9 @@ var (
 // passes, and records the world.
 func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess) {
 	mainTarget, mainTexture := g.TemporaryTarget(
-		int(mainPanel.size.X), int(mainPanel.size.Y), gfx.FormatRGBA8Srgb)
+		int(mainPanel.size.X), int(mainPanel.size.Y), gpu.FormatRGBA8Srgb)
 	mapTarget, mapTexture := g.TemporaryTarget(
-		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatRGBA8Srgb)
+		int(mapPanel.size.X), int(mapPanel.size.Y), gpu.FormatRGBA8Srgb)
 	// Two depth textures, and they are deliberately not the same one.
 	//
 	// mapDepth is the minimap's own, named rather than pooled because
@@ -484,9 +485,9 @@ func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess
 	// the minimap's colour pass instead would have made that skip render the
 	// whole minimap against undefined depth.
 	_, mapDepthTexture := g.TemporaryTarget(
-		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
+		int(mapPanel.size.X), int(mapPanel.size.Y), gpu.FormatDepth32F)
 	_, prepassDepthTexture := g.TemporaryTarget(
-		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
+		int(mapPanel.size.X), int(mapPanel.size.Y), gpu.FormatDepth32F)
 	mapDepth := gfx.DepthTarget(mapDepthTexture)
 	prepassDepth := gfx.DepthTarget(prepassDepthTexture)
 	p.mainTexture, p.mapTexture = mainTexture, mapTexture
@@ -553,7 +554,7 @@ func (p *Cameras) recordWorld(q *scene.OpQueue, la scene.LookupAccess) {
 	}
 	if p.obelisk.ID() == 0 {
 		vertices, indices := obeliskMesh()
-		p.obelisk = la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
+		p.obelisk = la.BakeMesh(vertices, indices, gpu.TopologyTriangleList)
 	}
 	q.Mesh(LayerWorld, p.obelisk, scene.MeshDraw{
 		Transform: obeliskTransform(),

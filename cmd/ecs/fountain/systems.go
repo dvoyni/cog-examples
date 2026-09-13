@@ -6,6 +6,7 @@ import (
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 )
@@ -24,9 +25,9 @@ func setup(
 ) {
 	f, la := state.Get(), scene.NewLookupAccess(k, lookup.Get())
 	cubeVertices, cubeIndices := cubeGeometry()
-	f.cube = la.BakeMesh(cubeVertices, cubeIndices, gfx.TopologyTriangleList)
+	f.cube = la.BakeMesh(cubeVertices, cubeIndices, gpu.TopologyTriangleList)
 	discVertices, discIndices := discGeometry()
-	f.disc = la.BakeMesh(discVertices, discIndices, gfx.TopologyTriangleList)
+	f.disc = la.BakeMesh(discVertices, discIndices, gpu.TopologyTriangleList)
 
 	nozzles.New(nozzle{
 		Place: ecsscene.Transform{

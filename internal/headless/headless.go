@@ -31,6 +31,7 @@ import (
 	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/kernel"
@@ -237,6 +238,6 @@ func (adapter) Name() kernel.PluginName           { return "headlessbackend" }
 func (adapter) Dependencies() []kernel.PluginName { return nil }
 
 func (a adapter) Register(registrar *kernel.Registrar, _ any) error {
-	registrar.ProvideAdapter[gfx.Backend](a.backend)
+	registrar.ProvideAdapter[gpu.Backend](a.backend)
 	return nil
 }

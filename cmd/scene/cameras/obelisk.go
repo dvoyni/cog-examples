@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/libs/m"
 )
 
@@ -186,8 +187,8 @@ const TagDepth scene.PassTag = "depth"
 // content, so this interns to one id whatever it is called from.
 func newObeliskMaterial() scene.Material {
 	return scene.Material{
-		{Tag: scene.TagForward, Descr: gfx.MaterialWithState(gfx.ShaderWithText(obeliskForwardShader), gfx.StateOpaque3D)},
-		{Tag: TagDepth, Descr: gfx.MaterialWithState(gfx.ShaderWithText(obeliskDepthShader), gfx.StateOpaque3D)},
+		{Tag: scene.TagForward, Descr: gfx.MaterialWithState(gfx.ShaderWithText(obeliskForwardShader), gpu.StateOpaque3D)},
+		{Tag: TagDepth, Descr: gfx.MaterialWithState(gfx.ShaderWithText(obeliskDepthShader), gpu.StateOpaque3D)},
 	}
 }
 
@@ -223,7 +224,7 @@ func obeliskMesh() ([]scene.Vertex, []uint32) {
 	var vertices []scene.Vertex
 	var indices []uint32
 	quad := func(a, b, c, d m.Vec3) {
-		// Counter-clockwise seen from outside, which is what gfx.FrontCCW and
+		// Counter-clockwise seen from outside, which is what gpu.FrontCCW and
 		// StateOpaque3D's back-face cull between them mean by front.
 		normal := b.Sub(a).Cross(d.Sub(a)).Normalize()
 		start := uint32(len(vertices))

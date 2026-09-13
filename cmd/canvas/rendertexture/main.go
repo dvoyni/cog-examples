@@ -32,6 +32,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
@@ -179,7 +180,7 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// Ask for FormatRGBA8Srgb: the atlas is sRGB, the engine blends
 			// linear, and gfx keys every pipeline to the frame buffer's colour
 			// format whatever the pass target is.
-			target, texture := gfxQueue.Get().TemporaryTarget(panelSize, panelSize, gfx.FormatRGBA8Srgb)
+			target, texture := gfxQueue.Get().TemporaryTarget(panelSize, panelSize, gpu.FormatRGBA8Srgb)
 			q := canvasQueue.Get()
 			p.recordPanel(q, target)
 			p.recordScreen(q, texture)

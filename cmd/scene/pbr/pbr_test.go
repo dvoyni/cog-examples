@@ -9,7 +9,7 @@ import (
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/libs/m"
 )
@@ -188,26 +188,26 @@ func TestAlphaModeAndDoubleSidedReachThePipelineState(t *testing.T) {
 		if backend.ShaderPath(desc.Shader) != headless.SceneShaderPath {
 			continue
 		}
-		if desc.State.FrontFace != gfx.FrontCCW {
+		if desc.State.FrontFace != gpu.FrontCCW {
 			t.Errorf("a scene pipeline declares FrontFace %v, want CCW: no vendored file "+
 				"has a mirrored node", desc.State.FrontFace)
 		}
 		switch {
-		case desc.State.Blend == gfx.BlendAlpha:
+		case desc.State.Blend == gpu.BlendAlpha:
 			blended++
 			if desc.State.DepthWrite {
 				t.Error("a blended pipeline writes depth; transparency would occlude itself")
 			}
-			if desc.State.Cull != gfx.CullNone {
+			if desc.State.Cull != gpu.CullNone {
 				t.Errorf("MatBlend is doubleSided, so its pipeline culls %v, want none",
 					desc.State.Cull)
 			}
-		case desc.State.Cull == gfx.CullNone:
+		case desc.State.Cull == gpu.CullNone:
 			opaqueTwoSided++
 		default:
 			opaqueCulled++
 		}
-		if desc.State.Blend != gfx.BlendAlpha && !desc.State.DepthWrite {
+		if desc.State.Blend != gpu.BlendAlpha && !desc.State.DepthWrite {
 			t.Error("an opaque or masked pipeline does not write depth")
 		}
 	}

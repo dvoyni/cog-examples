@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 )
 
 // The repainted station's material: the whole of what "a replacement Material"
@@ -143,6 +144,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 // every frame: scene keys a material by content, so this interns to one id.
 func newRepaintMaterial() scene.Material {
 	return scene.Material{{
-		Descr: gfx.MaterialWithState(gfx.ShaderWithText(repaintShaderSource), gfx.StateOpaque3D),
+		Descr: gfx.MaterialWithState(gfx.ShaderWithText(repaintShaderSource), gpu.StateOpaque3D),
 	}}
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/libs/m"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
@@ -17,7 +18,7 @@ func recorded(t *testing.T) (*canvas.OpQueue, gfx.TextureDescr) {
 	t.Helper()
 	// Stand-in handles for the pair TemporaryTarget hands back. They carry no
 	// backend, which is all this level needs: the demo passes them through.
-	texture := gfx.TextureWithBytes(panelSize, panelSize, gfx.FormatRGBA8Srgb, nil, false, false)
+	texture := gfx.TextureWithBytes(panelSize, panelSize, gpu.FormatRGBA8Srgb, nil, false, false)
 	demo := New()
 	q := &canvas.OpQueue{}
 	demo.recordPanel(q, gfx.TextureTarget(texture, 0, 0))
@@ -108,7 +109,7 @@ func TestTheFrameRendersThePanelThenSamplesIt(t *testing.T) {
 		t.Fatalf("transitions = %v, want one ordering the sample against the write", backend.Transitions)
 	}
 	got := backend.Transitions[0]
-	if got.From != gfx.TextureUsageRenderAttachment || got.To != gfx.TextureUsageTextureBinding {
+	if got.From != gpu.TextureUsageRenderAttachment || got.To != gpu.TextureUsageTextureBinding {
 		t.Errorf("transition = %v -> %v, want render attachment to texture binding", got.From, got.To)
 	}
 	if got.BeforePass != 1 {

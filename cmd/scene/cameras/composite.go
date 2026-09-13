@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/libs/m"
 )
 
@@ -85,14 +86,14 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 // of its own. The texture and sampler ride on the draw instead, because they
 // change per panel and a material carrying an inline texture would re-bake it
 // every frame.
-var compositeMaterial = gfx.MaterialWithState(gfx.ShaderWithText(compositeShader), gfx.StateOverlay2D)
+var compositeMaterial = gfx.MaterialWithState(gfx.ShaderWithText(compositeShader), gpu.StateOverlay2D)
 
 // compositeSampler is what a composited render target wants: linear filtering,
 // clamped, so the minimap's 512 texels resample smoothly into its 400 canvas
 // units and neither panel wraps at its edge.
-var compositeSampler = gfx.SamplerDesc{
-	AddressU: gfx.AddressClamp, AddressV: gfx.AddressClamp,
-	Mag: gfx.FilterLinear, Min: gfx.FilterLinear, Mip: gfx.FilterLinear,
+var compositeSampler = gpu.SamplerDesc{
+	AddressU: gpu.AddressClamp, AddressV: gpu.AddressClamp,
+	Mag: gpu.FilterLinear, Min: gpu.FilterLinear, Mip: gpu.FilterLinear,
 }
 
 // composite draws one panel's target onto the screen at that panel's rectangle.

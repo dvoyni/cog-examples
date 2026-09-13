@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 )
 
 // The demo's own material: a whole gfx.MaterialDescr with inline WGSL, which is
@@ -156,8 +157,8 @@ fn fs_main(in: VertexOut, @builtin(front_facing) frontFacing: bool) -> @location
 // every draw: scene keys a material by content, so two draws naming this one
 // intern to a single id and sort together.
 func newMaterial() scene.Material {
-	state := gfx.StateOpaque3D
-	state.Cull = gfx.CullNone
+	state := gpu.StateOpaque3D
+	state.Cull = gpu.CullNone
 	return scene.Material{{
 		Descr: gfx.MaterialWithState(gfx.ShaderWithText(shaderSource), state),
 	}}

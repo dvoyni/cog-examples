@@ -8,6 +8,7 @@ import (
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/libs/m"
 )
 
@@ -21,8 +22,8 @@ type Vertex struct {
 func (Vertex) VertexLayout() []gfx.VertexAttr { return vertexLayout[:] }
 
 var vertexLayout = [...]gfx.VertexAttr{
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Position)), gfx.Float32x3),
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Normal)), gfx.Float32x3),
+	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Position)), gpu.Float32x3),
+	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Normal)), gpu.Float32x3),
 }
 
 // cubeGeometry is a unit cube about the origin, four vertices a face.
@@ -87,7 +88,7 @@ const moteTintParam = "moteTint"
 var sharedMote = ecsscene.Material{Tags: ecs.NewList(ecsscene.MaterialTag{
 	Tag:    scene.TagForward,
 	Shader: gfx.ShaderWithText(scenePrelude + moteShader),
-	State:  twoSided(gfx.StateOpaque3D),
+	State:  twoSided(gpu.StateOpaque3D),
 })}
 
 func moteMaterial() ecsscene.Material { return sharedMote }
@@ -100,18 +101,18 @@ func basinMaterial() ecsscene.Material {
 		ecsscene.MaterialTag{
 			Tag:    tagGround,
 			Shader: gfx.ShaderWithText(scenePrelude + stoneShader),
-			State:  twoSided(gfx.StateOpaque3D),
+			State:  twoSided(gpu.StateOpaque3D),
 		},
 		ecsscene.MaterialTag{
 			Tag:    scene.TagForward,
 			Shader: gfx.ShaderWithText(scenePrelude + rippleShader),
-			State:  twoSided(gfx.StateTransparent3D),
+			State:  twoSided(gpu.StateTransparent3D),
 		},
 	)}
 }
 
-func twoSided(state gfx.MaterialState) gfx.MaterialState {
-	state.Cull = gfx.CullNone
+func twoSided(state gpu.MaterialState) gpu.MaterialState {
+	state.Cull = gpu.CullNone
 	return state
 }
 

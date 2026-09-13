@@ -88,6 +88,7 @@ import (
 	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
+	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
@@ -508,7 +509,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 	}
 	vertices, indices := ridgeGeometry(p.ridgeCellCount, p.time()*ridgeSpeed)
 	if p.ridge == (scene.MeshRef{}) {
-		p.ridge = la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
+		p.ridge = la.BakeMesh(vertices, indices, gpu.TopologyTriangleList)
 	} else {
 		la.UpdateMesh(p.ridge, vertices, indices)
 	}
@@ -518,7 +519,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 	// carries the frame it was minted in: used in a later frame it is reported
 	// and skipped rather than silently drawing whatever now holds its slot.
 	band := ribbonGeometry(ribbonSegments, p.time()*ribbonSpeed)
-	p.ribbon = q.TemporaryMesh(band, nil, gfx.TopologyTriangleStrip)
+	p.ribbon = q.TemporaryMesh(band, nil, gpu.TopologyTriangleStrip)
 	p.ribbonVertices = len(band)
 
 	// The beacon. A release makes the old ref stale at once - anything drawing
@@ -664,5 +665,5 @@ func (p *Procedural) readStats(q *scene.OpQueue) {
 // indices cannot be spread into the call.
 func bakeBeacon(la scene.LookupAccess, generation int) scene.MeshRef {
 	vertices, indices := beaconGeometry(beaconTint(generation))
-	return la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
+	return la.BakeMesh(vertices, indices, gpu.TopologyTriangleList)
 }
