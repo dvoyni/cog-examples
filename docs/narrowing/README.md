@@ -36,7 +36,7 @@ comparison is against a purpose-built baseline instead.
 
 ## Running it
 
-Add `mcpserver.New()` to a demo's plugin list, then:
+Add `mcpimpl.New()` to a demo's plugin list, then:
 
     go build -o demo.exe ./cmd/scene/loading
     python docs/narrowing/capture.py demo.exe . 600 /tmp/out

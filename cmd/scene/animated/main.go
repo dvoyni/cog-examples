@@ -112,7 +112,7 @@ import (
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
-	"github.com/dvoyni/cog/extensions/mcpserver"
+	"github.com/dvoyni/cog/extensions/mcp/mcpimpl"
 	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
@@ -179,7 +179,7 @@ func main() {
 		canvas.New(),
 		scene.New(),
 		wgpu.New(),
-		mcpserver.New(),
+		mcpimpl.New(),
 		New(),
 	}
 
