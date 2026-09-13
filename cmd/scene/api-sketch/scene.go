@@ -49,15 +49,15 @@ func effectiveMask(mask LayerMask) LayerMask {
 // Transform is TRS, not m.Mat4: scene decomposes for the instance record and
 // for bounding-sphere culling anyway, and glTF nodes are TRS at rest.
 //
-// The zero Transform is the identity. Scale is a scalar whose zero value means
-// 1, matching canvas.SpriteTransform.Scale exactly; non-uniform scale goes
-// through Matrix, which replaces the whole transform when non-nil. Keeping
-// scale uniform keeps normals on the cheap path.
+// The zero Transform is the identity. Scale is per axis, and only an all-zero
+// Scale means 1; a partly zero one is taken literally, so a flattened scale is
+// expressible. A non-uniform scale pays the inverse-transpose normal path, and
+// only on its own draw. There is no matrix override: a Transform is plain
+// values, which is what lets an ECS Component hold one.
 type Transform struct {
 	Position m.Vec3
 	Rotation m.Quat
-	Scale    float32
-	Matrix   *m.Mat4
+	Scale    m.Vec3
 }
 
 // At is the common case: a position, no rotation, unit scale.
@@ -65,9 +65,9 @@ func At(x, y, z float32) Transform {
 	return Transform{Position: m.Vec3{X: x, Y: y, Z: z}}
 }
 
-// WithScale sets the uniform scale.
+// WithScale sets a uniform scale.
 func (t Transform) WithScale(s float32) Transform {
-	t.Scale = s
+	t.Scale = m.Vec3{X: s, Y: s, Z: s}
 	return t
 }
 
@@ -82,7 +82,7 @@ func (t Transform) WithRotation(q m.Quat) Transform {
 // matrix, so callers never handle one.
 func LookAt(eye, target, up m.Vec3) Transform {
 	view := m.LookAt4(eye, target, up)
-	return Transform{Position: eye, Rotation: quatFromView(view), Scale: 1}
+	return Transform{Position: eye, Rotation: quatFromView(view)}
 }
 
 // quatFromView is a placeholder for m.QuatFromMat4 on the inverse view basis;
@@ -119,9 +119,9 @@ const TagForward PassTag = "forward"
 // of the forward pass without moving the camera.
 type Pass struct {
 	Tag        PassTag
-	Target     TargetRef // zero value means the screen sentinel
-	ClearColor *m.Color  // nil preserves the target's contents
-	ClearDepth *float32
+	Target     TargetRef        // zero value means the screen sentinel
+	ClearColor m.Maybe[m.Color] // absent preserves the target's contents
+	ClearDepth m.Maybe[float32]
 	Order      int
 }
 
@@ -350,7 +350,7 @@ func (q *OpQueue) Box(layers LayerMask, transform Transform, color m.Color) {
 
 // Sphere draws a lit sphere.
 func (q *OpQueue) Sphere(layers LayerMask, center m.Vec3, radius float32, color m.Color) {
-	q.primitive(layers, "sphere", Transform{Position: center, Scale: radius}, color, false)
+	q.primitive(layers, "sphere", Transform{Position: center}.WithScale(radius), color, false)
 }
 
 // Plane draws a lit ground plane of the given size, centred on center.

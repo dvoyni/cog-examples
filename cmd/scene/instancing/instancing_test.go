@@ -72,9 +72,7 @@ const blendBatches = len(paneStands) * PaneBlendPrimitives
 //
 // Nothing else in the suite recomputes the layout, so this is what catches a
 // buildField that dropped a row or stretched a crate it should not have. Every
-// pillar carries a Matrix and no crate does, which is the whole of "non-uniform
-// scale goes through the escape hatch": Transform.Scale is a single float and
-// cannot say 0.5 by 3.4 by 0.5.
+// pillar carries a non-uniform Scale and every crate the uniform crate size.
 func TestTheLatticeIsTheDocumentedRule(t *testing.T) {
 	center := gridSide / 2
 	crates, pillars := 0, 0
@@ -98,19 +96,19 @@ func TestTheLatticeIsTheDocumentedRule(t *testing.T) {
 	if pillars == 0 || pillars >= crates {
 		t.Fatalf("%d pillars among %d crates is not a colonnade", pillars, crates)
 	}
-	matrices := 0
+	stretched := 0
 	for i := range crateTransforms {
-		if crateTransforms[i].Matrix != nil {
-			matrices++
+		if isStretched(crateTransforms[i]) {
+			stretched++
 			continue
 		}
-		if crateTransforms[i].Scale != crateSize {
-			t.Fatalf("crate %d carries scale %v, want the scalar %v",
+		if crateTransforms[i].Scale != m.NewVec3(crateSize) {
+			t.Fatalf("crate %d carries scale %v, want the uniform %v",
 				i, crateTransforms[i].Scale, float32(crateSize))
 		}
 	}
-	if matrices != PillarCount {
-		t.Errorf("%d transforms carry a Matrix and %d are pillars", matrices, PillarCount)
+	if stretched != PillarCount {
+		t.Errorf("%d transforms carry a non-uniform Scale and %d are pillars", stretched, PillarCount)
 	}
 }
 
@@ -194,6 +192,13 @@ func TestThePerInstanceCullAgreesWithThePublishedFrustum(t *testing.T) {
 	}
 }
 
+// isStretched reports whether a transform scales its axes by different amounts,
+// which in this field is what a pillar is.
+func isStretched(transform scene.Transform) bool {
+	s := transform.Scale
+	return s.X != s.Y || s.Y != s.Z
+}
+
 // The non-uniform flag follows the instance, not the call.
 //
 // SCENE_NONUNIFORM is set per instance at pack time, and the pillars are
@@ -209,7 +214,7 @@ func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheCall(t *testing.T) {
 
 	pillars := 0
 	for i := range crateTransforms {
-		if crateTransforms[i].Matrix == nil {
+		if !isStretched(crateTransforms[i]) {
 			continue
 		}
 		sphere := local.Transform(crateTransforms[i].Mat4())
@@ -220,7 +225,7 @@ func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheCall(t *testing.T) {
 	if pillars == 0 {
 		t.Fatal("no pillar survives the reference pose; the flag has nothing to be set on")
 	}
-	squats := len(squatMatrices)
+	squats := squatCount
 	if squats == 0 || squats == bottleCount {
 		t.Fatalf("%d of %d bottles are squat; the row is meant to alternate", squats, bottleCount)
 	}

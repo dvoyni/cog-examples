@@ -110,9 +110,9 @@ fn vs_main(vertex: VertexIn, @builtin(instance_index) index: u32) -> VertexOut {
     var out: VertexOut;
     out.clipPosition = sceneFrame.viewProjection * vec4<f32>(world, 1.0);
     // Every instance this demo records scales uniformly, so the basis is its
-    // own normal matrix and no inverse-transpose is needed. A demo that reached
-    // for the Matrix escape hatch and squashed something would have to take
-    // one, exactly as the bundled shader does for SCENE_NONUNIFORM.
+    // own normal matrix and no inverse-transpose is needed. A demo that
+    // squashed something through a non-uniform Scale would have to take one,
+    // exactly as the bundled shader does for SCENE_NONUNIFORM.
     out.normal = normalize(vec3<f32>(
         dot(instance.world0.xyz, vertex.normal),
         dot(instance.world1.xyz, vertex.normal),

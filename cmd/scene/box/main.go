@@ -8,7 +8,7 @@
 //	go run ./cmd/scene/box
 //
 // What it exercises: the debug vocabulary (Box, Sphere, Plane, Line3D,
-// WireBox); Transform TRS and the scalar Scale; LookAt; an empty Passes
+// WireBox); Transform TRS and WithScale, the uniform spelling of its per-axis Scale; LookAt; an empty Passes
 // yielding the implicit forward pass at the camera id; sun and hemispheric
 // ambient; a point light and a spot light; the linear pipeline and the present
 // pass; every-zero-value-is-the-default; and the m additions.

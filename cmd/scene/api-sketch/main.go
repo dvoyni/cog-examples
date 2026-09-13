@@ -55,7 +55,7 @@ func helloBox(q *OpQueue) {
 		SunColor:     m.White,
 		Passes: []Pass{{
 			Tag:        TagForward,
-			ClearColor: colorPtr(m.NewColorSrgb(0.06, 0.07, 0.09, 1)),
+			ClearColor: m.Some(m.NewColorSrgb(0.06, 0.07, 0.09, 1)),
 		}},
 	})
 
@@ -71,7 +71,7 @@ func helloTriangle(q *OpQueue) {
 		FovY:      1.0472,
 		Near:      0.1,
 		Far:       100,
-		Passes:    []Pass{{Tag: TagForward, ClearColor: colorPtr(m.NewColorSrgb(0.06, 0.07, 0.09, 1))}},
+		Passes:    []Pass{{Tag: TagForward, ClearColor: m.Some(m.NewColorSrgb(0.06, 0.07, 0.09, 1))}},
 	})
 
 	q.Mesh(0, triangleMesh, MeshDraw{
@@ -97,8 +97,8 @@ func animatedCharacter(q *OpQueue, time float32) {
 		Ambient:      m.NewColorSrgb(0.05, 0.06, 0.08, 1),
 		Passes: []Pass{{
 			Tag:        TagForward,
-			ClearColor: colorPtr(m.NewColorSrgb(0.02, 0.02, 0.03, 1)),
-			ClearDepth: ptr[float32](1),
+			ClearColor: m.Some(m.NewColorSrgb(0.02, 0.02, 0.03, 1)),
+			ClearDepth: m.Some[float32](1),
 		}},
 	})
 
@@ -114,7 +114,7 @@ func animatedCharacter(q *OpQueue, time float32) {
 		Passes: []Pass{{
 			Tag:        TagForward,
 			Target:     TargetRef{Name: "portrait"},
-			ClearColor: colorPtr(m.Transparent),
+			ClearColor: m.Some(m.Transparent),
 		}},
 	})
 
@@ -150,8 +150,6 @@ func animatedCharacter(q *OpQueue, time float32) {
 // triangleMesh stands in for the durable mesh handle #22 decides.
 var triangleMesh = MeshRef{Name: "triangle"}
 
-func ptr[T any](v T) *T { return &v }
-
 // dump prints a recorded frame so the sketch has something to run.
 func dump(title string, q *OpQueue) {
 	fmt.Printf("== %s: %d cameras, %d ops ==\n", title, len(q.cameras), q.OpCount())
@@ -162,8 +160,9 @@ func dump(title string, q *OpQueue) {
 		}
 		fmt.Printf("  camera %d cull=%#x\n", c.id, effectiveMask(c.descr.CullMask))
 		for _, p := range passes {
+			_, clears := p.ClearColor.Get()
 			fmt.Printf("    pass %q order=%d target=%s clear=%t\n",
-				p.Tag, int(c.id)+p.Order, targetName(p.Target), p.ClearColor != nil)
+				p.Tag, int(c.id)+p.Order, targetName(p.Target), clears)
 		}
 	}
 	for _, d := range q.draws {
@@ -192,7 +191,3 @@ func targetName(t TargetRef) string {
 	}
 	return t.Name
 }
-
-// colorPtr takes the address of a color, which ClearColor needs and a
-// constructor call cannot give directly.
-func colorPtr(color m.Color) *m.Color { return &color }

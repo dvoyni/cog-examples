@@ -229,9 +229,9 @@ func TestTheDemoLeavesTheDefaultsUnwritten(t *testing.T) {
 	if resting == nil {
 		t.Fatal("no unrotated box was recorded")
 	}
-	if resting.Transform.Scale != 0 || resting.Transform.Matrix != nil {
-		t.Errorf("the resting box wrote Scale %v and Matrix %v; a zero Scale means 1",
-			resting.Transform.Scale, resting.Transform.Matrix)
+	if resting.Transform.Scale != (m.Vec3{}) {
+		t.Errorf("the resting box wrote Scale %v; an all-zero Scale means 1",
+			resting.Transform.Scale)
 	}
 }
 

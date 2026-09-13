@@ -310,8 +310,8 @@ func TestTheCapSelectionFollowsTheCamera(t *testing.T) {
 }
 
 // The plinths and the ground are the frame's only non-uniform bases, and they
-// are all the demo has: Transform.Scale is scalar by design, so a slab has to go
-// through Transform.Matrix. Every model draw's own basis is a uniform scale and
+// are all the demo has: a slab is a Box under a flattened per-axis Scale. Every
+// model draw's own basis is a uniform scale and
 // a rotation, which is what makes the plinths the first rotated non-uniform
 // bases the bundled PBR shades in this tree - Line3D and WireBox build such a
 // matrix in box but are self-lit and never read a normal.

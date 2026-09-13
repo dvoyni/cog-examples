@@ -441,17 +441,16 @@ func (p *Cameras) panels() [2]composited {
 	}
 }
 
-// The depth and colour clears the passes name. They are package-level because
-// Pass takes pointers - nil preserves, and a pointer is the only zero value
-// that can mean "do not clear" without a companion flag.
+// The depth and colour clears the passes name. A Pass takes each as an
+// m.Maybe, whose zero value preserves, so a clear is spelled m.Some(value).
 //
 // The depth clear is 1.0, which is worth saying out loud: depth here is
 // conventional, near maps to 0 and far to 1 and the compare is Less, so the
 // naive ClearDepth of zero clears to the near plane and hides the whole scene.
 var (
-	clearFar     float32 = 1
-	clearMain            = mainClearColor
-	clearMinimap         = mapClearColor
+	clearFar     = m.Some[float32](1)
+	clearMain    = m.Some(mainClearColor)
+	clearMinimap = m.Some(mapClearColor)
 )
 
 // record allocates this frame's targets, declares the three cameras with their
@@ -487,7 +486,7 @@ func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess
 
 	camera := mainCamera(p.time())
 	camera.Passes = []scene.Pass{{
-		Target: mainTarget, ClearColor: &clearMain, ClearDepth: &clearFar,
+		Target: mainTarget, ClearColor: clearMain, ClearDepth: clearFar,
 		// Depth is left at its zero value, which is DepthAuto: a pooled texture
 		// shared with every other same-size automatic pass in the frame. That
 		// is why it must clear depth - it would otherwise inherit whatever the
@@ -515,11 +514,11 @@ func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess
 			// "just before this camera" without the demo knowing what number
 			// the camera took.
 			Tag: TagDepth, Target: gfx.NoTarget(), Depth: prepassDepth,
-			ClearDepth: &clearFar, Order: -1,
+			ClearDepth: clearFar, Order: -1,
 		},
 		{
 			Target: mapTarget, Depth: mapDepth,
-			ClearColor: &clearMinimap, ClearDepth: &clearFar,
+			ClearColor: clearMinimap, ClearDepth: clearFar,
 		},
 	}
 	q.Camera(CameraMap, minimap)

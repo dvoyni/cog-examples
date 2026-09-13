@@ -88,7 +88,7 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 				SunColor:      m.NewColorSrgb(1, 0.98, 0.94, 1),
 				AmbientSky:    m.NewColorSrgb(0.18, 0.22, 0.3, 1),
 				AmbientGround: m.NewColorSrgb(0.1, 0.09, 0.08, 1),
-				Passes:        []scene.Pass{{ClearColor: &clearColor, ClearDepth: clearDepth()}},
+				Passes:        []scene.Pass{{ClearColor: m.Some(clearColor), ClearDepth: m.Some(clearDepth)}},
 			})
 			q.Box(0, scene.At(0, 0, 0).WithRotation(m.QuatAxisAngle(m.Vec3{Y: 1}, p.time)),
 				m.NewColorSrgb(0.42, 0.71, 0.94, 1))
@@ -101,7 +101,4 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 
 // clearDepth is the far plane. Clearing to zero would clear to the near plane
 // and hide the whole scene.
-func clearDepth() *float32 {
-	far := float32(1)
-	return &far
-}
+const clearDepth float32 = 1

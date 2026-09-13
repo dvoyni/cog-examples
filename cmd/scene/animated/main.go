@@ -788,7 +788,7 @@ func foxTransform(x float32) scene.Transform {
 	return scene.Transform{
 		Position: m.Vec3{X: x - middle.X, Y: foxLift, Z: -middle.Z},
 		Rotation: yaw,
-		Scale:    foxScale,
+		Scale:    m.NewVec3(foxScale),
 	}
 }
 
@@ -849,7 +849,7 @@ func interpCellTransform(x float32, row, column int) scene.Transform {
 			X: x + float32(column-1)*interpCell,
 			Y: interpBaseY + float32(row)*interpCell,
 		},
-		Scale: interpScale,
+		Scale: m.NewVec3(interpScale),
 	}
 }
 
@@ -880,7 +880,7 @@ func (a *Animated) recordInterpCap(q *scene.OpQueue, x float32) {
 	q.Model(0, interpPath, scene.ModelDraw{
 		Transform: scene.Transform{
 			Position: m.Vec3{X: x, Y: interpBaseY},
-			Scale:    interpScale,
+			Scale:    m.NewVec3(interpScale),
 		},
 		Plays: a.plays,
 	})
@@ -962,7 +962,7 @@ func (a *Animated) recordStress(q *scene.OpQueue) {
 }
 
 func stressTransform(x float32) scene.Transform {
-	return scene.Transform{Position: m.Vec3{X: x, Y: stressLift}, Scale: stressScale}
+	return scene.Transform{Position: m.Vec3{X: x, Y: stressLift}, Scale: m.NewVec3(stressScale)}
 }
 
 // OverrideWeights is the sparse MorphWeights array the second stress copy

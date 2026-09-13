@@ -125,7 +125,7 @@
 // normal the same way and differ only in a length that normalising removes. The
 // plinths shade identically with SCENE_NONUNIFORM and without it, and a capture
 // of each proves it. What does show the flag is a curved surface under the same
-// escape hatch, which is the instancing demo's eye criterion
+// kind of scale, which is the instancing demo's eye criterion
 // (https://github.com/dvoyni/cog/issues/96); the claim is retracted here rather
 // than deleted, because a falsifiable sentence that was never falsifiable is
 // worth saying out loud once.
@@ -394,8 +394,8 @@ var deepColors = [5]m.Color{
 const groundSide = 60
 
 // The plinth every station stands on: a slab, and the demo's only non-uniform
-// scale. It goes through Transform.Matrix, because Transform.Scale is scalar by
-// design and a slab is not; that is what puts a rotated non-uniform basis
+// scale. Transform.Scale is per axis, so a slab is a Box with a flattened
+// Scale and a yaw; that is what puts a rotated non-uniform basis
 // through the bundled PBR's lit path, which nothing in box or procedural does -
 // Line3D and WireBox build such a matrix but are self-lit and never read a
 // normal.
@@ -495,12 +495,10 @@ var alphaSecondCopy = m.Vec3{X: 0.9, Z: -1.7}
 var referenceEye = eyeAt(orbitTarget, overviewRadius, startAzimuth, startElevation)
 
 // placement is one station's world transform and the plinth beneath it, built
-// once at package init. They are held as matrices rather than rebuilt per frame
-// because a ModelDraw's Transform is read at record time and the plinth's is
-// pointed at.
+// once at package init because neither moves.
 type placement struct {
 	model  scene.Transform
-	plinth m.Mat4
+	plinth scene.Transform
 	// center is the station's own middle, which the close-up camera looks at.
 	center m.Vec3
 	// scale is the uniform scale the model is drawn at, which a light declared
@@ -525,13 +523,13 @@ func buildPlacements() [len(stations)]placement {
 			model: scene.Transform{
 				Position: m.Vec3{X: s.x - middle.X, Y: s.lift, Z: s.z - middle.Z},
 				Rotation: yaw,
-				Scale:    s.scale,
+				Scale:    m.NewVec3(s.scale),
 			},
-			plinth: m.TRS4(
-				m.Vec3{X: s.x, Y: plinthHeight / 2, Z: s.z},
-				yaw,
-				m.Vec3{X: plinthWidth, Y: plinthHeight, Z: plinthDepth},
-			),
+			plinth: scene.Transform{
+				Position: m.Vec3{X: s.x, Y: plinthHeight / 2, Z: s.z},
+				Rotation: yaw,
+				Scale:    m.Vec3{X: plinthWidth, Y: plinthHeight, Z: plinthDepth},
+			},
 			center: m.Vec3{X: s.x, Y: plinthHeight + s.height, Z: s.z},
 			scale:  s.scale,
 		}
@@ -772,7 +770,7 @@ func (p *Pbr) record(q *scene.OpQueue, la scene.LookupAccess) {
 
 	q.Plane(0, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
 	for i := range placements {
-		q.Box(0, scene.Transform{Matrix: &placements[i].plinth}, plinthColor)
+		q.Box(0, placements[i].plinth, plinthColor)
 		q.Model(0, stations[i].path, scene.ModelDraw{Transform: placements[i].model})
 	}
 

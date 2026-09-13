@@ -18,8 +18,7 @@
 //
 // What it exercises: explicit Transforms on ModelDraw; per-instance culling and
 // the contiguous packing of the survivors; the materialID/meshID sort key;
-// SCENE_NONUNIFORM through the Matrix escape hatch, since Transform.Scale is
-// scalar; firstInstance, the per-batch material record and the one instance
+// SCENE_NONUNIFORM under a per-axis Transform.Scale; firstInstance, the per-batch material record and the one instance
 // arena every batch binds a range of; the split a blend-class instanced call
 // takes; and Passes(dst) itself.
 //
@@ -31,16 +30,15 @@
 // five hundred is the whole point.
 //
 // A colonnade stands on the sub-lattice where both indices are 2 mod 6. Those
-// crates are stretched into pillars through Transform.Matrix, which is the
-// deliberate route for non-uniform scale: Transform.Scale is a single float, so
-// a slab or a column has to replace the transform whole. They are entries in
+// crates are stretched into pillars by a per-axis Transform.Scale. They are
+// entries in
 // the same Transforms slice as the cubes around them, so one call carries both
 // - which is what makes SCENE_NONUNIFORM per instance rather than per draw.
 // The courtyard takes the one pillar site that falls inside it; the lattice is
 // the rule and the courtyard is the hole, and the hole wins.
 //
 // Five water bottles stand in the courtyard, every other one squashed into a
-// wide low one through the same escape hatch, and two glass screens stand in
+// wide low one by the same kind of per-axis Scale, and two glass screens stand in
 // front of them at two different depths. The screens are the exception to
 // batching: their two BLEND primitives split back into one single-instance
 // batch each, because sorting an instanced set by its nearest instance would
@@ -269,8 +267,7 @@ const (
 
 // The colonnade: the sub-lattice both of whose indices are pillarOffset mod
 // pillarStride carries a pillar instead of a crate. A pillar is the same cube
-// under a non-uniform scale, which Transform.Scale cannot express, so it goes
-// through Transform.Matrix.
+// under a non-uniform Transform.Scale.
 const (
 	pillarStride = 6
 	pillarOffset = 2
@@ -285,8 +282,8 @@ const (
 	bottleSpacing = 2.6
 	bottleZ       = -2.4
 
-	// Every other bottle is squashed through Transform.Matrix into a wide, low
-	// one, and yawed while it is at it. That is the frame's one non-uniform
+	// Every other bottle is squashed by a per-axis Scale into a wide, low one,
+	// and yawed while it is at it. That is the frame's one non-uniform
 	// basis on a curved surface, and it is here because a box cannot show what
 	// SCENE_NONUNIFORM is for: every face normal of an axis-aligned box is an
 	// eigenvector of an axis-aligned scale, so the world matrix and its
@@ -452,52 +449,36 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 		}
 }
 
-// The three transform lists, built once at package init. They are package-level
-// because they never change: the field is the demo's fixed subject, and a
-// Transform carrying a Matrix points at a matrix that has to outlive the flush
-// that reads it.
+// The transform lists, built once at package init. They are package-level
+// because they never change: the field is the demo's fixed subject.
 var (
-	crateTransforms, pillarMatrices = buildField()
-	bottleTransforms, squatMatrices = buildBottles()
-	paneTransforms                  = buildPanes()
-	stackTransforms                 = buildStack()
+	crateTransforms, pillarCount = buildField()
+	bottleTransforms, squatCount = buildBottles()
+	paneTransforms               = buildPanes()
+	stackTransforms              = buildStack()
 )
 
 // buildField lays out the crate lattice, leaving the courtyard out of the
 // middle and stretching the colonnade's sites into pillars.
 //
-// The pillar matrices are returned alongside because a Transform.Matrix is a
-// pointer: the slice they live in is what keeps them addressable, and the count
-// of it is what the HUD and the assertions call the colonnade rather than a
-// number anyone worked out by hand.
-func buildField() ([]scene.Transform, []m.Mat4) {
+// The pillar count is returned alongside, and it is what the HUD and the
+// assertions call the colonnade rather than a number anyone worked out by hand.
+func buildField() ([]scene.Transform, int) {
 	center := gridSide / 2
-	pillars := make([]m.Mat4, 0, gridSide*gridSide/(pillarStride*pillarStride)+1)
-	// The pillar matrices are sized and written before any transform points at
-	// one, because appending to the slice while a Transform already held a
-	// pointer into it would move the matrix out from under that pointer.
-	for i := range gridSide {
-		for j := range gridSide {
-			if inCourtyard(i, j, center) || !isPillar(i, j) {
-				continue
-			}
-			pillars = append(pillars, m.TRS4(
-				m.Vec3{X: latticeAt(i, center) - pillarWidth/2, Z: latticeAt(j, center) - pillarWidth/2},
-				m.Quat{W: 1},
-				m.Vec3{X: pillarWidth, Y: pillarHeight, Z: pillarWidth},
-			))
-		}
-	}
 	transforms := make([]scene.Transform, 0, gridSide*gridSide)
-	at := 0
+	pillars := 0
 	for i := range gridSide {
 		for j := range gridSide {
 			if inCourtyard(i, j, center) {
 				continue
 			}
 			if isPillar(i, j) {
-				transforms = append(transforms, scene.Transform{Matrix: &pillars[at]})
-				at++
+				transforms = append(transforms, scene.Transform{
+					Position: m.Vec3{X: latticeAt(i, center) - pillarWidth/2, Z: latticeAt(j, center) - pillarWidth/2},
+					Rotation: m.Quat{W: 1},
+					Scale:    m.Vec3{X: pillarWidth, Y: pillarHeight, Z: pillarWidth},
+				})
+				pillars++
 				continue
 			}
 			transforms = append(transforms, scene.Transform{
@@ -506,7 +487,7 @@ func buildField() ([]scene.Transform, []m.Mat4) {
 					Y: -crateMinY * crateSize,
 					Z: latticeAt(j, center) - crateSize/2,
 				},
-				Scale: crateSize,
+				Scale: m.NewVec3(crateSize),
 			})
 		}
 	}
@@ -538,24 +519,17 @@ func abs(v int) int {
 
 // buildBottles stands the bottles in a row across the courtyard, each lifted by
 // its own minY so it rests on the floor rather than sinking into it.
-func buildBottles() ([]scene.Transform, []m.Mat4) {
-	squats := make([]m.Mat4, 0, bottleCount)
-	for i := range bottleCount {
-		if !isSquat(i) {
-			continue
-		}
-		squats = append(squats, m.TRS4(
-			m.Vec3{X: spread(i, bottleCount, bottleSpacing), Z: bottleZ},
-			m.QuatAxisAngle(m.Vec3{Y: 1}, squatYaw),
-			m.Vec3{X: bottleScale * squatWiden, Y: bottleScale * squatFlatten, Z: bottleScale * squatWiden},
-		))
-	}
+func buildBottles() ([]scene.Transform, int) {
 	out := make([]scene.Transform, bottleCount)
-	at := 0
+	squats := 0
 	for i := range out {
 		if isSquat(i) {
-			out[i] = scene.Transform{Matrix: &squats[at]}
-			at++
+			out[i] = scene.Transform{
+				Position: m.Vec3{X: spread(i, bottleCount, bottleSpacing), Z: bottleZ},
+				Rotation: m.QuatAxisAngle(m.Vec3{Y: 1}, squatYaw),
+				Scale:    m.Vec3{X: bottleScale * squatWiden, Y: bottleScale * squatFlatten, Z: bottleScale * squatWiden},
+			}
+			squats++
 			continue
 		}
 		out[i] = scene.Transform{
@@ -564,7 +538,7 @@ func buildBottles() ([]scene.Transform, []m.Mat4) {
 				Y: -bottleMinY * bottleScale,
 				Z: bottleZ,
 			},
-			Scale: bottleScale,
+			Scale: m.NewVec3(bottleScale),
 		}
 	}
 	return out, squats
@@ -581,7 +555,7 @@ func buildPanes() []scene.Transform {
 	for i, stand := range paneStands {
 		out[i] = scene.Transform{
 			Position: m.Vec3{X: stand.X, Y: -paneMinY * paneScale, Z: stand.Y},
-			Scale:    paneScale,
+			Scale:    m.NewVec3(paneScale),
 		}
 	}
 	return out
@@ -597,7 +571,7 @@ func buildStack() []scene.Transform {
 				Y: float32(i) * stackScale,
 				Z: stackCorner.Y - stackScale/2,
 			},
-			Scale: stackScale,
+			Scale: m.NewVec3(stackScale),
 		}
 	}
 	return out
@@ -775,7 +749,7 @@ const (
 // the number cannot drift apart.
 var (
 	CrateCount  = len(crateTransforms)
-	PillarCount = len(pillarMatrices)
+	PillarCount = pillarCount
 )
 
 // debugShapes is how many draws the frame takes from box's vocabulary: the

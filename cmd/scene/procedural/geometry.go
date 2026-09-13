@@ -39,7 +39,7 @@ var demoVertexLayout = [...]gfx.VertexAttr{
 
 // The ridge: a heightfield over the unit square in X and Z, rebuilt and
 // re-baked every frame through UpdateMesh. It is authored at unit size and
-// placed by its transform's scalar Scale, so the sphere below is local space
+// placed by its transform's uniform Scale, so the sphere below is local space
 // and the world sphere follows the scale for free.
 const (
 	// ridgeCells is the grid the ridge starts at, and ridgeCoarseCells the one
