@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // Compositing a camera's target onto the screen, which is what split-screen

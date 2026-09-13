@@ -9,12 +9,12 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/input"
-	"github.com/dvoyni/cog/m"
-	"github.com/dvoyni/cog/scene"
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/input"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // run starts the demo headless over the vendored asset set and steps until the

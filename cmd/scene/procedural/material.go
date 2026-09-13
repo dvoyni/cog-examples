@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
 )
 
 // The demo's own material: a whole gfx.MaterialDescr with inline WGSL, which is

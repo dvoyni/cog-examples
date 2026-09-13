@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
 )
 
 // The repainted station's material: the whole of what "a replacement Material"

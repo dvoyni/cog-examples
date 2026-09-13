@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
 )
 
 // referenceStep is the step the assertions below are written against: two

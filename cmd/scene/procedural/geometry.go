@@ -4,8 +4,8 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // Vertex is the demo's own vertex, and the reason it needs a material of its

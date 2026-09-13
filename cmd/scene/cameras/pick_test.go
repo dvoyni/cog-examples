@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // The three spheres the picking tests shoot at: two on the +X axis, one off it.

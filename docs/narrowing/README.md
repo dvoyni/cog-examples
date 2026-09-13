@@ -58,7 +58,7 @@ like any other surface, drawing **light grey**. That is the specified behaviour
 of the octahedral canonical, but the spec framed +Z as a "no NaN" safety
 property and never said it would change how normal-less geometry shades.
 `primitivemodes-before-after.png` is the pair, and it is recorded in
-`scene/docs/specs/mesh.md`.
+`bundles/scene/docs/specs/mesh.md`.
 
 Everything else is quantisation noise or the demos' own counters:
 

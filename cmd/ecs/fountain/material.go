@@ -4,11 +4,11 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/dvoyni/cog/ecs"
-	"github.com/dvoyni/cog/ecsscene"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/m"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecsscene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // Vertex is the demo's own layout, the procedural example's approach: a custom

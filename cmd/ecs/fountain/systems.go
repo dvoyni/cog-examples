@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/ecs"
-	"github.com/dvoyni/cog/ecsscene"
-	"github.com/dvoyni/cog/gfx"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecsscene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/kernel"
-	"github.com/dvoyni/cog/m"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // setup bakes the two meshes through scene's lookup and spawns everything that

@@ -21,13 +21,13 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dvoyni/cog/app"
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/input"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/input"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/storage"
 	"github.com/dvoyni/cog/kernel"
-	"github.com/dvoyni/cog/scene"
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/slots/app"
 )
 
 // The viewport every headless run starts at: a 16:9 window at 2x scale, so a

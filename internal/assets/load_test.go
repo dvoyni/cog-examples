@@ -7,8 +7,8 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/scene"
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/storage"
 )
 
 // The vendored set, by the path a demo names. Every entry is expected to reach
@@ -49,7 +49,7 @@ func engine(t *testing.T) *headless.Engine {
 }
 
 // Every vendored asset loads. This is the assertion the loader is actually
-// judged by: the unit tests in cog/scene build documents in memory and can only
+// judged by: the unit tests in cog/bundles/scene build documents in memory and can only
 // exercise the shapes their author thought of, where the Khronos set carries
 // u8 indices, a non-indexed primitive, all seven topologies, quantised meshes,
 // nine textures over three images, and an extension nobody implemented.

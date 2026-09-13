@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/extensions/storage"
 )
 
 // TestTheVendoredSetIsReachable is this package's whole reason to exist: a

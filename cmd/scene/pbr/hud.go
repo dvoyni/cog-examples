@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // The HUD, drawn with canvas.Text and the font canvas embeds - a text op with an

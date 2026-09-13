@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // HUD is one step's census beside the flush that drew that step.

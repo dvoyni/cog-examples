@@ -5,8 +5,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // The demo's vertex is not scene.Vertex, and that is the whole point: it is 36

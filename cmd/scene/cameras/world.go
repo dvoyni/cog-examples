@@ -3,8 +3,8 @@ package main
 import (
 	"math"
 
-	"github.com/dvoyni/cog/m"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // The demo's world, and the two cameras that look at it. Everything here is a

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/extensions/storage"
 )
 
 // EnvDir overrides the search, for a demo run from somewhere unusual. It is a

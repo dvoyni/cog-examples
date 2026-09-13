@@ -3,7 +3,7 @@ package assets_test
 import (
 	"testing"
 
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/scene"
 )
 
 // The vendored files the morph path is judged against.

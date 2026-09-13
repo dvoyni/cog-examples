@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/m"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // The 2D half of the frame: the backdrop, the two composited panels, the

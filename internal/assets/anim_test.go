@@ -5,14 +5,14 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/scene"
+	"github.com/dvoyni/cog/bundles/scene"
 )
 
 // The vendored files the animation bake is judged against.
 //
 // Fox is the skinned asset: a real 24-joint rig with three clips, an inverse
 // bind per joint and every vertex weighted across four influences, which is the
-// shape no document built in memory in cog/scene reproduces. CesiumMilkTruck is
+// shape no document built in memory in cog/bundles/scene reproduces. CesiumMilkTruck is
 // the degenerate-joint asset: its wheels are rigid node animation, which is
 // ordinary glTF and the case the "any node a clip steers becomes a joint" rule
 // exists for.

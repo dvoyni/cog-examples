@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dvoyni/cog/m"
+import "github.com/dvoyni/cog/libs/m"
 
 // A panel is one camera's viewport: a temporary target the camera renders into,
 // and the rectangle of the logical screen canvas composites that target onto.

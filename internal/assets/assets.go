@@ -31,7 +31,7 @@
 package assets
 
 import (
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/extensions/storage"
 )
 
 const (

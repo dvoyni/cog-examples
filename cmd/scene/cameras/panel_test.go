@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // The two panels are deliberately unlike each other, and every test here leans

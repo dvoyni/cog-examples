@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dvoyni/cog/m"
+import "github.com/dvoyni/cog/libs/m"
 
 // The logical screen the whole frame is laid out in. The window is fitted to
 // it, so the split stays put at any window size.

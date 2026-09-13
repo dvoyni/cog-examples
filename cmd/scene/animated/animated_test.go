@@ -7,9 +7,9 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/scene"
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/storage"
 )
 
 // run starts the demo headless over the vendored asset set and steps until

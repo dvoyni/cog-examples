@@ -11,7 +11,7 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/extensions/storage"
 )
 
 // Global is the JavaScript global cmd/web/index.html leaves the unpacked asset

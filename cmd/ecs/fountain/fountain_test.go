@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dvoyni/cog/ecs"
-	"github.com/dvoyni/cog/ecsscene"
-	"github.com/dvoyni/cog/scene"
-	"github.com/dvoyni/cog/storage"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecsscene"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/storage"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"

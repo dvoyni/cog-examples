@@ -87,16 +87,16 @@ import (
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
-	"github.com/dvoyni/cog/app"
-	"github.com/dvoyni/cog/canvas"
-	"github.com/dvoyni/cog/gfx"
-	"github.com/dvoyni/cog/input"
+	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/input"
+	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/extensions/gfx"
+	"github.com/dvoyni/cog/extensions/mcpserver"
+	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
-	"github.com/dvoyni/cog/m"
-	"github.com/dvoyni/cog/mcpserver"
-	"github.com/dvoyni/cog/scene"
-	"github.com/dvoyni/cog/storage"
-	"github.com/dvoyni/cog/wgpu"
+	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/app"
 )
 
 // The logical screen the HUD is laid out in, and the window size the reference

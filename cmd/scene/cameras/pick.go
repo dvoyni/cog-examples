@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dvoyni/cog/m"
+import "github.com/dvoyni/cog/libs/m"
 
 // pickable is one thing in this demo's world that a click can name: a
 // world-space bounding sphere and a label for the HUD.

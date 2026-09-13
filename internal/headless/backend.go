@@ -3,7 +3,7 @@ package headless
 import (
 	"strings"
 
-	"github.com/dvoyni/cog/gfx"
+	"github.com/dvoyni/cog/extensions/gfx"
 )
 
 // Backend is a gfx.Backend that mints ids and records what the frame asked the
@@ -99,7 +99,7 @@ type DrawCall struct {
 // declares.
 const sceneShaderPath = "builtin/scene/scene.wgsl"
 
-// sceneShaderLayout mirrors scene/builtin/scene/scene.wgsl's declared bindings
+// sceneShaderLayout mirrors bundles/scene/builtin/scene/scene.wgsl's declared bindings
 // with both defines supplied, all seventeen of them. sceneVariantLayout cuts it
 // down to what a variant actually declares.
 //

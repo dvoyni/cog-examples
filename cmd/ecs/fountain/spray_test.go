@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dvoyni/cog/m"
+	"github.com/dvoyni/cog/libs/m"
 )
 
 // Every mote expires above the ground: its span is derived from its own rise,
