@@ -539,7 +539,7 @@ type memory struct {
 }
 
 // rate is the HUD's frames-per-second meter, and the demo's only wall clock. It
-// cannot come from the update event's Dt, which is the driver's fixed timestep,
+// cannot come from the update event's Dt, which is app's fixed timestep,
 // nor from the step counter, which is the same number however long a frame took.
 type rate struct {
 	window    time.Time
