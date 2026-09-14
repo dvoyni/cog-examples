@@ -381,7 +381,7 @@ type Instancing struct {
 }
 
 // rate is the HUD's frames-per-second meter, and the demo's only wall clock. It
-// cannot come from the update event's Dt, which is the driver's fixed timestep,
+// cannot come from the update event's Dt, which is app's fixed timestep,
 // nor from the step counter, which is the same number however long a frame
 // took. It counts frames over a window rather than averaging 1/interval per
 // frame, so a startup spike is one frame in the count instead of a reading that

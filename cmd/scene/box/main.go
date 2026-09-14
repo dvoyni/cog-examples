@@ -160,7 +160,7 @@ type Box struct {
 
 // rate is the HUD's frames-per-second meter, and the demo's only wall clock.
 //
-// It cannot come from the update event's Dt: that is the driver's *fixed*
+// It cannot come from the update event's Dt: that is app's *fixed*
 // timestep, so reading it back would report the rate the demo was asked to run
 // at rather than the rate it managed. Nor can it come from the step counter,
 // which is the whole point of accumulated fixed steps - step 120 is step 120
