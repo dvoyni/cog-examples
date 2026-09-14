@@ -10,10 +10,10 @@ import (
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/gfx"
 	"github.com/dvoyni/cog/slots/storage"
 	"github.com/qmuntal/gltf"
 )
@@ -865,9 +865,9 @@ func TestAReplacementMaterialIsADifferentMaterialAndAMergeIsNot(t *testing.T) {
 // scenePipelines is every pipeline the frame built from the bundled scene
 // shader, which is how a test picks scene's own out of a frame that also drew a
 // HUD.
-func scenePipelines(engine *headless.Engine) []gpu.PipelineDesc {
+func scenePipelines(engine *headless.Engine) []gfx.PipelineDesc {
 	backend := engine.Backend()
-	var out []gpu.PipelineDesc
+	var out []gfx.PipelineDesc
 	for _, desc := range backend.Pipelines {
 		if backend.ShaderPath(desc.Shader) == headless.SceneShaderPath {
 			out = append(out, desc)
@@ -908,7 +908,7 @@ func TestEveryPrimitiveModeBecomesAListAndPointsIsSkipped(t *testing.T) {
 	}
 	for _, desc := range scenePipelines(engine) {
 		switch desc.Topology {
-		case gpu.TopologyTriangleList, gpu.TopologyLineList:
+		case gfx.TopologyTriangleList, gfx.TopologyLineList:
 		default:
 			t.Errorf("a scene pipeline assembles as %v; a model mesh is always a list",
 				desc.Topology)
@@ -935,7 +935,7 @@ func TestTheConvertedLinePrimitivesReachALinePipeline(t *testing.T) {
 	engine, _ := run(t)
 	lines := 0
 	for _, desc := range scenePipelines(engine) {
-		if desc.Topology == gpu.TopologyLineList {
+		if desc.Topology == gfx.TopologyLineList {
 			lines++
 		}
 	}

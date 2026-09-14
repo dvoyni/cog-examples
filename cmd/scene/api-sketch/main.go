@@ -11,8 +11,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/gfx"
 )
 
 // The demo's two cameras. A CameraID is the default gfx Order for the camera's

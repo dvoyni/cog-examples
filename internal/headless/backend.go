@@ -3,23 +3,23 @@ package headless
 import (
 	"strings"
 
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
+	"github.com/dvoyni/cog/slots/gfx"
 )
 
-// Backend is a gpu.Backend that mints ids and records what the frame asked the
+// Backend is a gfx.Backend that mints ids and records what the frame asked the
 // GPU to do. It renders nothing: every number a demo test asserts was decided
 // in scene's update-thread flush, before anything here was called.
 type Backend struct {
 	BakedTextures  int
 	MippedTextures int
-	nextTexture    gpu.TextureID
-	nextBuffer     gpu.BufferID
+	nextTexture    gfx.TextureID
+	nextBuffer     gfx.BufferID
 	nextID         uint32
 	// shaders remembers each shader's label, which is its resource path, so
 	// ShaderLayout can answer for the right one.
-	shaders map[gpu.ShaderID]string
+	shaders map[gfx.ShaderID]string
 
-	Passes   []gpu.PassDesc
+	Passes   []gfx.PassDesc
 	Draws    []DrawCall
 	Presents int
 	Bakes    int
@@ -39,11 +39,11 @@ type Backend struct {
 	// FrontFace - and a pipeline description is the only place a test with no
 	// GPU can read them back. gfx interns pipelines, so this is one entry per
 	// distinct state the frame asked for rather than one per draw.
-	Pipelines []gpu.PipelineDesc
+	Pipelines []gfx.PipelineDesc
 	// pipelines is the same descriptions by id, and current the pipeline the
 	// replay last set, so a binding can say which pipeline read it.
-	pipelines map[gpu.PipelineID]gpu.PipelineDesc
-	current   gpu.PipelineID
+	pipelines map[gfx.PipelineID]gfx.PipelineDesc
+	current   gfx.PipelineID
 	// Baked is the bytes of every durable buffer upload, by id. Scene's frame
 	// arenas reach the backend this way, so it is how a test reads back what
 	// the flush packed - the per-pass sceneFrame block above all, whose
@@ -54,14 +54,14 @@ type Backend struct {
 	// The bytes are copied rather than retained, because the queue's arenas are
 	// reused frame to frame and a retained slice would report the newest frame
 	// for every step a test took.
-	Baked map[gpu.BufferID][]byte
+	Baked map[gfx.BufferID][]byte
 	// TextShaderLayout is the layout reported for a shader built from inline
 	// source rather than from a resource path. Only a demo with its own WGSL
 	// has one, and only that demo knows what it declares, so a test sets this
 	// rather than the file mirroring it the way it mirrors the bundled
 	// shader's below. Left zero, an inline shader reflects nothing, which is
 	// what every demo that has none wants.
-	TextShaderLayout gpu.ShaderLayout
+	TextShaderLayout gfx.ShaderLayout
 }
 
 // BufferBinding is one storage buffer bound to one slot of one draw.
@@ -74,8 +74,8 @@ type Backend struct {
 // shader read filters on Pipeline first.
 type BufferBinding struct {
 	Group, Binding int
-	Buffer         gpu.BufferID
-	Pipeline       gpu.PipelineID
+	Buffer         gfx.BufferID
+	Pipeline       gfx.PipelineID
 	Offset, Size   int
 }
 
@@ -89,7 +89,7 @@ type BufferBinding struct {
 type DrawCall struct {
 	First, Count, Instances, FirstInstance int
 	Indexed                                bool
-	Pipeline                               gpu.PipelineID
+	Pipeline                               gfx.PipelineID
 }
 
 // sceneShaderPath is the bundled scene shader, the one shader whose reflected
@@ -114,7 +114,7 @@ const sceneShaderPath = "builtin/scene/scene.wgsl"
 // The seven storage buffers are also the whole of scene's budget against the
 // browser floor of eight, so a mirror that has drifted short of the real
 // shader would let a demo pass a limit check the browser will fail.
-var sceneShaderLayout = gpu.ShaderLayout{Resources: []gpu.ShaderResource{
+var sceneShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
 	{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
 	{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
 	{Name: "sceneAnim", StorageBuffer: true, Group: 0, Binding: 2},
@@ -137,27 +137,27 @@ var sceneShaderLayout = gpu.ShaderLayout{Resources: []gpu.ShaderResource{
 // Ready is true from the start: the fake has no device to wait for.
 func (b *Backend) Ready() bool { return true }
 
-func (b *Backend) NewTexture() gpu.TextureID { b.nextTexture++; return b.nextTexture }
-func (b *Backend) NewBuffer() gpu.BufferID   { b.nextBuffer++; return b.nextBuffer }
+func (b *Backend) NewTexture() gfx.TextureID { b.nextTexture++; return b.nextTexture }
+func (b *Backend) NewBuffer() gfx.BufferID   { b.nextBuffer++; return b.nextBuffer }
 
-func (b *Backend) NewSampler(gpu.SamplerDesc) (gpu.SamplerID, error) {
+func (b *Backend) NewSampler(gfx.SamplerDesc) (gfx.SamplerID, error) {
 	b.nextID++
-	return gpu.SamplerID(b.nextID), nil
+	return gfx.SamplerID(b.nextID), nil
 }
 
-func (b *Backend) FreeSampler(gpu.SamplerID) {}
+func (b *Backend) FreeSampler(gfx.SamplerID) {}
 
-func (b *Backend) NewShader(desc gpu.ShaderDesc) (gpu.ShaderID, error) {
+func (b *Backend) NewShader(desc gfx.ShaderDesc) (gfx.ShaderID, error) {
 	b.nextID++
-	id := gpu.ShaderID(b.nextID)
+	id := gfx.ShaderID(b.nextID)
 	if b.shaders == nil {
-		b.shaders = map[gpu.ShaderID]string{}
+		b.shaders = map[gfx.ShaderID]string{}
 	}
 	b.shaders[id] = desc.Label
 	return id, nil
 }
 
-func (b *Backend) FreeShader(gpu.ShaderID) {}
+func (b *Backend) FreeShader(gfx.ShaderID) {}
 
 // textShaderLabel is the label gfx gives a shader built from inline source.
 // Every resource shader is labelled by its path instead, so this is exactly the
@@ -172,14 +172,14 @@ const textShaderLabel = "gfx.shader"
 // buffers where a skinned, morphed draw declares seventeen and seven. A mirror
 // that answered seventeen for every variant would bind group 2 on a draw that
 // never declared it, which is the one thing this fake exists to catch.
-func sceneVariantLayout(label string) (gpu.ShaderLayout, bool) {
+func sceneVariantLayout(label string) (gfx.ShaderLayout, bool) {
 	supply, ok := strings.CutPrefix(label, sceneShaderPath)
 	if !ok {
-		return gpu.ShaderLayout{}, false
+		return gfx.ShaderLayout{}, false
 	}
 	skin := strings.Contains(supply, "SCENE_SKIN")
 	morph := strings.Contains(supply, "SCENE_MORPH")
-	declared := func(resource gpu.ShaderResource) bool {
+	declared := func(resource gfx.ShaderResource) bool {
 		switch resource.Name {
 		case "scenePoses", "sceneSkinJoints":
 			return skin
@@ -190,7 +190,7 @@ func sceneVariantLayout(label string) (gpu.ShaderLayout, bool) {
 		}
 		return true
 	}
-	layout := gpu.ShaderLayout{Resources: make([]gpu.ShaderResource, 0, len(sceneShaderLayout.Resources))}
+	layout := gfx.ShaderLayout{Resources: make([]gfx.ShaderResource, 0, len(sceneShaderLayout.Resources))}
 	for _, resource := range sceneShaderLayout.Resources {
 		if declared(resource) {
 			layout.Resources = append(layout.Resources, resource)
@@ -203,7 +203,7 @@ func sceneVariantLayout(label string) (gpu.ShaderLayout, bool) {
 // the test declared, and for nothing else. Canvas's own bindings are not what a
 // demo test asserts, and a fake union layout would bind canvas's parameters at
 // scene's slots.
-func (b *Backend) ShaderLayout(id gpu.ShaderID) gpu.ShaderLayout {
+func (b *Backend) ShaderLayout(id gfx.ShaderID) gfx.ShaderLayout {
 	label := b.shaders[id]
 	if layout, ok := sceneVariantLayout(label); ok {
 		return layout
@@ -211,29 +211,29 @@ func (b *Backend) ShaderLayout(id gpu.ShaderID) gpu.ShaderLayout {
 	if strings.HasPrefix(label, textShaderLabel) {
 		return b.TextShaderLayout
 	}
-	return gpu.ShaderLayout{}
+	return gfx.ShaderLayout{}
 }
 
-func (b *Backend) NewPipeline(desc gpu.PipelineDesc) (gpu.PipelineID, error) {
+func (b *Backend) NewPipeline(desc gfx.PipelineDesc) (gfx.PipelineID, error) {
 	b.nextID++
-	id := gpu.PipelineID(b.nextID)
+	id := gfx.PipelineID(b.nextID)
 	b.Pipelines = append(b.Pipelines, desc)
 	if b.pipelines == nil {
-		b.pipelines = map[gpu.PipelineID]gpu.PipelineDesc{}
+		b.pipelines = map[gfx.PipelineID]gfx.PipelineDesc{}
 	}
 	b.pipelines[id] = desc
 	return id, nil
 }
 
 // PipelineOf is one pipeline's description, by the id a binding names.
-func (b *Backend) PipelineOf(id gpu.PipelineID) gpu.PipelineDesc { return b.pipelines[id] }
+func (b *Backend) PipelineOf(id gfx.PipelineID) gfx.PipelineDesc { return b.pipelines[id] }
 
 // ShaderPath is the root source a shader was built from. A label carries the
 // variant's supply after the path, and this drops it: what a test picks out of a
 // frame is scene's shader, whichever variant this draw needed. A shader built
 // from inline source has textShaderLabel instead, so this is also how a test
 // tells a demo's own WGSL from a bundled shader.
-func (b *Backend) ShaderPath(id gpu.ShaderID) string {
+func (b *Backend) ShaderPath(id gfx.ShaderID) string {
 	path, _, _ := strings.Cut(b.shaders[id], " [")
 	return path
 }
@@ -241,7 +241,7 @@ func (b *Backend) ShaderPath(id gpu.ShaderID) string {
 // ShaderSupply is the defines and consts a shader was built with, as the label
 // spells them, and empty for a shader built with none. It is what a test uses to
 // tell one variant of the bundled shader from another.
-func (b *Backend) ShaderSupply(id gpu.ShaderID) string {
+func (b *Backend) ShaderSupply(id gfx.ShaderID) string {
 	_, supply, ok := strings.Cut(b.shaders[id], " [")
 	if !ok {
 		return ""
@@ -257,7 +257,7 @@ const SceneShaderPath = sceneShaderPath
 
 // IsScenePipeline reports whether a pipeline was built from the bundled scene
 // shader.
-func (b *Backend) IsScenePipeline(id gpu.PipelineID) bool {
+func (b *Backend) IsScenePipeline(id gfx.PipelineID) bool {
 	desc, ok := b.pipelines[id]
 	return ok && b.ShaderPath(desc.Shader) == sceneShaderPath
 }
@@ -266,7 +266,7 @@ func (b *Backend) IsScenePipeline(id gpu.PipelineID) bool {
 // what says which variant of the bundled scene shader it draws. Draws through
 // one pipeline all share one variant, so it is also how a test groups a frame's
 // bindings by what the shader declared.
-func (b *Backend) PipelineSupply(id gpu.PipelineID) string {
+func (b *Backend) PipelineSupply(id gfx.PipelineID) string {
 	desc, ok := b.pipelines[id]
 	if !ok {
 		return ""
@@ -276,40 +276,40 @@ func (b *Backend) PipelineSupply(id gpu.PipelineID) string {
 
 // SceneVariantResources is the bindings one variant of the bundled scene shader
 // declares, named by the supply PipelineSupply reports.
-func SceneVariantResources(supply string) []gpu.ShaderResource {
+func SceneVariantResources(supply string) []gfx.ShaderResource {
 	layout, _ := sceneVariantLayout(sceneShaderPath + " [" + supply + "]")
 	return layout.Resources
 }
 
-func (b *Backend) FreePipeline(gpu.PipelineID) {}
+func (b *Backend) FreePipeline(gfx.PipelineID) {}
 
 // ScreenFramebuffer reports the physical surface the present pass draws into,
 // which is also the size the frame buffer is allocated at.
-func (b *Backend) ScreenFramebuffer() (gpu.TextureViewID, int, int) {
+func (b *Backend) ScreenFramebuffer() (gfx.TextureViewID, int, int) {
 	return 1, FramebufferWidth, FramebufferHeight
 }
 
 // Limits reports the web floor rather than a generous native device's, so a
 // headless run fails on a limit a browser would fail on.
-func (b *Backend) Limits() gpu.Limits { return gpu.DefaultLimits }
+func (b *Backend) Limits() gfx.Limits { return gfx.DefaultLimits() }
 
-func (b *Backend) TextureView(gpu.TextureID, int, int) gpu.TextureViewID {
+func (b *Backend) TextureView(gfx.TextureID, int, int) gfx.TextureViewID {
 	b.nextID++
-	return gpu.TextureViewID(b.nextID)
+	return gfx.TextureViewID(b.nextID)
 }
 
-func (b *Backend) Execute(queue *gpu.Queue) {
+func (b *Backend) Execute(queue *gfx.Queue) {
 	queue.ReplayBakes(b)
 	queue.ReplayPasses(b)
 	queue.ReplayReleases(b)
 }
 
-func (b *Backend) BeginPass(desc gpu.PassDesc) gpu.RenderPass {
+func (b *Backend) BeginPass(desc gfx.PassDesc) gfx.RenderPass {
 	b.Passes = append(b.Passes, desc)
 	return b
 }
 
-func (b *Backend) EndPass(gpu.RenderPass) {}
+func (b *Backend) EndPass(gfx.RenderPass) {}
 func (b *Backend) Present()               { b.Presents++ }
 
 // Capture and TakeCapture exist so a recording backend satisfies gfx's
@@ -317,9 +317,9 @@ func (b *Backend) Present()               { b.Presents++ }
 // rasterizes nothing, so there are no pixels to hand back: TakeCapture always
 // says it has none, which is the honest answer rather than an empty image that
 // a differencing test could mistake for a frame.
-func (b *Backend) Capture(gpu.CaptureDesc) {}
+func (b *Backend) Capture(gfx.CaptureDesc) {}
 
-func (b *Backend) TakeCapture() (gpu.Capture, bool) { return gpu.Capture{}, false }
+func (b *Backend) TakeCapture() (gfx.Capture, bool) { return gfx.Capture{}, false }
 
 // TransitionTextures records the barriers gfx placed, each tagged with the pass
 // it precedes, so a demo test can assert that a render target it composites was
@@ -329,7 +329,7 @@ func (b *Backend) TakeCapture() (gpu.Capture, bool) { return gpu.Capture{}, fals
 //
 // Like Passes and Draws, these accumulate across every frame since the engine
 // started - scan backwards.
-func (b *Backend) TransitionTextures(transitions []gpu.TextureTransition) {
+func (b *Backend) TransitionTextures(transitions []gfx.TextureTransition) {
 	for _, transition := range transitions {
 		b.Transitions = append(b.Transitions, PlacedTransition{
 			TextureTransition: transition, BeforePass: len(b.Passes),
@@ -340,14 +340,14 @@ func (b *Backend) TransitionTextures(transitions []gpu.TextureTransition) {
 // PlacedTransition is one barrier and the index into Passes of the pass it was
 // recorded ahead of.
 type PlacedTransition struct {
-	gpu.TextureTransition
+	gfx.TextureTransition
 	BeforePass int
 }
 
-func (b *Backend) BakeBuffer(id gpu.BufferID, _ gpu.BufferKind, _ int, data []byte) {
+func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []byte) {
 	b.Bakes++
 	if b.Baked == nil {
-		b.Baked = map[gpu.BufferID][]byte{}
+		b.Baked = map[gfx.BufferID][]byte{}
 	}
 	b.Baked[id] = append(b.Baked[id][:0], data...)
 }
@@ -363,27 +363,27 @@ func (b *Backend) BakeBuffer(id gpu.BufferID, _ gpu.BufferKind, _ int, data []by
 // level - and a count of uploads alone cannot tell a filtered texture from an
 // unfiltered one.
 func (b *Backend) BakeTexture(
-	_ gpu.TextureID, _, _ int, _ gpu.TextureFormat, _ []byte, mipmaps bool,
+	_ gfx.TextureID, _, _ int, _ gfx.TextureFormat, _ []byte, mipmaps bool,
 ) {
 	b.BakedTextures++
 	if mipmaps {
 		b.MippedTextures++
 	}
 }
-func (b *Backend) AllocateTexture(gpu.TextureID, gpu.TextureDesc)       {}
-func (b *Backend) UpdateTexture(gpu.TextureID, int, gpu.Region, []byte) {}
+func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)       {}
+func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte) {}
 
-func (b *Backend) SetPipeline(id gpu.PipelineID)      { b.current = id }
+func (b *Backend) SetPipeline(id gfx.PipelineID)      { b.current = id }
 func (b *Backend) SetParams([]byte)                   {}
-func (b *Backend) SetTexture(gpu.TextureID, int, int) {}
-func (b *Backend) SetSampler(gpu.SamplerID, int, int) {}
-func (b *Backend) SetVertexBuffer(gpu.BufferID, int)  {}
+func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
+func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
+func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
 
 // SetIndexBuffer takes the width scene derived from the mesh's vertex count.
 // A recording backend has no index buffer to bind, so the width is recorded
-// nowhere - it is here because gpu.RenderPass carries it.
-func (b *Backend) SetIndexBuffer(gpu.BufferID, int, gpu.IndexWidth) {}
-func (b *Backend) SetBuffer(group, binding int, buffer gpu.BufferID, offset, size int) {
+// nowhere - it is here because gfx.RenderPass carries it.
+func (b *Backend) SetIndexBuffer(gfx.BufferID, int, gfx.IndexWidth) {}
+func (b *Backend) SetBuffer(group, binding int, buffer gfx.BufferID, offset, size int) {
 	b.Buffers = append(b.Buffers, BufferBinding{
 		Group: group, Binding: binding, Buffer: buffer, Pipeline: b.current,
 		Offset: offset, Size: size,
@@ -408,5 +408,5 @@ func (b *Backend) Draw(first, count, instances, firstInstance int, indexed bool)
 	})
 }
 
-func (b *Backend) ReleaseBuffer(gpu.BufferID)   {}
-func (b *Backend) ReleaseTexture(gpu.TextureID) {}
+func (b *Backend) ReleaseBuffer(gfx.BufferID)   {}
+func (b *Backend) ReleaseTexture(gfx.TextureID) {}

@@ -86,13 +86,12 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/gfx"
+	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
 	"github.com/dvoyni/cog/slots/storage"
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
@@ -133,7 +132,7 @@ func main() {
 		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputplugin.New(),
-		gfximpl.New(),
+		gfxplugin.New(),
 		canvasplugin.New(),
 		sceneplugin.New(),
 		wgpu.New(),
@@ -510,7 +509,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 	}
 	vertices, indices := ridgeGeometry(p.ridgeCellCount, p.time()*ridgeSpeed)
 	if p.ridge == (scene.MeshRef{}) {
-		p.ridge = la.BakeMesh(vertices, indices, gpu.TopologyTriangleList)
+		p.ridge = la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
 	} else {
 		la.UpdateMesh(p.ridge, vertices, indices)
 	}
@@ -520,7 +519,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 	// carries the frame it was minted in: used in a later frame it is reported
 	// and skipped rather than silently drawing whatever now holds its slot.
 	band := ribbonGeometry(ribbonSegments, p.time()*ribbonSpeed)
-	p.ribbon = q.TemporaryMesh(band, nil, gpu.TopologyTriangleStrip)
+	p.ribbon = q.TemporaryMesh(band, nil, gfx.TopologyTriangleStrip)
 	p.ribbonVertices = len(band)
 
 	// The beacon. A release makes the old ref stale at once - anything drawing
@@ -666,5 +665,5 @@ func (p *Procedural) readStats(q *scene.OpQueue) {
 // indices cannot be spread into the call.
 func bakeBeacon(la scene.LookupAccess, generation int) scene.MeshRef {
 	vertices, indices := beaconGeometry(beaconTint(generation))
-	return la.BakeMesh(vertices, indices, gpu.TopologyTriangleList)
+	return la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
 }

@@ -38,12 +38,12 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/gfx"
+	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
 	"github.com/dvoyni/cog/slots/storage"
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 
@@ -89,7 +89,7 @@ func main() {
 	permanentfs.Configure(config)
 
 	kernel.New(config).WithPlugins(
-		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfximpl.New(), canvasplugin.New(), sceneplugin.New(), wgpu.New(),
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfxplugin.New(), canvasplugin.New(), sceneplugin.New(), wgpu.New(),
 		ecsplugin.New(), ecssceneplugin.New(), New(),
 	).Run(ctx)
 }

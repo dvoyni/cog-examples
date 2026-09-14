@@ -4,9 +4,8 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/gfx"
 )
 
 // Vertex is the demo's own vertex, and the reason it needs a material of its
@@ -33,9 +32,9 @@ type Vertex struct {
 func (Vertex) VertexLayout() []gfx.VertexAttr { return demoVertexLayout[:] }
 
 var demoVertexLayout = [...]gfx.VertexAttr{
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Position)), gpu.Float32x3),
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Normal)), gpu.Float32x3),
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Tint)), gpu.Float32x3),
+	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Position)), gfx.Float32x3),
+	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Normal)), gfx.Float32x3),
+	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Tint)), gfx.Float32x3),
 }
 
 // The ridge: a heightfield over the unit square in X and Z, rebuilt and
