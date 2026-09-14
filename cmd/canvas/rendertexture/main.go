@@ -93,6 +93,7 @@ func main() {
 		storage.Name: storage.Config{},
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: rendertexture"),
 	}
+	permanentfs.Configure(config)
 
 	// The demo is last because it records into the queues the plugins before it
 	// declare - canvas's and, to allocate the target, gfx's.

@@ -86,6 +86,7 @@ func main() {
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: ecs fountain"),
 		ecs.Name:     ecs.Config{PrewarmEntities: prewarmEntities},
 	}
+	permanentfs.Configure(config)
 
 	kernel.New(config).WithPlugins(
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfximpl.New(), canvasplugin.New(), sceneplugin.New(), wgpu.New(),

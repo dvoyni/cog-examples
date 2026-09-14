@@ -152,6 +152,7 @@ func main() {
 			// un-refitted.
 			WithSize(screenWidth, screenHeight),
 	}
+	permanentfs.Configure(config)
 
 	// The demo plugin is last because it records into the queues the plugins
 	// before it declare.

@@ -5,8 +5,11 @@
 // only for their own platform, so a demo that named either would stop
 // cross-compiling for the other. Every demo composes this instead, which keeps
 // the browser build free of any line of its own, as internal/assets does for
-// the asset mount.
+// the asset mount. New is the plugin, and Configure adds its Config to the
+// engine's config map:
 //
+//	config := map[kernel.PluginName]any{storage.Name: storage.Config{}, …}
+//	permanentfs.Configure(config)
 //	plugins := []kernel.Plugin{storageplugin.New(), permanentfs.New(), …}
 package permanentfs
 

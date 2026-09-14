@@ -44,6 +44,7 @@ func main() {
 		storage.Name: storage.Config{},
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: hello"),
 	}
+	permanentfs.Configure(config)
 
 	// hello is last because it records into the op queue the plugins before it
 	// declare.
