@@ -3,7 +3,7 @@
 //
 //	go run ./cmd/framediff before.png after.png [diff.png]
 //
-// It exists because cog has no pixel readback in any test: gfx and wgpu can
+// It exists because cog has no pixel readback in any test: gfx and gogpu can
 // draw a frame but nothing in the engine can assert about one, so every
 // fidelity claim about a narrowed encoding is judged by eye. This narrows what
 // the eye has to do. It does not replace the eye - a difference this reports is

@@ -1,5 +1,5 @@
 // Command hello is the smallest cog application: it opens a window through the
-// storage, input, gfx, canvas and wgpu plugins and draws one canvas rectangle.
+// storage, input, gfx, canvas and gogpu plugins and draws one canvas rectangle.
 // It exists to prove that this module builds and runs against the sibling cog
 // checkout, so the scene prototypes that follow start from a known-good app.
 //
@@ -16,8 +16,8 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
-	"github.com/dvoyni/cog/extensions/wgpu"
-	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
+	"github.com/dvoyni/cog/extensions/gogpu"
+	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -44,7 +44,7 @@ func main() {
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
-		wgpu.Name:    wgpu.Config{}.WithTitle("cog examples: hello"),
+		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: hello"),
 	}
 	permanentfs.Configure(config)
 
@@ -57,7 +57,7 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		wgpuplugin.New(),
+		gogpuplugin.New(),
 		newHello(),
 	}
 

@@ -4,12 +4,11 @@
 // This is available because scene decides everything a demo asserts - culling,
 // sorting, packing - in the update-thread flush, publishes the result as
 // Passes(dst []PassView) including the frustum, gfx takes its Backend adapter
-// from whichever plugin provides one, and app takes its MainLoop the same way, so
-// the adapter plugin below stands in for the wgpu plugin without it being
-// present at all. What the
-// fake backend below does with the translated queue is therefore beside the
-// point: it exists so the frame reaches the end of the pipe, and the numbers a
-// test reads were already decided before it was called.
+// from whichever plugin provides one, and app takes its MainLoop the same way,
+// so the adapter plugin below stands in for the gogpu plugin without it being
+// present at all. What the fake backend below does with the translated queue is
+// therefore beside the point: it exists so the frame reaches the end of the
+// pipe, and the numbers a test reads were already decided before it was called.
 //
 // It lives here rather than beside one demo because seven demos would otherwise
 // carry seven copies of the same twenty-odd stub methods. Nothing in it decides
@@ -72,7 +71,7 @@ func (e *Engine) report(err error) {
 }
 
 // New starts an engine with storage, input, app, gfx, canvas and scene, plus
-// the given demo plugins, composes storage's diskfs Adapter (through
+// the given demo plugins, composes storage's diskstorage Adapter (through
 // permanentfs), a fake backend adapter and a headless app MainLoop, has app's
 // Loop publish InitEvent, and sets the viewport. Every
 // error the engine reports is collected rather than fatal, so a test can assert
@@ -249,9 +248,9 @@ func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]
 		}
 }
 
-// adapter provides the fake Backend to gfx and the headless MainLoop to app, both
-// Slots that take their Adapter from whichever plugin provides one - on a
-// desktop, the wgpu plugin.
+// adapter provides the fake Backend to gfx and the headless MainLoop to app,
+// both Slots that take their Adapter from whichever plugin provides one - on a
+// desktop, the gogpu plugin.
 type adapter struct {
 	backend  *Backend
 	mainLoop *mainLoop

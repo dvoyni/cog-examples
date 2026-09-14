@@ -48,7 +48,7 @@ rm -f "$here/assets.tar.gz"
 tar -czf "$here/assets.tar.gz" -C "$repo_root" assets
 
 # The demo's name, for the page title. Nothing else in the page changes between
-# demos, and wgpu.Config.WithTitle is a desktop window title that no browser
+# demos, and gogpu.Config.WithTitle is a desktop window title that no browser
 # ever sees.
 echo "› writing demo.js…"
 printf 'globalThis.__cogDemo = "%s";\n' "$demo" > "$here/demo.js"

@@ -94,7 +94,7 @@ type DrawCall struct {
 
 // sceneShaderPath is the bundled scene shader, the one shader whose reflected
 // bindings scene's own packing depends on. The real WGSL is reflected for real
-// in the wgpu package, the only tree with a front end; here the layout stands
+// in the gogpu package, the only tree with a front end; here the layout stands
 // in so scene's bindings reach the backend at the group and binding the shader
 // declares.
 const sceneShaderPath = "builtin/scene/scene.wgsl"

@@ -128,8 +128,8 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/wgpu"
-	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
+	"github.com/dvoyni/cog/extensions/gogpu"
+	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -179,7 +179,7 @@ func main() {
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storageConfig,
-		wgpu.Name: wgpu.Config{}.
+		gogpu.Name: gogpu.Config{}.
 			WithTitle("cog examples: scene instancing").
 			WithSize(windowWidth, windowHeight),
 	}
@@ -195,7 +195,7 @@ func main() {
 		gfxplugin.New(),
 		canvasplugin.New(),
 		sceneplugin.New(),
-		wgpuplugin.New(),
+		gogpuplugin.New(),
 		New(),
 	}
 

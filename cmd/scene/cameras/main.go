@@ -50,7 +50,7 @@
 //
 // The minimap's depth-only prepass - no colour attachment, one depth texture,
 // the shape a shadow map takes - runs in a browser and is declined on the
-// desktop, where cog's wgpu backend reports it once rather than encoding it.
+// desktop, where cog's gogpu backend reports it once rather than encoding it.
 // gogpu's Vulkan HAL never begins a render pass with no colour attachments and
 // then faults ending it, so declining the pass is what turns a segfault into a
 // line on the HUD. Nothing samples that depth texture, so the skip changes no
@@ -109,8 +109,8 @@ import (
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/wgpu"
-	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
+	"github.com/dvoyni/cog/extensions/gogpu"
+	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -146,7 +146,7 @@ func main() {
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storageConfig,
-		wgpu.Name: wgpu.Config{}.
+		gogpu.Name: gogpu.Config{}.
 			WithTitle("cog examples: scene cameras").
 			// Launched at the size the reference screenshot was taken at rather
 			// than resized into it: a runtime resize leaves the viewport
@@ -166,7 +166,7 @@ func main() {
 		gfxplugin.New(),
 		canvasplugin.New(),
 		sceneplugin.New(),
-		wgpuplugin.New(),
+		gogpuplugin.New(),
 		mcpplugin.New(),
 		demo,
 	}
@@ -253,7 +253,7 @@ func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
 // The second entry is not a failure this demo provokes, it is one the desktop
 // backend has: it cannot encode a pass with a depth attachment and no colour
 // attachment, because gogpu's Vulkan HAL never begins such a render pass and
-// then faults ending it. cog's wgpu backend declines the pass and reports it
+// then faults ending it. cog's gogpu backend declines the pass and reports it
 // once rather than dying inside the driver. So on desktop this demo's depth
 // prepass is skipped and its depth texture is left untouched - which changes no
 // pixel of the frame, because the prepass writes into a texture of its own that
@@ -266,7 +266,7 @@ func (p *Cameras) report(err error) bool {
 		log.Printf("cameras: %v (expected: D is held)", err)
 		return false
 	}
-	var depthOnly wgpu.ErrDepthOnlyPassUnsupported
+	var depthOnly gogpu.ErrDepthOnlyPassUnsupported
 	if errors.As(err, &depthOnly) {
 		log.Printf("cameras: %v (expected: this backend has no depth-only pass)", err)
 		return false

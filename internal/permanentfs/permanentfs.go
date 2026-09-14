@@ -1,5 +1,5 @@
 // Package permanentfs composes storage's PermanentFS Adapter for the platform a
-// demo is built for: diskfs on the desktop, jsfs in a browser.
+// demo is built for: diskstorage on the desktop, jsstorage in a browser.
 //
 // storage requires exactly one Adapter, and the two cog ships are each built
 // only for their own platform, so a demo that named either would stop

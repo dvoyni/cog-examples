@@ -148,8 +148,8 @@ import (
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/wgpu"
-	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
+	"github.com/dvoyni/cog/extensions/gogpu"
+	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -200,7 +200,7 @@ func main() {
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storageConfig,
-		wgpu.Name: wgpu.Config{}.
+		gogpu.Name: gogpu.Config{}.
 			WithTitle("cog examples: scene pbr").
 			// Launched at the size the reference screenshot was taken at
 			// rather than resized into it: a runtime resize leaves the
@@ -222,7 +222,7 @@ func main() {
 		gfxplugin.New(),
 		canvasplugin.New(),
 		sceneplugin.New(),
-		wgpuplugin.New(),
+		gogpuplugin.New(),
 		mcpplugin.New(),
 		New(),
 	}
