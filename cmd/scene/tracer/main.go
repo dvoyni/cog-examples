@@ -16,7 +16,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
+	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
@@ -45,7 +45,7 @@ func main() {
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputplugin.New(),
 		gfximpl.New(),
-		sceneimpl.New(),
+		sceneplugin.New(),
 		wgpu.New(),
 		newTracer(),
 	}
