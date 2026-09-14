@@ -93,6 +93,7 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 	config := map[kernel.PluginName]any{
 		storage.Name: storageConfig,
 	}
+	permanentfs.Configure(config)
 	all := append([]kernel.Plugin{
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfximpl.New(), adapter{engine.backend}, canvasplugin.New(), sceneplugin.New(), &probe{},
 	}, plugins...)

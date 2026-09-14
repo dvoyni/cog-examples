@@ -208,6 +208,7 @@ func main() {
 			// this on a display that scales.
 			WithSize(windowWidth, windowHeight),
 	}
+	permanentfs.Configure(config)
 
 	// The demo plugin is last because it records into the queues the plugins
 	// before it declare.

@@ -170,7 +170,8 @@ config, err := assets.Config(storage.Config{})
 ```
 
 storage also requires a `PermanentFS` Adapter. Every demo composes
-`permanentfs.New()`, which is `diskfs` on the desktop and `jsfs` in a browser
-build, so no demo names a platform.
+`permanentfs.New()`, which is `diskfsplugin.New()` on the desktop and `jsfs` in
+a browser build, and calls `permanentfs.Configure(config)` on its config map,
+which supplies diskfs's `Config` under `diskfs.Name`. No demo names a platform.
 
 Paths keep the repository's spelling — `assets/Fox/Fox.glb`.

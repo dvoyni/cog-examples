@@ -39,6 +39,7 @@ func main() {
 		storage.Name: storage.Config{},
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: scene tracer"),
 	}
+	permanentfs.Configure(config)
 
 	plugins := []kernel.Plugin{
 		storageplugin.New(),

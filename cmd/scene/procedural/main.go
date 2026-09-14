@@ -124,6 +124,7 @@ func main() {
 		storage.Name: storage.Config{},
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: scene procedural"),
 	}
+	permanentfs.Configure(config)
 
 	// The demo plugin is last because it records into the queues the plugins
 	// before it declare.
