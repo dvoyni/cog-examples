@@ -127,7 +127,7 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
+	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
@@ -190,7 +190,7 @@ func main() {
 		inputplugin.New(),
 		gfximpl.New(),
 		canvasplugin.New(),
-		sceneimpl.New(),
+		sceneplugin.New(),
 		wgpu.New(),
 		New(),
 	}
