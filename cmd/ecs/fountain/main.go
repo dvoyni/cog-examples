@@ -15,7 +15,7 @@
 //
 // There is no input. Demo time is fixed steps and the spray's random stream is
 // seeded by a constant, so step N is the same frame on every machine.
-// reference.png is step referenceStep, taken with mcpimpl.New() added to the
+// reference.png is step referenceStep, taken with mcpplugin.New() added to the
 // plugin list and docs/narrowing/capture.py; fountain_test.go asserts the frame
 // at that step, and that its HUD reads as the image's does.
 //

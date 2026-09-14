@@ -106,12 +106,12 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/gfx/gpu"
-	"github.com/dvoyni/cog/extensions/mcp/mcpimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -164,7 +164,7 @@ func main() {
 		canvasimpl.New(),
 		sceneimpl.New(),
 		wgpu.New(),
-		mcpimpl.New(),
+		mcpplugin.New(),
 		demo,
 	}
 
