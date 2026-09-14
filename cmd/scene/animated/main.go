@@ -119,6 +119,7 @@ import (
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
 	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
 	"github.com/dvoyni/cog/slots/storage"
@@ -180,6 +181,7 @@ func main() {
 		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputplugin.New(),
+		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
 		sceneplugin.New(),
