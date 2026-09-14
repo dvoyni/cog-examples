@@ -29,11 +29,10 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/gfx"
+	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
 	"github.com/dvoyni/cog/slots/storage"
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
@@ -95,7 +94,7 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 	}
 	permanentfs.Configure(config)
 	all := append([]kernel.Plugin{
-		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfximpl.New(), adapter{engine.backend}, canvasplugin.New(), sceneplugin.New(), &probe{},
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfxplugin.New(), adapter{engine.backend}, canvasplugin.New(), sceneplugin.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
@@ -239,7 +238,7 @@ func (adapter) Name() kernel.PluginName           { return "headlessbackend" }
 func (adapter) Dependencies() []kernel.PluginName { return nil }
 
 func (a adapter) Register(registrar *kernel.Registrar, _ any) error {
-	registrar.ProvideAdapter[gfxBackendAdapter](gpu.Backend(a.backend))
+	registrar.ProvideAdapter[gfxBackendAdapter](gfx.Backend(a.backend))
 	return nil
 }
 

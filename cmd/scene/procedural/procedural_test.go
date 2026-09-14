@@ -6,7 +6,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
+	"github.com/dvoyni/cog/slots/gfx"
 )
 
 // referenceStep is the step the assertions below are written against: two
@@ -20,7 +20,7 @@ const referenceStep = 120
 // assertion below is that this list is shorter than scene's own - a caller
 // material may declare fewer bindings than scene binds, and must never declare
 // more.
-var demoShaderLayout = gpu.ShaderLayout{Resources: []gpu.ShaderResource{
+var demoShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
 	{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
 	{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
 }}

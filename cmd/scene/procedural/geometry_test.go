@@ -5,9 +5,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/gfx"
 )
 
 // The demo's vertex is not scene.Vertex, and that is the whole point: it is 36
@@ -18,9 +17,9 @@ func TestTheVertexIsTheDemosOwnThirtySixByteLayout(t *testing.T) {
 		t.Fatalf("Vertex is %d bytes, want 36", size)
 	}
 	want := []gfx.VertexAttr{
-		gfx.Attr(0, gpu.Float32x3),  // position
-		gfx.Attr(12, gpu.Float32x3), // normal
-		gfx.Attr(24, gpu.Float32x3), // tint
+		gfx.Attr(0, gfx.Float32x3),  // position
+		gfx.Attr(12, gfx.Float32x3), // normal
+		gfx.Attr(24, gfx.Float32x3), // tint
 	}
 	layout := Vertex{}.VertexLayout()
 	if len(layout) != len(want) {
