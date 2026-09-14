@@ -7,10 +7,10 @@ import (
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // The vendored files the Scene and Node selectors are judged against.
@@ -80,7 +80,7 @@ func (r *recorder) record() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 // actually reached the pass.
 func drawing(t *testing.T, path string, draws ...scene.ModelDraw) *headless.Engine {
 	t.Helper()
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

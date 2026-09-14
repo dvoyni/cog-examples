@@ -11,11 +11,10 @@ import (
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx/gpu"
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
 	"github.com/qmuntal/gltf"
 )
 
@@ -44,7 +43,7 @@ func run(t *testing.T) (*headless.Engine, *Loading) {
 // what the first few frames do.
 func start(t *testing.T) (*headless.Engine, *Loading) {
 	t.Helper()
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
@@ -250,7 +249,7 @@ func TestPreloadNamesEveryPathTheGridDraws(t *testing.T) {
 // idempotent load a draw fires, fired without one, which is the whole of moving
 // a decode into a loading screen the app controls.
 func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
@@ -675,7 +674,7 @@ func TestTheTextureCacheBakesOneTexturePerImageNotPerGlTFTexture(t *testing.T) {
 	// this file's and nothing else's: the grid's own engine also carries
 	// canvas's font atlas and scene's two 1x1 defaults, and a total that had to
 	// subtract them would be an assertion about the subtraction.
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
@@ -711,7 +710,7 @@ func TestDrawingOneModelManyTimesBakesItsTextureOnce(t *testing.T) {
 	if copies < 2 {
 		t.Fatalf("only %d station draws the truck; this assertion needs several", copies)
 	}
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
@@ -1000,7 +999,7 @@ func required(doc *gltf.Document, name string) bool {
 // The expected number is summed out of the file rather than typed: a
 // transcribed table has been the wrong thing here before.
 func TestAnEightBitIndexedModelDrawsTheFilesOwnIndexCount(t *testing.T) {
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

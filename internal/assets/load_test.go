@@ -8,7 +8,7 @@ import (
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // The vendored set, by the path a demo names. Every entry is expected to reach
@@ -41,7 +41,7 @@ const brokenAsset = "assets/broken/truncated.glb"
 // engine starts a headless engine with the vendored set mounted.
 func engine(t *testing.T) *headless.Engine {
 	t.Helper()
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

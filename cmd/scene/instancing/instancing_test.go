@@ -9,8 +9,8 @@ import (
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // run starts the demo headless over the vendored asset set and steps until all
@@ -24,7 +24,7 @@ import (
 // a test that waited in frames would be asserting it does not exist.
 func run(t *testing.T) (*headless.Engine, *Instancing) {
 	t.Helper()
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

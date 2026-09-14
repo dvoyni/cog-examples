@@ -33,12 +33,12 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/gfx/gpu"
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
+	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
 // Logical viewport the demo draws in. The window is fitted to it, so the layout
@@ -90,14 +90,14 @@ func main() {
 	defer stop()
 
 	config := map[kernel.PluginName]any{
-		storage.Name: storageimpl.DefaultConfig(),
+		storage.Name: storage.Config{},
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: rendertexture"),
 	}
 
 	// The demo is last because it records into the queues the plugins before it
 	// declare - canvas's and, to allocate the target, gfx's.
 	plugins := []kernel.Plugin{
-		storageimpl.New(),
+		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputimpl.New(),
 		gfximpl.New(),

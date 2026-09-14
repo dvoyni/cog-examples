@@ -5,14 +5,14 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // TestTheVendoredSetIsReachable is this package's whole reason to exist: a
 // demo configuring nothing but the app id reads no models at all, and does it
 // without an error.
 func TestTheVendoredSetIsReachable(t *testing.T) {
-	config, err := Config(storageimpl.DefaultConfig())
+	config, err := Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestTheVendoredSetIsReachable(t *testing.T) {
 // loading demo's failure pair working: a mount that answered some other error
 // would stop storage falling through to the next one.
 func TestAPathThatDoesNotExistFailsAsNotExist(t *testing.T) {
-	config, err := Config(storageimpl.DefaultConfig())
+	config, err := Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}

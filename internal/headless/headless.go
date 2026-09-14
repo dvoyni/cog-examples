@@ -32,10 +32,10 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/gfx/gpu"
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
+	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
 // The viewport every headless run starts at: a 16:9 window at 2x scale, so a
@@ -75,7 +75,7 @@ func (e *Engine) report(err error) {
 // own builtin mounts (canvas's shaders, scene's) install themselves regardless.
 func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
-	return NewOver(t, storageimpl.DefaultConfig().
+	return NewOver(t, storage.Config{}.
 		WithReadFS("headless", 10, fs.FS(fstest.MapFS{})), plugins...)
 }
 
@@ -83,8 +83,8 @@ func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 // test that loads real assets reaches them: storage mounts nothing by default,
 // and `go test` runs from a package directory rather than the module root.
 //
-//	config, err := assets.Config(storageimpl.DefaultConfig())
-func NewOver(t testing.TB, storageConfig storageimpl.Config, plugins ...kernel.Plugin) *Engine {
+//	config, err := assets.Config(storage.Config{})
+func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
 	engine := &Engine{backend: &Backend{}}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -94,7 +94,7 @@ func NewOver(t testing.TB, storageConfig storageimpl.Config, plugins ...kernel.P
 		storage.Name: storageConfig,
 	}
 	all := append([]kernel.Plugin{
-		storageimpl.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), adapter{engine.backend}, canvasimpl.New(), sceneimpl.New(), &probe{},
+		storageplugin.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), adapter{engine.backend}, canvasimpl.New(), sceneimpl.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
