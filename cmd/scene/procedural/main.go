@@ -89,12 +89,12 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/gfx/gpu"
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
+	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
 // The logical screen the HUD is laid out in. The window is fitted to it, so the
@@ -121,7 +121,7 @@ func main() {
 	defer stop()
 
 	config := map[kernel.PluginName]any{
-		storage.Name: storageimpl.DefaultConfig(),
+		storage.Name: storage.Config{},
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: scene procedural"),
 	}
 
@@ -129,7 +129,7 @@ func main() {
 	// before it declare.
 	demo := New()
 	plugins := []kernel.Plugin{
-		storageimpl.New(),
+		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputimpl.New(),
 		gfximpl.New(),

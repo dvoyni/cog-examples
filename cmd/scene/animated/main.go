@@ -116,12 +116,12 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx"
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/mcp/mcpimpl"
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
+	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
 // The logical screen the HUD is laid out in. The window is fitted to it, so the
@@ -155,7 +155,7 @@ func main() {
 	// the repository rather than beside the executable, which `go run` builds
 	// into a temporary directory - so the demo mounts it explicitly and refuses
 	// to start without it.
-	storageConfig, err := assets.Config(storageimpl.DefaultConfig())
+	storageConfig, err := assets.Config(storage.Config{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -175,7 +175,7 @@ func main() {
 	// The demo plugin is last because it records into the queues the plugins
 	// before it declare.
 	plugins := []kernel.Plugin{
-		storageimpl.New(),
+		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputimpl.New(),
 		gfximpl.New(),

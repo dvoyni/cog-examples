@@ -7,7 +7,7 @@ import (
 	"github.com/dvoyni/cog/bundles/ecs/ecsimpl"
 	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneimpl"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
+	"github.com/dvoyni/cog/slots/storage"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
@@ -19,7 +19,7 @@ import (
 // reaches at step n once its loads have long finished.
 func run(t *testing.T, n int) *headless.Engine {
 	t.Helper()
-	assetConfig, err := assets.Config(storageimpl.DefaultConfig())
+	assetConfig, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}

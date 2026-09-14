@@ -7,7 +7,7 @@
 // available failure mode for a set of demos whose whole subject is that a model
 // which fails to load is skipped rather than substituted.
 //
-//	config, err := assets.Config(storageimpl.DefaultConfig())
+//	config, err := assets.Config(storage.Config{})
 //
 // Paths keep the assets/ prefix the repository uses, so a demo names a model
 // exactly as ATTRIBUTION.md and the manifest do:
@@ -31,7 +31,7 @@
 package assets
 
 import (
-	"github.com/dvoyni/cog/extensions/storage"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 const (

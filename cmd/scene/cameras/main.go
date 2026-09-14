@@ -112,12 +112,12 @@ import (
 	"github.com/dvoyni/cog/extensions/gfx/gfximpl"
 	"github.com/dvoyni/cog/extensions/gfx/gpu"
 	"github.com/dvoyni/cog/extensions/mcp/mcpimpl"
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/extensions/wgpu"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/storage"
+	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
 // The canvas layers, which are gfx orders directly, and they interleave with
@@ -137,7 +137,7 @@ func main() {
 	// the demo refuses to start without it. A cameras demo that came up with a
 	// missing model would render two viewports of an empty flank and blame the
 	// loader.
-	storageConfig, err := assets.Config(storageimpl.DefaultConfig())
+	storageConfig, err := assets.Config(storage.Config{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -157,7 +157,7 @@ func main() {
 	// before it declare.
 	demo := New()
 	plugins := []kernel.Plugin{
-		storageimpl.New(),
+		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputimpl.New(),
 		gfximpl.New(),

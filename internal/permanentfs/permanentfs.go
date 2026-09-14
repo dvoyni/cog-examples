@@ -7,7 +7,7 @@
 // the browser build free of any line of its own, as internal/assets does for
 // the asset mount.
 //
-//	plugins := []kernel.Plugin{storageimpl.New(), permanentfs.New(), …}
+//	plugins := []kernel.Plugin{storageplugin.New(), permanentfs.New(), …}
 package permanentfs
 
 // AppId is the application id every demo saves under: a directory under the

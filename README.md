@@ -166,7 +166,7 @@ A demo reaches the set through `internal/assets`, because storage mounts
 nothing by default and `go run` builds into a temporary directory.
 
 ```go
-config, err := assets.Config(storageimpl.DefaultConfig())
+config, err := assets.Config(storage.Config{})
 ```
 
 storage also requires a `PermanentFS` Adapter. Every demo composes

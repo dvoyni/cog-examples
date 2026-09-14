@@ -11,8 +11,7 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/dvoyni/cog/extensions/storage"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // Global is the JavaScript global cmd/web/index.html leaves the unpacked asset
@@ -29,7 +28,7 @@ const Global = "__cogAssets"
 // JavaScript. It is a hard failure rather than a warning: a demo with no assets
 // renders an empty room and blames the loader, which is exactly the failure the
 // loading demo exists to catch.
-func Config(base storageimpl.Config) (storageimpl.Config, error) {
+func Config(base storage.Config) (storage.Config, error) {
 	files := js.Global().Get(Global)
 	if files.Type() != js.TypeObject {
 		return base, fmt.Errorf(

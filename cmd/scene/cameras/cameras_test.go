@@ -13,8 +13,8 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/extensions/gfx"
-	"github.com/dvoyni/cog/extensions/storage/storageimpl"
 	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // run starts the demo headless over the vendored asset set and steps until the
@@ -26,7 +26,7 @@ import (
 // the asynchronous path does not exist.
 func run(t *testing.T) (*headless.Engine, *Cameras) {
 	t.Helper()
-	config, err := assets.Config(storageimpl.DefaultConfig())
+	config, err := assets.Config(storage.Config{})
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
