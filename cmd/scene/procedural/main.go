@@ -87,6 +87,7 @@ import (
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/wgpu"
+	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -121,7 +122,7 @@ func main() {
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
-		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: scene procedural"),
+		wgpu.Name:    wgpu.Config{}.WithTitle("cog examples: scene procedural"),
 	}
 	permanentfs.Configure(config)
 
@@ -135,7 +136,7 @@ func main() {
 		gfxplugin.New(),
 		canvasplugin.New(),
 		sceneplugin.New(),
-		wgpu.New(),
+		wgpuplugin.New(),
 		demo,
 	}
 
