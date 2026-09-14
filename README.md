@@ -20,7 +20,7 @@ examples are collected here for later publication alongside the engine.
   says where each model comes from and what its licence obliges.
 - `internal/assets` — mounts `assets/` through `storage`.
 - `internal/permanentfs` — storage's `PermanentFS` Adapter for the platform a
-  demo is built for: `diskfs` on the desktop, `jsfs` in a browser.
+  demo is built for: `diskstorage` on the desktop, `jsstorage` in a browser.
 - `internal/headless` — runs a cog engine with no GPU, so a demo's assertions
   can be a plain `go test` beside its `main.go`.
 - `cmd/web/` — the WebAssembly page any demo can be built into. See
@@ -47,7 +47,7 @@ they must compile against the working tree.
 go run ./cmd/scene/hello
 ```
 
-`hello` opens a window through `storage`, `input`, `gfx`, `canvas` and `wgpu`
+`hello` opens a window through `storage`, `input`, `gfx`, `canvas` and `gogpu`
 and draws one canvas rectangle on a dark background. It proves the module builds
 and runs against the sibling `cog`; every other demo starts from its wiring.
 
@@ -170,9 +170,9 @@ config, err := assets.Config(storage.Config{})
 ```
 
 storage also requires a `PermanentFS` Adapter. Every demo composes
-`permanentfs.New()`, which is `diskfsplugin.New()` on the desktop and
-`jsfsplugin.New()` in a browser build, and calls `permanentfs.Configure(config)`
+`permanentfs.New()`, which is `diskstorageplugin.New()` on the desktop and
+`jsstorageplugin.New()` in a browser build, and calls `permanentfs.Configure(config)`
 on its config map, which supplies that Adapter's `Config` under its `Name`
-(`diskfs.Name` or `jsfs.Name`). No demo names a platform.
+(`diskstorage.Name` or `jsstorage.Name`). No demo names a platform.
 
 Paths keep the repository's spelling — `assets/Fox/Fox.glb`.

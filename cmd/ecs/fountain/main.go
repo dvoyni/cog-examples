@@ -38,8 +38,8 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/wgpu"
-	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
+	"github.com/dvoyni/cog/extensions/gogpu"
+	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -85,13 +85,13 @@ func main() {
 	}
 	config := map[kernel.PluginName]any{
 		storage.Name: assetConfig,
-		wgpu.Name:    wgpu.Config{}.WithTitle("cog examples: ecs fountain"),
+		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: ecs fountain"),
 		ecs.Name:     ecs.Config{PrewarmEntities: prewarmEntities},
 	}
 	permanentfs.Configure(config)
 
 	kernel.New(config).WithPlugins(
-		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(), canvasplugin.New(), sceneplugin.New(), wgpuplugin.New(),
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(), canvasplugin.New(), sceneplugin.New(), gogpuplugin.New(),
 		ecsplugin.New(), ecssceneplugin.New(), New(),
 	).Run(ctx)
 }

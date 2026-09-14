@@ -17,8 +17,8 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
-	"github.com/dvoyni/cog/extensions/wgpu"
-	"github.com/dvoyni/cog/extensions/wgpu/wgpuplugin"
+	"github.com/dvoyni/cog/extensions/gogpu"
+	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
@@ -39,7 +39,7 @@ func main() {
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
-		wgpu.Name:    wgpu.Config{}.WithTitle("cog examples: scene tracer"),
+		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: scene tracer"),
 	}
 	permanentfs.Configure(config)
 
@@ -50,7 +50,7 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		sceneplugin.New(),
-		wgpuplugin.New(),
+		gogpuplugin.New(),
 		newTracer(),
 	}
 
