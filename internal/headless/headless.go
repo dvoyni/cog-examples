@@ -3,9 +3,10 @@
 //
 // This is available because scene decides everything a demo asserts - culling,
 // sorting, packing - in the update-thread flush, publishes the result as
-// Passes(dst []PassView) including the frustum, and gfx takes its Backend
-// adapter from whichever plugin provides one, so the adapter plugin below stands
-// in for the wgpu plugin without it being present at all. What the
+// Passes(dst []PassView) including the frustum, gfx takes its Backend adapter
+// from whichever plugin provides one, and app takes its Driver the same way, so
+// the adapter plugin below stands in for the wgpu plugin without it being
+// present at all. What the
 // fake backend below does with the translated queue is therefore beside the
 // point: it exists so the frame reaches the end of the pipe, and the numbers a
 // test reads were already decided before it was called.
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
@@ -31,6 +33,7 @@ import (
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/slots/app"
+	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
 	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
 	"github.com/dvoyni/cog/slots/storage"
@@ -46,10 +49,15 @@ const (
 	FramebufferHeight = 1080
 )
 
+// Step is the fixed step every headless run is configured with, and the real
+// time each frame Steps drives hands app's loop: exactly one tick a frame.
+const Step = time.Second / 60
+
 // Engine is a running headless kernel with a demo plugin in it.
 type Engine struct {
 	kernel  kernel.Executioner
 	backend *Backend
+	driver  *driver
 	// reported is guarded because a model load reports from its own goroutine
 	// rather than from the flush a test drives - which is the whole of "an
 	// error can outlive the draw call that caused it".
@@ -63,9 +71,10 @@ func (e *Engine) report(err error) {
 	e.reported = append(e.reported, err)
 }
 
-// New starts an engine with storage, input, gfx, canvas and scene, plus the
-// given demo plugins, composes storage's diskfs Adapter (through permanentfs)
-// and a fake backend adapter, and sets the viewport. Every
+// New starts an engine with storage, input, app, gfx, canvas and scene, plus
+// the given demo plugins, composes storage's diskfs Adapter (through
+// permanentfs), a fake backend adapter and a headless app Driver, has app's
+// Loop publish InitEvent, and sets the viewport. Every
 // error the engine reports is collected rather than fatal, so a test can assert
 // on the whole list at once.
 //
@@ -85,16 +94,18 @@ func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 //	config, err := assets.Config(storage.Config{})
 func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
-	engine := &Engine{backend: &Backend{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	engine := &Engine{backend: &Backend{}, driver: &driver{quit: cancel}}
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storageConfig,
+		app.Name:     app.Config{Step: Step},
 	}
 	permanentfs.Configure(config)
 	all := append([]kernel.Plugin{
-		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfxplugin.New(), adapter{engine.backend}, canvasplugin.New(), sceneplugin.New(), &probe{},
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(),
+		adapter{backend: engine.backend, driver: engine.driver}, canvasplugin.New(), sceneplugin.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
@@ -104,7 +115,11 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 	<-running.Ready()
 
 	engine.kernel = running.Executioner()
-	engine.kernel.PublishEvent(app.InitEvent{}).Wait()
+	// A composition that failed never started app, so no Loop was attached;
+	// its errors are collected like any other, and nothing ticks.
+	if engine.driver.loop != nil {
+		engine.driver.loop.Init(engine.kernel)
+	}
 	engine.kernel.ExecuteCommand[gfx.SetViewportCmd](gfx.SetViewportRequest{
 		Width: WindowWidth, Height: WindowHeight,
 		FramebufferWidth: FramebufferWidth, FramebufferHeight: FramebufferHeight,
@@ -112,16 +127,20 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 	return engine
 }
 
-// Steps drives n frames. Each is one update tick and one render, which is the
-// pair the driver publishes: the flush that decides the frame runs at the end
-// of the update, and the render replays what it decided.
+// Steps drives n frames the way a driver does, through app's Loop. Each is one
+// frame of exactly one Step of real time, so app publishes exactly one update
+// tick, and one render: the flush that decides the frame runs at the end of
+// the update, and the render replays what it decided.
 //
 // A demo's own clock is accumulated fixed steps, so n here is exactly the step
 // number the demo reaches, whatever the wall clock did.
 func (e *Engine) Steps(n int) {
+	if e.driver.loop == nil {
+		return
+	}
 	for range n {
-		e.kernel.PublishEvent(app.UpdateEvent{Dt: 1.0 / 60}).Wait()
-		e.kernel.PublishEvent(app.RenderEvent{}).Wait()
+		e.driver.loop.Frame(e.kernel, Step.Seconds())
+		e.driver.loop.Render(e.kernel)
 	}
 }
 
@@ -230,17 +249,36 @@ func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]
 		}
 }
 
-// adapter provides the fake Backend to gfx, which is a Port and takes its
-// backend from whichever plugin provides one - on a desktop, the wgpu plugin.
-type adapter struct{ backend *Backend }
+// adapter provides the fake Backend to gfx and the headless Driver to app, both
+// Slots that take their Adapter from whichever plugin provides one - on a
+// desktop, the wgpu plugin.
+type adapter struct {
+	backend *Backend
+	driver  *driver
+}
 
 func (adapter) Name() kernel.PluginName           { return "headlessbackend" }
 func (adapter) Dependencies() []kernel.PluginName { return nil }
 
 func (a adapter) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.ProvideAdapter[gfxBackendAdapter](gfx.Backend(a.backend))
+	registrar.ProvideAdapter[appDriverAdapter](app.Driver(a.driver))
 	return nil
 }
 
 // gfxBackendAdapter is the Adapter the headless engine fills gfx's backend Port as.
 type gfxBackendAdapter kernel.Adapter[gfx.BackendPort]
+
+// appDriverAdapter is the Adapter the headless engine fills app's Driver Port as.
+type appDriverAdapter kernel.Adapter[app.DriverPort]
+
+// driver is app's Driver for a headless run. It has no main loop of its own:
+// it keeps the Loop app attaches, Steps drives that Loop, and quitting cancels
+// the engine, which is what ending a loop nothing else is running comes to.
+type driver struct {
+	loop app.Loop
+	quit context.CancelFunc
+}
+
+func (d *driver) Attach(loop app.Loop) { d.loop = loop }
+func (d *driver) Quit()                { d.quit() }

@@ -8,7 +8,7 @@ range, `unorm8` weights, two named vertex layouts, and sparse morph deltas.
 
 There is **no pixel readback anywhere in cog**, so nothing in the engine's own
 test suite can assert about a frame. What made this checkable is that the engine
-speaks MCP: `wgpu_time` stops the update loop on an exact tick, `gfx_capture`
+speaks MCP: `app_time` stops the update loop on an exact tick, `gfx_capture`
 writes the frame to a PNG, and `gfx_frame` dumps what the renderer was told.
 An agent can therefore do what a person would do by eye, and difference it.
 

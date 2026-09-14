@@ -33,13 +33,13 @@ def main():
         time.sleep(3)  # let residency settle
         mcpc.SESSION["id"] = None
         mcpc.init()
-        st = call("wgpu_time", {"action": "pause"})
+        st = call("app_time", {"action": "pause"})
         now = st["tick"]
         if now > tick:
             raise SystemExit(f"already past the target tick: {now} > {tick}")
         while now < tick:
             step = min(tick - now, 600)
-            st = call("wgpu_time", {"action": "step", "steps": step})
+            st = call("app_time", {"action": "step", "steps": step})
             now = st["tick"]
         print("paused at tick", now)
         a = call("gfx_capture", {"path": out + "_a.png"})
