@@ -26,7 +26,7 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/input"
-	"github.com/dvoyni/cog/bundles/input/inputimpl"
+	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneimpl"
 	"github.com/dvoyni/cog/extensions/gfx"
@@ -94,7 +94,7 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 		storage.Name: storageConfig,
 	}
 	all := append([]kernel.Plugin{
-		storageplugin.New(), permanentfs.New(), inputimpl.New(), gfximpl.New(), adapter{engine.backend}, canvasimpl.New(), sceneimpl.New(), &probe{},
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfximpl.New(), adapter{engine.backend}, canvasimpl.New(), sceneimpl.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
