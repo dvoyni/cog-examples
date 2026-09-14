@@ -238,6 +238,9 @@ func (adapter) Name() kernel.PluginName           { return "headlessbackend" }
 func (adapter) Dependencies() []kernel.PluginName { return nil }
 
 func (a adapter) Register(registrar *kernel.Registrar, _ any) error {
-	registrar.ProvideAdapter[gpu.Backend](a.backend)
+	registrar.ProvideAdapter[gfxBackendAdapter](gpu.Backend(a.backend))
 	return nil
 }
+
+// gfxBackendAdapter is the Adapter the headless engine fills gfx's backend Port as.
+type gfxBackendAdapter kernel.Adapter[gfx.BackendPort]
