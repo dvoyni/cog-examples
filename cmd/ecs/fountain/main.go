@@ -32,7 +32,7 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasimpl"
 	"github.com/dvoyni/cog/bundles/ecs"
-	"github.com/dvoyni/cog/bundles/ecs/ecsimpl"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneimpl"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
@@ -84,12 +84,12 @@ func main() {
 	config := map[kernel.PluginName]any{
 		storage.Name: assetConfig,
 		wgpu.Name:    wgpu.DefaultConfig().WithTitle("cog examples: ecs fountain"),
-		ecs.Name:     ecsimpl.Config{PrewarmEntities: prewarmEntities},
+		ecs.Name:     ecs.Config{PrewarmEntities: prewarmEntities},
 	}
 
 	kernel.New(config).WithPlugins(
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), gfximpl.New(), canvasimpl.New(), sceneimpl.New(), wgpu.New(),
-		ecsimpl.New(), ecssceneimpl.New(), New(),
+		ecsplugin.New(), ecssceneimpl.New(), New(),
 	).Run(ctx)
 }
 
