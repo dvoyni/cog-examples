@@ -30,4 +30,10 @@ require (
 
 replace github.com/dvoyni/cog => ../cog
 
+// cog's own naga replace does not reach this module, so it is repeated here.
+// Without it a module-scope vector const used as an operand reaches a SPIR-V
+// shader as zero (dvoyni/cog#181, dvoyni/cog#185, gogpu/naga#92). Keep it on the
+// version cog pins; it comes out when cog's does.
+replace github.com/gogpu/naga => github.com/dvoyni/naga v0.19.1-0.20260910142728-7fd5ed312699
+
 replace github.com/gogpu/gogpu => github.com/dvoyni/gogpu v0.54.1-0.20260910171621-041de1a5716f
