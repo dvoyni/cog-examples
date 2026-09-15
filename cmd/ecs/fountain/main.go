@@ -20,7 +20,7 @@
 // at that step, and that its HUD reads as the image's does.
 //
 // Why the binding is shaped the way it is lives in ecsscene's README:
-// https://github.com/dvoyni/cog/blob/main/bundles/ecsscene/README.md
+// https://github.com/dvoyni/cog/blob/main/bundles/ecsscene/docs/README.md
 package main
 
 import (
