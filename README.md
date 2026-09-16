@@ -80,6 +80,7 @@ The ecs demos:
 | demo | what it is for |
 | --- | --- |
 | `fountain` | the ecsscene showcase: every binding Component in one frame, spawned and retired by Systems |
+| `physics2d` | the ecsphysics2d showcase: a stack, a ramp and a jointed figure in one scene, with the app's own gravity |
 
 ## Running in a browser
 
