@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/dvoyni/cog/bundles/canvas"
@@ -187,8 +188,12 @@ func drawHUD(q *canvas.OpQueue, c Census) {
 	for i, line := range lines {
 		text(q, hudTop+float32(i)*hudLine, line, hudTint)
 	}
+	// The key is named off rebreakKey rather than spelled here, so the footer
+	// cannot come to advertise a key the demo no longer reads.
 	text(q, screenHeight-hudFoot,
-		"click the cloth to drop a crate; no gravity System is composed, and none is missing", hudDimTint)
+		fmt.Sprintf("%s breaks the balls again; click the cloth to drop a crate; no gravity System is composed, and none is missing",
+			rebreakKey),
+		hudDimTint)
 }
 
 func text(q *canvas.OpQueue, y float32, line string, color m.Color) {

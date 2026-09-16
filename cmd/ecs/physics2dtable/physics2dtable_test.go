@@ -87,6 +87,31 @@ func (r *rig) click(at m.Vec2) Census {
 	return census
 }
 
+// press drives one press of the re-break key: down for a tick, then up. That is
+// one edge, which is what a person pressing space produces and what the demo
+// counts. hold, below, is the other thing a key can do.
+func (r *rig) press() Census {
+	r.t.Helper()
+	r.engine.Input(input.KeyChange(rebreakKey, 0, true))
+	census := r.steps(1)
+	r.engine.Input(input.KeyChange(rebreakKey, 0, false))
+	return census
+}
+
+// hold puts the re-break key down and leaves it there for n ticks, the way a
+// finger resting on space does. The key is re-asserted on every one of them,
+// because a platform that repeats a held key delivers exactly that and it is the
+// version of "held" most likely to break an edge that is really a level.
+func (r *rig) hold(n int) Census {
+	r.t.Helper()
+	var census Census
+	for range n {
+		r.engine.Input(input.KeyChange(rebreakKey, 0, true))
+		census = r.steps(1)
+	}
+	return census
+}
+
 func TestTheTableRacksUpAsAHundredBallsInsideFourCushions(t *testing.T) {
 	first := start(t).steps(1)
 
@@ -435,6 +460,204 @@ func TestTheScreenAndTheTableAgreeOnWhereAPointIs(t *testing.T) {
 	}
 }
 
+// The re-break, which is one more clause of the same kind as the three above:
+//
+//	space breaks the table again, once per press, from the same deal.
+//
+// "The break comes to rest" is what makes it worth having — a table that has
+// stopped is a table with nothing left to watch — so these four tests all start
+// from a settled table, which is the state a person actually presses space in.
+
+func TestSpaceBreaksTheTableAgain(t *testing.T) {
+	r := start(t)
+	settled := r.steps(settleTicks)
+	// The premise, asserted rather than assumed: there is nothing moving to
+	// confuse the count that follows for a break.
+	if settled.Moving != 0 {
+		t.Fatalf("after %d ticks %d pieces still move, so this test cannot tell a re-break from what was left over",
+			settled.Step, settled.Moving)
+	}
+	if settled.Breaks != 1 || settled.Dealt != ballCount {
+		t.Fatalf("the opening rack counts as %d break(s) of %d pieces, want 1 of %d",
+			settled.Breaks, settled.Dealt, ballCount)
+	}
+
+	broken := r.press()
+
+	if broken.Breaks != 2 {
+		t.Errorf("one press of space made %d breaks, want the rack's one and this one", broken.Breaks)
+	}
+	// Every ball, and not merely some of them: the press re-deals the whole
+	// rack, so a table that was wholly still is wholly moving on the tick the key
+	// went down. A re-break that reached ninety of them would pass a "the table
+	// is moving again" test and fail this one.
+	if broken.Moving != ballCount {
+		t.Errorf("one tick after space, %d of %d pieces are above %v m/s, want every ball moving; seed %#016x",
+			broken.Moving, ballCount, restSpeed, broken.Seed)
+	}
+	// And it is a break rather than a nudge: the slowest thing the deal can
+	// produce is breakSlowest, so the quickest is at least that.
+	if broken.Fastest < breakSlowest {
+		t.Errorf("the quickest ball after the re-break does %v m/s, want at least the deal's slowest %v m/s",
+			broken.Fastest, breakSlowest)
+	}
+	t.Logf("a settled table at %.5f m/s was broken again to %.3f m/s with all %d balls moving",
+		settled.Fastest, broken.Fastest, broken.Moving)
+
+	// And it comes back to rest, because the cloth is the same cloth: the clause
+	// the demo exists to make is about the table and not about its first break.
+	rested := r.steps(settleTicks)
+	if rested.Moving != 0 || rested.Fastest > restSpeed {
+		t.Errorf("%d ticks after the re-break %d pieces still move and the quickest does %v m/s, want everything under %v m/s; seed %#016x",
+			settleTicks, rested.Moving, rested.Fastest, restSpeed, rested.Seed)
+	}
+}
+
+// The obvious bug in a key that does something: firing every tick it is held
+// rather than once when it goes down. Sixty breaks a second is not a break at
+// all — it is a table of balls with a fresh random velocity every frame, which
+// looks like noise and never comes to rest.
+func TestAHeldSpaceBreaksOnceAndNotSixtyTimesASecond(t *testing.T) {
+	r := start(t)
+	r.steps(settleTicks)
+
+	// A full second with the key down, re-asserted every tick.
+	const heldTicks = 60
+	held := r.hold(heldTicks)
+	if held.Breaks != 2 {
+		t.Errorf("space held for %d ticks made %d breaks, want the rack's one and one more",
+			heldTicks, held.Breaks)
+	}
+	// It is an edge and not a level in the direction that matters too: the deal
+	// happened on the first of those ticks, so the table has had the rest of the
+	// second to damp. A re-break on the last tick would leave it at full speed.
+	if held.Fastest >= breakFastest {
+		t.Errorf("after %d ticks of a held key the table is still doing %v m/s, which is a table being re-dealt rather than one running",
+			heldTicks, held.Fastest)
+	}
+
+	// Releasing and pressing again is a second edge, so the key is not a
+	// one-shot either: what makes it fire is the transition, both times.
+	r.engine.Input(input.KeyChange(rebreakKey, 0, false))
+	again := r.press()
+	if again.Breaks != 3 {
+		t.Errorf("a release and a second press made %d breaks, want 3", again.Breaks)
+	}
+	t.Logf("%d ticks of held space made one break and left the table at %.3f m/s; the next press made another",
+		heldTicks, held.Fastest)
+}
+
+// The speed ceiling is the number the cushion depth is a margin over, so a new
+// way of putting balls in motion is a new way of breaking it. A re-break is
+// arithmetically the opening break, dealt from the same range — but it is dealt
+// onto a table where the balls have settled wherever they stopped rather than
+// onto a lattice dealt clear of itself, which is the harder case for a solver
+// that does not conserve peak speed through a chain of touching bodies.
+func TestTheSpeedCeilingHoldsAcrossAReBreak(t *testing.T) {
+	r := start(t)
+	r.steps(settleTicks)
+	r.press()
+
+	worst, at := 0.0, 0
+	for n := 1; n <= breakTicks; n++ {
+		c := r.steps(1)
+		if c.Escaped != 0 {
+			t.Fatalf("%d ticks after the re-break, %d bodies are outside the table, the worst by %v m; seed %#016x",
+				n, c.Escaped, c.Outside, c.Seed)
+		}
+		if c.Fastest > worst {
+			worst, at = c.Fastest, n
+		}
+	}
+	if worst > speedCeiling {
+		t.Errorf("after the re-break something reached %v m/s at step %d, want no more than the ceiling's %v m/s; seed %#016x",
+			worst, at, speedCeiling, DefaultSeed)
+	}
+	t.Logf("over %d ticks after a re-break the quickest anything reached was %.3f m/s, against a deal of %v and a ceiling of %v",
+		breakTicks, worst, breakFastest, speedCeiling)
+}
+
+// Space breaks the balls and not the crates, and that is a decision rather than
+// an accident. A crate is four times a ball's mass, so a crate dealt the break's
+// fastest into a ball at rest hands it 2·4/(4+1)·5 = 8 m/s, which is over the
+// 7.5 m/s ceiling the cushions are cut for: kicking the crates would mean
+// re-deriving cushionDepth, and it would make a crate a cue ball rather than the
+// intruder a click put on the cloth.
+//
+// It is asserted as the count the break dealt to rather than as what moves
+// afterwards, because what moves afterwards is not the same claim: a crate the
+// re-broken balls immediately shove is the table working exactly as it should.
+func TestSpaceBreaksTheBallsAndNotTheCrates(t *testing.T) {
+	r := start(t)
+	r.steps(30)
+	dropped := r.click(m.Vec2{X: screenWidth / 2, Y: screenHeight / 2})
+	if dropped.Crates != 1 {
+		t.Fatalf("the click made %d crates, want 1", dropped.Crates)
+	}
+	r.steps(settleTicks)
+
+	broken := r.press()
+	if broken.Crates != 1 {
+		t.Fatalf("the table has %d crates on it, want the one that was clicked", broken.Crates)
+	}
+	if broken.Dealt != ballCount {
+		t.Errorf("the re-break dealt to %d pieces on a table of %d balls and %d crate, want the %d balls alone",
+			broken.Dealt, ballCount, broken.Crates, ballCount)
+	}
+	// And the crate is still on the cloth rather than launched off it, which is
+	// the consequence the ceiling argument above is really about.
+	after := r.steps(breakTicks)
+	if after.Escaped != 0 {
+		t.Errorf("%d ticks after a re-break beside a crate, %d bodies are outside the table, the worst by %v m; seed %#016x",
+			breakTicks, after.Escaped, after.Outside, after.Seed)
+	}
+	t.Logf("a re-break on a table carrying a crate dealt %d pieces and left the quickest at %.3f m/s",
+		broken.Dealt, after.Fastest)
+}
+
+// Determinism survives the key, which is the promise the seed on the HUD is
+// worth anything at all for: the re-break draws from the demo's own seeded
+// stream rather than from a clock or a fresh source, so the same seed and the
+// same presses on the same ticks are the same table, tick for tick.
+//
+// It is run as two engines side by side rather than against recorded numbers,
+// because what is being asserted is that nothing outside the stream reaches the
+// deal — and a golden file would also pass for a demo that had quietly become
+// reproducible only on this machine.
+func TestTheSameSeedAndTheSamePressesGiveTheSameTable(t *testing.T) {
+	// A script with everything in it that can move the stream or the table: a
+	// wait, a press, a second press before the table has settled, and a click in
+	// between, which draws nothing from the stream and must not shift the deal.
+	script := func(r *rig) []Census {
+		var seen []Census
+		seen = append(seen, r.steps(120))
+		seen = append(seen, r.press())
+		seen = append(seen, r.steps(40))
+		seen = append(seen, r.click(m.Vec2{X: 300, Y: 200}))
+		seen = append(seen, r.steps(40))
+		seen = append(seen, r.press())
+		seen = append(seen, r.steps(200))
+		return seen
+	}
+
+	first, second := script(start(t)), script(start(t))
+	if len(first) != len(second) {
+		t.Fatalf("the two runs took %d and %d readings", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("reading %d differs between two runs of the same seed and the same presses:\n  %+v\n  %+v",
+				i, first[i], second[i])
+		}
+	}
+	last := first[len(first)-1]
+	if last.Breaks != 3 {
+		t.Errorf("the script made %d breaks, want the rack's one and two presses", last.Breaks)
+	}
+	t.Logf("two runs of the same seed and the same presses agreed on all %d readings, the last at step %d: %s",
+		len(first), last.Step, last.lines()[0])
+}
+
 // viewportFor is the Viewport a window of that size produces with no desired
 // viewport set, which is what gfx resolves and what the pointer arrives against.
 func viewportFor(width, height float32) gfx.Viewport {
@@ -481,5 +704,17 @@ func TestTheHUDPrintsTheCensusItWasGiven(t *testing.T) {
 	// reported by its number.
 	if !strings.Contains(drawn[0], "seed") {
 		t.Errorf("the HUD's first line reads %q, want the seed on it", drawn[0])
+	}
+	// The break count is beside it, because it is the one thing about a running
+	// table a picture cannot otherwise say: a re-broken table looks exactly like
+	// a freshly racked one.
+	if !strings.Contains(drawn[0], "breaks") {
+		t.Errorf("the HUD's first line reads %q, want the break count on it", drawn[0])
+	}
+	// And the footer names the key that does it, off rebreakKey itself, so the
+	// HUD cannot advertise a key the demo does not read.
+	if footer := drawn[len(drawn)-1]; !strings.Contains(footer, rebreakKey.String()) {
+		t.Errorf("the HUD's footer reads %q, want it to name the %v key that breaks the table again",
+			footer, rebreakKey)
 	}
 }

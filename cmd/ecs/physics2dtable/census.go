@@ -24,6 +24,19 @@ type Census struct {
 	// and Crates counts the clicks that have landed.
 	Balls, Crates int
 
+	// Breaks is how many times the balls have been dealt, counting the opening
+	// rack as the first, so it is one on a table nobody has touched. It is the
+	// one thing about a running table a picture cannot otherwise say — a
+	// re-broken table looks like a freshly racked one — and it is how a test
+	// says that a held space breaks once rather than every tick.
+	//
+	// Dealt is how many pieces the last of those breaks dealt to, and it is the
+	// clause "space breaks the balls and not the crates" said as a number rather
+	// than inferred from what moved afterwards. It is ballCount on every break,
+	// however many crates have been clicked onto the cloth — a crate the balls
+	// then shove is the table working, and is not the same fact at all.
+	Breaks, Dealt int
+
 	// Contacts is the whole tick's Contact count and Deepest is the worst
 	// overlap on any of their points, in metres.
 	//
@@ -106,7 +119,10 @@ func survey(
 	contacts *ecs.Read[*ecsphysics2d.Contacts],
 ) {
 	t := state.Get()
-	c := Census{Step: t.Census.Step + 1, Seed: t.Census.Seed, Crates: t.crates, AskedAt: t.asked}
+	c := Census{
+		Step: t.Census.Step + 1, Seed: t.Census.Seed,
+		Crates: t.crates, Breaks: t.breaks, Dealt: t.dealt, AskedAt: t.asked,
+	}
 
 	for _, entry := range contacts.Get().All() {
 		c.Contacts++
@@ -191,7 +207,8 @@ func (c Census) lines() []string {
 			c.AskedAt.X, c.AskedAt.Y, c.LandedAt.X, c.LandedAt.Y)
 	}
 	return []string{
-		fmt.Sprintf("ecsphysics2d table  step %06d  time %6.2fs  seed %#016x", c.Step, float64(c.Step)*fixedStep, c.Seed),
+		fmt.Sprintf("ecsphysics2d table  step %06d  time %6.2fs  seed %#016x  breaks %2d dealt %3d",
+			c.Step, float64(c.Step)*fixedStep, c.Seed, c.Breaks, c.Dealt),
 		fmt.Sprintf("inside  %-30s  balls %3d  crates %2d  escaped %d  worst %6.4f m",
 			claimInside, c.Balls, c.Crates, c.Escaped, c.Outside),
 		fmt.Sprintf("apart   %-30s  contacts %3d  deepest %6.4f m  at rest %6.4f m = %4.1f Slop",

@@ -1,9 +1,20 @@
 // Command physics2dtable is ecsphysics2d's second demo: a top-down table with a
-// hundred balls breaking inside four cushions, and a crate dropped wherever the
-// mouse is clicked.
+// hundred balls breaking inside four cushions, a crate dropped wherever the
+// mouse is clicked, and space to break the table again.
 //
 //	go run ./cmd/ecs/physics2dtable
 //	go run ./cmd/ecs/physics2dtable -seed 12345
+//
+// What the hands do:
+//
+//	space   re-deal every ball a fresh direction, speed and spin — the same deal
+//	        the opening rack was dealt from, off the same stream. It is what the
+//	        cloth is for: the table stops in about twenty seconds and this starts
+//	        it again. Once per press and not once per tick held, on any tick and
+//	        not only on a table that has stopped, and the balls alone — a crate
+//	        is an intruder a click added and is four times a ball's mass, which
+//	        is over the speed ceiling the cushions are cut for. See rebreak.
+//	click   drop a crate at the cursor.
 //
 // Its sibling cmd/ecs/physics2d shows what the solver does under gravity. This
 // one shows what it does with none, which is the more interesting half:
@@ -14,6 +25,12 @@
 //	plane to choose. A Force Component is still on every Dynamic body, because
 //	a Dynamic body without one falls out of the velocity integrator's Query and
 //	silently never moves, and it stays zero from the first tick to the last.
+//
+// That survives space, and deliberately: a break is a kick rather than a
+// sustained push, so both breaks are written as a Velocity. A Force would be
+// about 300 N for a 5 m/s kick on a 1 kg ball at this step, and it would arrive
+// a tick late. dealBall is the one place either break is dealt and says so at
+// length.
 //
 // What the eyes are asked is one sentence, and it is the same sentence
 // physics2dtable_test.go asserts:
@@ -47,10 +64,14 @@
 // break deals from 5 m/s to a thirtieth of a millimetre a second in twenty
 // seconds, which is the cloth.
 //
-// The break is dealt from one seeded stream and the seed is on the HUD and on
-// stdout. -seed takes another, so a run that shows something wrong is reported
-// by its number and reproduced by it. The default is a constant, so step N of a
-// default run is the same frame on every machine, as the sibling demos are.
+// Every break is dealt from one seeded stream — the opening rack and each press
+// of space alike, in that order — and the seed is on the HUD and on stdout.
+// -seed takes another, so a run that shows something wrong is reported by its
+// number and reproduced by it. The default is a constant and the stream is the
+// only source of randomness in the program, so step N of a default run in which
+// space was pressed on the same ticks is the same frame on every machine, as the
+// sibling demos are. A click draws nothing from the stream, so where the crates
+// went does not move the balls off the sequence they would have had.
 //
 // What is on screen is the Shapes themselves and nothing else: every Body is its
 // own outline, straight off the Component, with a spoke on each ball so a
@@ -164,6 +185,8 @@ type (
 	rackSystem kernel.Subscription[app.InitEvent]
 	// dropSystem turns a click into a crate.
 	dropSystem kernel.Subscription[app.UpdateEvent]
+	// rebreakSystem re-deals every ball's Velocity when space is pressed.
+	rebreakSystem kernel.Subscription[app.UpdateEvent]
 	// surveySystem reads the settled world back into the census, once the
 	// solver has finished with the tick.
 	surveySystem kernel.Subscription[app.UpdateEvent]
@@ -194,6 +217,18 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 	// It is the right price here (one demo, one click) and it is the reason
 	// this System does nothing but read the pointer and spawn.
 	registrar.Subscribe[dropSystem](ecs.ToHandler[app.UpdateEvent](registrar, drop)).
+		After[input.AdvanceOnUpdate]().Before[ecsphysics2d.IntegrateOnUpdate]()
+
+	// The re-break is ordered exactly as the click is, and for the same two
+	// reasons: After input's advance, so JustPressed is this tick's edge and a
+	// held key is one break rather than sixty; Before Integrate, so the
+	// velocities it deals are the ones this tick moves rather than the next.
+	//
+	// It costs the frame nothing, unlike the click beside it. It writes the
+	// Velocity Store and the Table Resource and spawns nothing, so it is an
+	// ordinary parallel System that happens to be excluded by the barrier drop
+	// already pays.
+	registrar.Subscribe[rebreakSystem](ecs.ToHandler[app.UpdateEvent](registrar, rebreak)).
 		After[input.AdvanceOnUpdate]().Before[ecsphysics2d.IntegrateOnUpdate]()
 
 	// The census is a reacting System — cp's PostSolve — so it reads the tick
