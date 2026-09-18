@@ -255,8 +255,9 @@ bytes that are no longer there.
 
 *In the set for:* it is the only asset that makes a load *fail*. A model that
 fails is skipped, never substituted, and without a file that fails, nothing ever
-demonstrates that. It also fails asynchronously - the header parses - which is
-the case a missing path cannot cover.
+demonstrates that. It also fails in the decode - the header parses, so the read
+succeeds and the loader is what refuses it - which is the case a missing path
+cannot cover.
 
 - **Source:** derived from Box Vertex Colors, above
 - **Licence:** `CC0-1.0`, inherited

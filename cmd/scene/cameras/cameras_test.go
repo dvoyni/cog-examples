@@ -18,12 +18,11 @@ import (
 )
 
 // run starts the demo headless over the vendored asset set and steps until the
-// model is resident, which is when the frame it records is the frame the
+// model is loaded, which is when the frame it records is the frame the
 // reference screenshot was taken of.
 //
-// The wait is wall clock rather than a frame count on purpose: a load does not
-// run on the frame's thread, so a test that waited in frames would be asserting
-// the asynchronous path does not exist.
+// The loop settles on its first pass: a load runs inside the flush that named
+// the file, so the frame that draws the model is the frame that loaded it.
 func run(t *testing.T) (*headless.Engine, *Cameras) {
 	t.Helper()
 	config, err := assets.Config(storage.Config{})

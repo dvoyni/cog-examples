@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,14 +25,14 @@ import (
 // smaller half of the demonstration and this is the larger one.
 
 // run starts the demo headless over the vendored asset set and steps until
-// every station has reached the residency its table row expects - six resident,
-// three failed - which is the frame the reference screenshot shows.
+// every station has reached the outcome its table row expects - thirteen
+// loaded, three failed - which is the frame the reference screenshot shows.
 //
-// The wait is wall clock rather than a frame count on purpose: a load does not
-// run on the frame's thread, and decoding TextureSettingsTest's images takes
-// longer than a few hundred headless frames of doing nothing else. That is
-// exactly the hitch the asynchronous path exists to keep out of the frame, and
-// a test that waited in frames would be asserting it does not exist.
+// The loop survives from when loading was asynchronous and now settles on its
+// first pass: a load runs inside the flush that named the file, so the frame
+// that draws a station is the frame that loaded it. What that frame costs is the
+// hitch this design accepts - decoding TextureSettingsTest's images is the
+// expensive one - and Preload is the lever a game pulls to move it.
 func run(t *testing.T) (*headless.Engine, *Loading) {
 	t.Helper()
 	engine, demo := start(t)
@@ -72,12 +73,12 @@ func settle(t *testing.T, engine *headless.Engine, demo *Loading) {
 	}
 }
 
-// unsettled names the stations that have not reached their expected residency,
-// so a timeout says which rather than only that one did.
+// unsettled names the stations that did not reach the outcome their table row
+// expects, so a timeout says which rather than only that one did.
 func unsettled(demo *Loading) string {
 	out := ""
 	for i := range stations {
-		if demo.State(i) != stations[i].expect {
+		if (demo.State(i) == nil) != stations[i].loads {
 			out += " " + stations[i].name + "=" + stateName(demo.State(i))
 		}
 	}
@@ -117,9 +118,9 @@ func pass(t *testing.T, engine *headless.Engine) scene.PassView {
 func TestEveryStationReachesTheResidencyItsTableExpects(t *testing.T) {
 	_, demo := run(t)
 	for i := range stations {
-		if got := demo.State(i); got != stations[i].expect {
-			t.Errorf("station %q is %s, want %s",
-				stations[i].name, stateName(got), stateName(stations[i].expect))
+		if got := demo.State(i); (got == nil) != stations[i].loads {
+			t.Errorf("station %q is %s (%v), want it to have loaded: %v",
+				stations[i].name, stateName(got), got, stations[i].loads)
 		}
 	}
 }
@@ -255,92 +256,92 @@ func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
 	}
 	// No demo plugin: nothing in this engine records a single op.
 	engine := headless.NewOver(t, config)
-	engine.Lookup(func(la scene.LookupAccess) { la.Preload(pathQuantized) })
-	waitFor(t, engine, pathQuantized, scene.ModelResident)
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+		la.Preload(pathQuantized)
+		if err := la.State(pathQuantized); err != nil {
+			t.Fatalf("Preload left %q unloaded: %v", pathQuantized, err)
+		}
+	})
+	// The bakes Preload queued reach the backend on the render after the update
+	// that made them, so a test measuring uploads still steps the frames.
+	engine.Steps(3)
 	if passes := engine.Passes(); len(passes) != 0 {
 		t.Fatalf("published %d passes with nothing recording, want none", len(passes))
 	}
 }
 
-// waitFor steps until one path reaches a state, or fails the test.
-func waitFor(t *testing.T, engine *headless.Engine, path string, want scene.ModelState) {
+// loadNow loads one path and fails the test if it did not load. There is
+// nothing to wait for - the read, the parse and the uploads all finish inside
+// Preload - so what used to be a polling loop is one call.
+//
+// It still steps three frames: the bakes the load queued reach the backend on
+// the render after the update that queued them, so a test that measured
+// uploads here would count the frame before.
+func loadNow(t *testing.T, engine *headless.Engine, path string) {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		var got scene.ModelState
-		engine.Lookup(func(la scene.LookupAccess) { got = la.State(path) })
-		if got == want {
-			// Three more frames. Residency flips inside the command that
-			// installs the model, and the bakes it queued reach the backend on
-			// the render after that - so a test that measured here would count
-			// the uploads of the frame before.
-			engine.Steps(3)
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s is %s after 60s, want %s", path, stateName(got), stateName(want))
-		}
-		engine.Steps(1)
-		time.Sleep(time.Millisecond)
+	var err error
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+		la.Preload(path)
+		err = la.State(path)
+	})
+	if err != nil {
+		t.Fatalf("%s did not load: %v", path, err)
 	}
+	engine.Steps(3)
 }
 
-// The two failure modes are told apart by when they happen, not by their type.
+// failNow is loadNow for a path that is meant not to load.
+func failNow(t *testing.T, engine *headless.Engine, path string) {
+	t.Helper()
+	var err error
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+		la.Preload(path)
+		err = la.State(path)
+	})
+	if err == nil {
+		t.Fatalf("%s loaded, want it to have failed", path)
+	}
+	engine.Steps(3)
+}
+
+// Every failure happens where the caller is standing. There is no longer a
+// slow half and a fast half: the read, the parse and the uploads all run inside
+// the call that asked, so an invalid path, a truncated file and a file that is
+// not there all answer on the first query.
 //
-// An invalid path is failed synchronously, inside the very call that asked: it
-// never reaches a load command at all, so the report-from-the-goroutine rule
-// cannot see it and without this every query on it would return a silent false
-// forever. A file that is truncated, and a file that is not there, both open a
-// load command and fail inside it, a frame or more later.
-//
-// This corrects what this demo's ticket asked for. #97 expected the
-// non-existent path to be the synchronous one; it is not, and cannot be. The
-// mount answers fs.ErrNotExist for it - which is also what lets storage fall
-// through to the next mount - and finding that out means looking at the
-// filesystem, which is what the load command is for.
-func TestAnInvalidPathFailsSynchronouslyAndABrokenFileAsynchronously(t *testing.T) {
+// This replaces what this demo's ticket asked for twice over. #97 expected the
+// non-existent path to be the synchronous one and it was not, because finding
+// out meant looking at the filesystem; now looking at the filesystem is
+// something the asking call does, so all three are synchronous and the
+// distinction the old test drew has nothing left to draw.
+func TestEveryFailureHappensInTheCallThatAsked(t *testing.T) {
 	engine, demo := start(t)
-	var invalid, truncated, absent scene.ModelState
-	engine.Lookup(func(la scene.LookupAccess) {
+	var invalid, truncated, absent error
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 		invalid = la.State(pathInvalid)
 		truncated = la.State(pathTruncated)
 		absent = la.State(pathMissing)
 	})
-	if invalid != scene.ModelFailed {
-		t.Errorf("the first State of an invalid path is %s, want %s - it is refused "+
-			"before a load is enqueued", stateName(invalid), stateName(scene.ModelFailed))
+	if _, ok := invalid.(scene.ErrModelPathInvalid); !ok {
+		t.Errorf("the first State of an invalid path is %v, want it refused before the cache", invalid)
 	}
-	for name, state := range map[string]scene.ModelState{
-		"truncated": truncated, "absent": absent,
-	} {
-		if state != scene.ModelLoading {
-			t.Errorf("the first State of the %s file is %s, want %s - the load has to "+
-				"look at the filesystem before it can say", name, stateName(state),
-				stateName(scene.ModelLoading))
+	for name, err := range map[string]error{"truncated": truncated, "absent": absent} {
+		if err == nil {
+			t.Errorf("the first State of the %s file is nil, want the failure it just hit", name)
 		}
 	}
 	settle(t, engine, demo)
-	for _, path := range []string{pathTruncated, pathMissing} {
-		var state scene.ModelState
-		engine.Lookup(func(la scene.LookupAccess) { state = la.State(path) })
-		if state != scene.ModelFailed {
-			t.Errorf("%s settled at %s, want %s", path, stateName(state),
-				stateName(scene.ModelFailed))
-		}
-	}
-	// The two asynchronous failures are the same class through State and
-	// distinguishable only by what they wrap, which is the honest report of
-	// what the API can tell a caller.
+	// The two file failures are distinguishable by what they wrap, which is the
+	// honest report of what the API can tell a caller. The absent one is the
+	// library's own read failure, reported under the descriptor; the truncated
+	// one is the loader's, reported as scene's own error.
 	var notExist, unexpectedEOF bool
 	for _, err := range engine.Errors() {
-		var unavailable scene.ErrModelUnavailable
-		if !errors.As(err, &unavailable) {
-			continue
+		if strings.Contains(err.Error(), pathMissing) && errors.Is(err, fs.ErrNotExist) {
+			notExist = true
 		}
-		switch unavailable.Model {
-		case pathMissing:
-			notExist = errors.Is(err, fs.ErrNotExist)
-		case pathTruncated:
+		var unavailable scene.ErrModelUnavailable
+		if errors.As(err, &unavailable) && unavailable.Model == pathTruncated {
 			unexpectedEOF = !errors.Is(err, fs.ErrNotExist)
 		}
 	}
@@ -352,67 +353,77 @@ func TestAnInvalidPathFailsSynchronouslyAndABrokenFileAsynchronously(t *testing.
 	}
 }
 
-// reportsFor counts how many times one path has been reported unloadable.
+// reportsFor counts how many times one path has been reported unloadable,
+// whichever half of the load reported it: the loader names the model in its own
+// error, and the library names the path in the message of its read failure.
 func reportsFor(engine *headless.Engine, path string) int {
 	count := 0
 	for _, err := range engine.Errors() {
 		var unavailable scene.ErrModelUnavailable
 		if errors.As(err, &unavailable) && unavailable.Model == path {
 			count++
+			continue
+		}
+		if errors.Is(err, fs.ErrNotExist) && strings.Contains(err.Error(), path) {
+			count++
 		}
 	}
 	return count
 }
 
-// settle without a demo waits on the three broken paths alone.
+// settleBroken without a demo loads the two broken paths, each of which fails.
 func settleBroken(t *testing.T, engine *headless.Engine) {
 	t.Helper()
 	for _, path := range []string{pathTruncated, pathMissing} {
-		waitFor(t, engine, path, scene.ModelFailed)
+		failNow(t, engine, path)
 	}
 }
 
 // A failed path never retries, and unload is the only lever that clears it.
-// A typo'd path drawn every frame must not spawn a load command every frame
+// A typo'd path drawn every frame must not re-read the file every frame
 // forever, so failure is terminal - and a Retry that did not first free would
 // be a second name for the idempotent load that already exists.
 func TestAFailedPathNeverRetriesAndUnloadIsTheOnlyLever(t *testing.T) {
 	engine, demo := run(t)
-	// Thirty frames drawing three failed paths, and none goes back to loading.
-	// A count of baked buffers cannot say this - canvas bakes the HUD's text
-	// every frame - but the state machine can: a path that retried would have
-	// to pass through ModelLoading to do it.
+	// Thirty frames drawing three failed paths, and none of them loads again.
+	// The observable is the report count: a path that retried would report
+	// afresh, because the entry that silences it is the same entry that stops
+	// the load.
+	before := map[string]int{}
+	for _, path := range []string{pathTruncated, pathMissing} {
+		before[path] = reportsFor(engine, path)
+	}
 	for frame := range 30 {
 		engine.Steps(1)
+		for _, path := range []string{pathTruncated, pathMissing} {
+			if got := reportsFor(engine, path); got != before[path] {
+				t.Fatalf("on frame %d %s has reported %d times, want the %d it had: "+
+					"failure is terminal and clears only on unload",
+					frame, path, got, before[path])
+			}
+		}
 		for _, path := range []string{pathTruncated, pathMissing, pathInvalid} {
-			var state scene.ModelState
-			engine.Lookup(func(la scene.LookupAccess) { state = la.State(path) })
-			if state != scene.ModelFailed {
-				t.Fatalf("on frame %d %s is %s, want %s: failure is terminal and clears "+
-					"only on unload", frame, path, stateName(state),
-					stateName(scene.ModelFailed))
+			var err error
+			engine.LookupDevice(func(la scene.LookupDeviceAccess) { err = la.State(path) })
+			if err == nil {
+				t.Fatalf("on frame %d %s loaded, want it still failed", frame, path)
 			}
 		}
 	}
 	// The demo's own retry lever: unload, then preload. All three fail again,
-	// because all three are still broken - but they went back through loading
-	// to get there, which is what says the unload cleared them.
-	// The observable is a second report, not a second ModelLoading: reports are
-	// keyed and fired once, and the key is cleared on unload, so the truncated
-	// file reporting twice is the proof the unload actually reset the slot. The
-	// state cannot say it - this file fails so fast that a poll a frame later
-	// has already missed the loading it passed through.
-	before := reportsFor(engine, pathTruncated)
+	// because all three are still broken - and the observable is a second
+	// report, because reports are keyed and fired once and the key is cleared
+	// on unload. The truncated file reporting twice is the proof the unload
+	// actually retired the entry.
+	reported := reportsFor(engine, pathTruncated)
 	demo.Retry()
-	// The demo queues the unload and lets the next frame's draw ask again, and
-	// it has to: an unload is applied at the frame boundary, so a Preload
-	// issued in the same handler still sees the failed entry and does nothing
-	// at all. A retry has to straddle the boundary.
-	engine.Steps(4)
-	settleBroken(t, engine)
-	if after := reportsFor(engine, pathTruncated); after != before+1 {
+	// The unload and the preload now happen in one handler, in that order, and
+	// that is enough: freeing is immediate, so the preload behind it loads
+	// afresh rather than finding the entry the unload gave up.
+	engine.Steps(2)
+	if after := reportsFor(engine, pathTruncated); after != reported+1 {
 		t.Errorf("the truncated file reported %d times before the retry and %d after, "+
-			"want exactly one more: unload is what clears a failed path", before, after)
+			"want exactly one more: unload is what clears a failed path", reported, after)
 	}
 	if unexpected := unexpectedErrors(engine, demo); len(unexpected) > 0 {
 		t.Errorf("the retry reported %d errors the demo does not provoke, first: %v",
@@ -440,7 +451,7 @@ func TestNodesListsTheSubtreeDepthFirst(t *testing.T) {
 	} {
 		var got []string
 		var ok bool
-		engine.Lookup(func(la scene.LookupAccess) { got, ok = la.Nodes(c.ref, nil) })
+		engine.LookupDevice(func(la scene.LookupDeviceAccess) { got, ok = la.Nodes(c.ref, nil) })
 		if !ok {
 			t.Errorf("Nodes(%+v) answered false", c.ref)
 			continue
@@ -471,7 +482,7 @@ func TestEveryQueryAnswersFalseForAnUnresolvedRef(t *testing.T) {
 		stations[stationNoSuchScene].ref(),
 		stations[stationNoSuchNode].ref(),
 	} {
-		engine.Lookup(func(la scene.LookupAccess) {
+		engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 			if _, ok := la.Nodes(ref, nil); ok {
 				t.Errorf("Nodes(%+v) answered true", ref)
 			}
@@ -501,7 +512,7 @@ func TestTheStationTableMeasuresTheVendoredBytes(t *testing.T) {
 		}
 		var min, max m.Vec3
 		var ok bool
-		engine.Lookup(func(la scene.LookupAccess) { min, max, ok = la.AABB(station.ref()) })
+		engine.LookupDevice(func(la scene.LookupDeviceAccess) { min, max, ok = la.AABB(station.ref()) })
 		if !ok {
 			t.Errorf("station %q: AABB answered false", station.name)
 			continue
@@ -550,7 +561,7 @@ func TestReRootingDiscardsEveryAncestorTransform(t *testing.T) {
 	for at, index := range [2]int{stationWheel, stationWheelOther} {
 		var min, max m.Vec3
 		var ok bool
-		engine.Lookup(func(la scene.LookupAccess) {
+		engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 			min, max, ok = la.AABB(stations[index].ref())
 		})
 		if !ok {
@@ -576,7 +587,7 @@ func TestReRootingDiscardsEveryAncestorTransform(t *testing.T) {
 func TestAWholeSceneDrawKeepsTheRootTransformAndANodeDrawDiscardsIt(t *testing.T) {
 	engine, _ := run(t)
 	var whole, body m.Box3
-	engine.Lookup(func(la scene.LookupAccess) {
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 		min, max, _ := la.AABB(stations[stationScene].ref())
 		whole = m.Box3{Min: min, Max: max}
 		min, max, _ = la.AABB(stations[stationBody].ref())
@@ -613,7 +624,7 @@ func TestAMatchedSceneSelectorResolvesToTheSameDrawAsTheDefault(t *testing.T) {
 	engine, _ := run(t)
 	var named, byDefault m.Box3
 	var namedOK, defaultOK bool
-	engine.Lookup(func(la scene.LookupAccess) {
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 		min, max, ok := la.AABB(scene.ModelRef{Path: pathTruck, Scene: "Scene"})
 		named, namedOK = m.Box3{Min: min, Max: max}, ok
 		min, max, ok = la.AABB(scene.ModelRef{Path: pathTruck})
@@ -679,8 +690,8 @@ func TestTheTextureCacheBakesOneTexturePerImageNotPerGlTFTexture(t *testing.T) {
 		t.Fatalf("locate assets: %v", err)
 	}
 	engine := headless.NewOver(t, config)
-	engine.Lookup(func(la scene.LookupAccess) { la.Preload(pathSamplers) })
-	waitFor(t, engine, pathSamplers, scene.ModelResident)
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) { la.Preload(pathSamplers) })
+	loadNow(t, engine, pathSamplers)
 	backend := engine.Backend()
 	// Every model texture is baked with a mip chain and scene's own two 1x1
 	// defaults are not, so the mipped count is the model's alone and needs no
@@ -717,7 +728,7 @@ func TestDrawingOneModelManyTimesBakesItsTextureOnce(t *testing.T) {
 	// The same number of draws the grid makes, alone in an engine with no HUD,
 	// so the mipped count is the truck's and needs no subtraction.
 	engine := headless.NewOver(t, config, &soloDemo{path: pathTruck, copies: copies})
-	waitFor(t, engine, pathTruck, scene.ModelResident)
+	loadNow(t, engine, pathTruck)
 	truck := parse(t, pathTruck)
 	if got := engine.Backend().MippedTextures; got != len(truck.Images) {
 		t.Errorf("%d draws of one model baked %d textures, want %d - one per image, "+
@@ -759,8 +770,8 @@ const defaultTextures = 2
 // group rather than a missing picture - so UnloadTexture is the separate,
 // deliberate lever.
 //
-// The observable is that the reload the next frame's draws trigger bakes no new
-// texture: the geometry came back and the image never left.
+// The observable is that the reload bakes no new texture: the geometry came
+// back and the image never left.
 func TestUnloadingAModelDoesNotCascadeToItsTextures(t *testing.T) {
 	engine, demo := run(t)
 	backend := engine.Backend()
@@ -771,14 +782,15 @@ func TestUnloadingAModelDoesNotCascadeToItsTextures(t *testing.T) {
 	}
 
 	demo.UnloadModel()
-	// The unload lands at the next frame boundary, so the frame that asked
-	// still draws what it always drew. The frame after that finds the slot
-	// reset and reloads it, because a later draw of an unloaded path reloads.
+	// The unload frees where the caller stands, and the same frame's draws then
+	// load the truck again: a free followed by a get is a reload, not an error.
+	// So what is being measured after this is the reload, which is exactly what
+	// makes the texture count the assertion.
 	engine.Steps(2)
-	if demo.State(stationScene) == scene.ModelResident {
-		t.Error("the truck was still resident two frames after UnloadModel")
-	}
 	settle(t, engine, demo)
+	if demo.State(stationScene) != nil {
+		t.Errorf("the truck did not come back after UnloadModel: %v", demo.State(stationScene))
+	}
 	if got := backend.BakedTextures; got != before {
 		t.Errorf("reloading the truck baked %d more textures, want none: UnloadModel "+
 			"cascaded to the texture cache", got-before)
@@ -806,26 +818,26 @@ func TestUnloadTextureIsTheLeverThatFreesThem(t *testing.T) {
 	}
 }
 
-// UnloadAll gives up every resident model and every cached texture at once. It
-// is the level teardown, and it is a flag rather than a walk because the table
-// it would walk can still change before the boundary arrives.
-func TestUnloadAllReleasesEveryResidentModel(t *testing.T) {
+// UnloadAll gives up every loaded model and every cached texture at once. It is
+// the level teardown, and it walks what is loaded at the call.
+//
+// The observable is the same one UnloadTexture's is: the frame's own draws load
+// everything again straight afterwards, and because the textures went with the
+// models, that reload bakes every image afresh.
+func TestUnloadAllReleasesEveryLoadedModel(t *testing.T) {
 	engine, demo := run(t)
+	backend := engine.Backend()
 	if demo.TotalPoseBytes() == 0 {
-		t.Fatal("nothing resident to release")
+		t.Fatal("nothing loaded to release")
 	}
+	before := backend.BakedTextures
 	demo.UnloadAll()
 	engine.Steps(2)
-	resident := 0
-	for i := range stations {
-		if demo.State(i) == scene.ModelResident {
-			resident++
-		}
-	}
-	if resident == len(stations) {
-		t.Error("every station was still resident two frames after UnloadAll")
-	}
 	settle(t, engine, demo)
+	if got := backend.BakedTextures; got <= before {
+		t.Errorf("reloading after UnloadAll baked %d textures, want every image again",
+			got-before)
+	}
 }
 
 // A replacement Material binds neither the file's record nor its textures, and
@@ -956,15 +968,15 @@ func TestTheConvertedLinePrimitivesReachALinePipeline(t *testing.T) {
 func TestTheQuantisedCubeDequantisesToItsPlainTwinsBounds(t *testing.T) {
 	engine, _ := run(t)
 	const plain = "assets/AnimatedMorphCube/AnimatedMorphCube.glb"
-	engine.Lookup(func(la scene.LookupAccess) { la.Preload(plain) })
-	waitFor(t, engine, plain, scene.ModelResident)
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) { la.Preload(plain) })
+	loadNow(t, engine, plain)
 
 	doc := parse(t, pathQuantized)
 	if !required(doc, "KHR_mesh_quantization") {
 		t.Fatalf("%s no longer requires KHR_mesh_quantization", pathQuantized)
 	}
 	var quantised, twin m.Box3
-	engine.Lookup(func(la scene.LookupAccess) {
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 		min, max, _ := la.AABB(scene.ModelRef{Path: pathQuantized})
 		quantised = m.Box3{Min: min, Max: max}
 		min, max, _ = la.AABB(scene.ModelRef{Path: plain})
@@ -1005,7 +1017,7 @@ func TestAnEightBitIndexedModelDrawsTheFilesOwnIndexCount(t *testing.T) {
 	}
 	solo := &soloDemo{path: pathNarrowIndices}
 	engine := headless.NewOver(t, config, solo)
-	waitFor(t, engine, pathNarrowIndices, scene.ModelResident)
+	loadNow(t, engine, pathNarrowIndices)
 	engine.Steps(2)
 
 	doc := parse(t, pathNarrowIndices)

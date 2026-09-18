@@ -654,25 +654,30 @@ const BlendPrimitives = 2
 // draw records the whole frame: the camera, the still life, the lights and the
 // HUD.
 //
-// It holds the Lookup and the filesystem because a ModelLights read needs a
-// LookupAccess, which is the facade a demo builds from them. The read is a map
-// hit and a copy into a scratch slice; nothing here parses or uploads.
+// It holds the Lookup, the filesystem and the resource queue because a
+// ModelLights read goes through the device facade, and every query on that
+// facade loads the file it names. A demo pays for that in its own Lock closure,
+// which is where the cost of a synchronous load belongs.
 func (p *Pbr) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
 	var lookup kernel.Write[*scene.Lookup]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
 			lookup = access.GetWrite[*scene.Lookup]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			p.rate.measure(time.Now())
 			p.readStats(q)
 			p.advance(inputState.Get())
-			p.record(q, scene.NewLookupAccess(k, lookup.Get()))
+			p.record(q, scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
 			p.hud(canvasQueue.Get())
 			return nil
 		}
@@ -759,7 +764,7 @@ func (p *Pbr) eye() m.Vec3 {
 
 // record records the frame: one camera, the ground, six plinths, seven model
 // draws and twenty-one lights.
-func (p *Pbr) record(q *scene.OpQueue, la scene.LookupAccess) {
+func (p *Pbr) record(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	q.Camera(CameraMain, scene.CameraDescr{
 		Transform: scene.LookAt(p.eye(), p.target(), m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
@@ -805,7 +810,7 @@ func (p *Pbr) record(q *scene.OpQueue, la scene.LookupAccess) {
 // the station's own eight and the five rim lamps are offered first and are the
 // sixteen the reference pose keeps; the five deep lamps are offered last and are
 // the five it drops.
-func (p *Pbr) recordLights(q *scene.OpQueue, la scene.LookupAccess) {
+func (p *Pbr) recordLights(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	declared := 0
 
 	// The fill light. Range is left at zero, which means infinite: it is not
@@ -886,7 +891,7 @@ func spread(i, n int, spacing float32) float32 {
 // This file declares none, and the branch is here because a demo reading a
 // file's lights as data has to decide what to do with the kind it cannot
 // declare.
-func (p *Pbr) recordModelLights(q *scene.OpQueue, la scene.LookupAccess) int {
+func (p *Pbr) recordModelLights(q *scene.OpQueue, la scene.LookupDeviceAccess) int {
 	station := &placements[stationLights]
 	lights, ok := la.ModelLights(stations[stationLights].path, p.modelLights[:0])
 	if !ok {
@@ -913,10 +918,10 @@ func (p *Pbr) recordModelLights(q *scene.OpQueue, la scene.LookupAccess) int {
 	return declared
 }
 
-// readResidency asks each station whether its model is drawable yet, for the
-// HUD alone. ModelLights' ok is the residency predicate the API has before the
-// lookup facade lands: it is false for a missing, loading and failed path alike.
-func (p *Pbr) readResidency(la scene.LookupAccess) {
+// readResidency asks each station whether its model is drawable, for the HUD
+// alone. ModelLights' ok is the drawable predicate: it is false for a file that
+// could not be read and for one that failed to parse alike.
+func (p *Pbr) readResidency(la scene.LookupDeviceAccess) {
 	for i := range stations {
 		_, ok := la.ModelLights(stations[i].path, nil)
 		p.resident[i] = ok

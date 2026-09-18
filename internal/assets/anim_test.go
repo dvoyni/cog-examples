@@ -23,7 +23,7 @@ func clipsOf(t *testing.T, e *headless.Engine, path string) []scene.ClipInfo {
 	t.Helper()
 	var clips []scene.ClipInfo
 	var ok bool
-	e.Lookup(func(la scene.LookupAccess) { clips, ok = la.Clips(path, nil) })
+	e.LookupDevice(func(la scene.LookupDeviceAccess) { clips, ok = la.Clips(path, nil) })
 	if !ok {
 		t.Fatalf("%s is not resident, so it has no clips to report", path)
 	}
@@ -35,7 +35,7 @@ func jointsOf(t *testing.T, e *headless.Engine, path string) []string {
 	t.Helper()
 	var joints []string
 	var ok bool
-	e.Lookup(func(la scene.LookupAccess) { joints, ok = la.Joints(path, nil) })
+	e.LookupDevice(func(la scene.LookupDeviceAccess) { joints, ok = la.Joints(path, nil) })
 	if !ok {
 		t.Fatalf("%s is not resident, so it has no joints to report", path)
 	}
@@ -93,7 +93,7 @@ func TestFoxDeclaresItsThreeClipsAndItsRig(t *testing.T) {
 func TestFoxBakesTheExpectedPoseMemory(t *testing.T) {
 	e := drawing(t, foxAsset, scene.ModelDraw{})
 	var bytes int
-	e.Lookup(func(la scene.LookupAccess) { bytes, _ = la.PoseBytes(foxAsset) })
+	e.LookupDevice(func(la scene.LookupDeviceAccess) { bytes, _ = la.PoseBytes(foxAsset) })
 	// 24 joints x 48 bytes is a row; the rest frame plus every clip's frames
 	// are the rows. A three-clip rig lands in the hundreds of kilobytes, which
 	// is the figure the spec quotes.
@@ -213,7 +213,7 @@ func TestAStaticVendoredModelBakesNoPoses(t *testing.T) {
 	e := drawing(t, bottle, scene.ModelDraw{})
 	var bytes int
 	var clips []scene.ClipInfo
-	e.Lookup(func(la scene.LookupAccess) {
+	e.LookupDevice(func(la scene.LookupDeviceAccess) {
 		bytes, _ = la.PoseBytes(bottle)
 		clips, _ = la.Clips(bottle, nil)
 	})

@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneplugin"
@@ -25,25 +24,17 @@ func run(t *testing.T, n int) *headless.Engine {
 	}
 	engine := headless.NewOver(t, assetConfig, ecsplugin.New(), ecssceneplugin.New(), New())
 
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		resident := 0
-		engine.Lookup(func(la scene.LookupAccess) {
-			for _, path := range []string{nozzlePath, foxPath} {
-				la.Preload(path)
-				if la.State(path) == scene.ModelResident {
-					resident++
-				}
+	// Preload loads: by the time it returns, the file has been read, parsed and
+	// uploaded. There is nothing to wait for, so what used to be a polling loop
+	// is one call and one assertion.
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+		for _, path := range []string{nozzlePath, foxPath} {
+			la.Preload(path)
+			if err := la.State(path); err != nil {
+				t.Fatalf("Preload left %q unloaded: %v", path, err)
 			}
-		})
-		if resident == 2 {
-			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the models never became resident; engine reported %v", engine.Errors())
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	})
 
 	engine.Steps(n)
 	if errs := engine.Errors(); len(errs) > 0 {

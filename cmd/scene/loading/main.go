@@ -1,6 +1,6 @@
 // Command loading is the scene plugin's demo of everything that happens
-// between naming a file and drawing it: model addressing, asynchronous
-// residency, and the lookup facade.
+// between naming a file and drawing it: model addressing, synchronous
+// residency and its cost, and the lookup facade.
 //
 //	go run ./cmd/scene/loading
 //
@@ -81,9 +81,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
@@ -198,19 +200,32 @@ func (p *Loading) report(err error) bool {
 // expectedReport reports whether err is one of the five this demo provokes on
 // purpose, and what provoked it.
 //
-// It matches on the error's own fields rather than on its text: every one of
-// these carries the path and the selector that produced it, which is exactly
-// what an allow-list needs to stay narrow.
+// It matches on the error's own fields rather than on its text wherever it can:
+// scene's own errors carry the path and the selector that produced them, which
+// is exactly what an allow-list needs to stay narrow.
+//
+// The one exception is the failed read. The asset library performs the read
+// itself and reports its own failure, so what reaches here is a wrapped
+// fs.ErrNotExist naming the path in its message and nothing else - which is why
+// this one entry matches on the text, and matches it against the station
+// table's own paths so it stays as narrow as the rest.
 func (p *Loading) expectedReport(err error) (bool, string) {
+	if errors.Is(err, fs.ErrNotExist) {
+		for i := range stations {
+			if !stations[i].loads && strings.Contains(err.Error(), stations[i].path) {
+				return true, stations[i].name + " names a file that is not there, on purpose"
+			}
+		}
+	}
 	var unavailable scene.ErrModelUnavailable
 	if errors.As(err, &unavailable) {
-		if station, ok := stationForPath(unavailable.Model); ok && station.expect == scene.ModelFailed {
+		if station, ok := stationForPath(unavailable.Model); ok && !station.loads {
 			return true, station.name + " names a file that cannot be loaded, on purpose"
 		}
 	}
 	var invalid scene.ErrModelPathInvalid
 	if errors.As(err, &invalid) {
-		if station, ok := stationForPath(invalid.Model); ok && station.expect == scene.ModelFailed {
+		if station, ok := stationForPath(invalid.Model); ok && !station.loads {
 			return true, station.name + " names a path that is not a resource path at all"
 		}
 	}
@@ -268,8 +283,8 @@ const (
 	// there is no error type here that says "absent" rather than "not mine".
 	pathMissing = "assets/broken/does-not-exist.glb"
 	// pathInvalid is not a resource path at all. An absolute path is refused by
-	// the same rule canvas uses, before any load is enqueued - which is what
-	// makes this the demo's one synchronous failure.
+	// the same rule canvas uses, before it reaches the cache at all - so it
+	// leaves no entry behind and a typo stays a typo.
 	pathInvalid = "/assets/broken/absolute.glb"
 )
 
@@ -297,8 +312,11 @@ type station struct {
 	scale float32
 	size  m.Vec3
 	minY  float32
-	// expect is the residency this station's path settles at.
-	expect scene.ModelState
+	// loads says whether this station's file is expected to load at all. It is
+	// a bool rather than a state because a load has either finished or failed
+	// by the time the call that asked for it returned: there is no third answer
+	// and no in-flight state left to name.
+	loads bool
 	// draws is how many draw records this station flushes to once it has
 	// settled: one per primitive the selector's subtree covers, and zero for a
 	// station that never draws anything.
@@ -329,28 +347,28 @@ var stations = [...]station{
 		name: "scene", path: pathTruck, scene: "Scene",
 		column: 0, row: 0, scale: 0.62,
 		size: m.Vec3{X: 2.792, Y: 2.6532, Z: 4.8689}, minY: -0.0688,
-		expect: scene.ModelResident, draws: TruckPrimitives,
+		loads: true, draws: TruckPrimitives,
 		note: "Scene names the file's one scene, and it matches",
 	},
 	{
 		name: "body", path: pathTruck, node: "Cesium_Milk_Truck",
 		column: 1, row: 0, scale: 0.62,
 		size: m.Vec3{X: 4.8689, Y: 2.792, Z: 2.6532}, minY: -1.396,
-		expect: scene.ModelResident, draws: TruckPrimitives,
+		loads: true, draws: TruckPrimitives,
 		note: "Node re-roots: Yup2Zup's rotation is discarded",
 	},
 	{
 		name: "wheel", path: pathTruck, node: "Wheels",
 		column: 2, row: 0, scale: 1.05,
 		size: m.Vec3{X: 0.8556, Y: 2.116, Z: 0.8556}, minY: -1.058,
-		expect: scene.ModelResident, draws: 1,
+		loads: true, draws: 1,
 		note: "an axle pair at depth 4, re-rooted to the pad",
 	},
 	{
 		name: "wheel.001", path: pathTruck, node: "Wheels.001",
 		column: 3, row: 0, scale: 1.05,
 		size: m.Vec3{X: 0.8556, Y: 2.116, Z: 0.8556}, minY: -1.058,
-		expect: scene.ModelResident, draws: 1,
+		loads: true, draws: 1,
 		note: "same mesh, different ancestor offset, same box",
 	},
 
@@ -360,7 +378,7 @@ var stations = [...]station{
 		name: "tinted", path: pathTruck, node: "Cesium_Milk_Truck",
 		column: 0, row: 1, scale: 0.62,
 		size: m.Vec3{X: 4.8689, Y: 2.792, Z: 2.6532}, minY: -1.396,
-		expect: scene.ModelResident, draws: TruckPrimitives,
+		loads: true, draws: TruckPrimitives,
 		tint: m.NewColorSrgb(1.0, 0.45, 0.30, 1),
 		note: "OverrideParams merges: the livery survives",
 	},
@@ -368,7 +386,7 @@ var stations = [...]station{
 		name: "repainted", path: pathTruck, node: "Cesium_Milk_Truck",
 		column: 1, row: 1, scale: 0.62,
 		size: m.Vec3{X: 4.8689, Y: 2.792, Z: 2.6532}, minY: -1.396,
-		expect: scene.ModelResident, draws: TruckPrimitives,
+		loads: true, draws: TruckPrimitives,
 		repaint: true,
 		note:    "Material replaces: the file's records are gone",
 	},
@@ -376,14 +394,14 @@ var stations = [...]station{
 		name: "default scene", path: pathScenes,
 		column: 2, row: 1, scale: 2.4,
 		size: m.Vec3{X: 1, Y: 1, Z: 0}, minY: 0,
-		expect: scene.ModelResident, draws: 1,
+		loads: true, draws: 1,
 		note: "two scenes, both unnamed; this is the default",
 	},
 	{
 		name: "no such scene", path: pathScenes, scene: "Triangle",
 		column: 3, row: 1, scale: 2.4,
 		size: m.Vec3{X: 1, Y: 1, Z: 0}, minY: 0,
-		expect: scene.ModelResident, draws: 0,
+		loads: true, draws: 0,
 		note: "an unmatched Scene reports once, never falls back",
 	},
 
@@ -392,28 +410,28 @@ var stations = [...]station{
 		name: "samplers", path: pathSamplers,
 		column: 0, row: 2, scale: 0.24,
 		size: m.Vec3{X: 10.3233, Y: 10.0721, Z: 0.25}, minY: -5.6186,
-		expect: scene.ModelResident, draws: SamplerPrimitives,
+		loads: true, draws: SamplerPrimitives,
 		note: "9 textures, 3 images; mips are a CPU box filter",
 	},
 	{
 		name: "topologies", path: pathPrimitiveModes,
 		column: 1, row: 2, scale: 0.5,
 		size: m.Vec3{X: 5.732, Y: 5, Z: 0}, minY: -4,
-		expect: scene.ModelResident, draws: PrimitiveModeDraws,
+		loads: true, draws: PrimitiveModeDraws,
 		note: "strips, fans, a loop become lists; POINTS skipped",
 	},
 	{
 		name: "quantised", path: pathQuantized,
 		column: 2, row: 2, scale: 0.26,
 		size: m.Vec3{X: 9.7644, Y: 9.7644, Z: 9.7644}, minY: -4.8822,
-		expect: scene.ModelResident, draws: 1,
+		loads: true, draws: 1,
 		note: "u16 positions and i8 normals, dequantised at load",
 	},
 	{
 		name: "narrow indices", path: pathNarrowIndices,
 		column: 3, row: 2, scale: 0.3,
 		size: m.Vec3{X: 8.8, Y: 9.9595, Z: 2.0037}, minY: -2.1595,
-		expect: scene.ModelResident, draws: NarrowIndexPrimitives,
+		loads: true, draws: NarrowIndexPrimitives,
 		note: "u8 indices widened to u32; WebGPU has no u8",
 	},
 
@@ -422,29 +440,29 @@ var stations = [...]station{
 		name: "no such node", path: pathTruck, node: "Wheels.002",
 		column: 0, row: 3, scale: 0.62,
 		size: m.Vec3{X: 0.8556, Y: 2.116, Z: 0.8556}, minY: -1.058,
-		expect: scene.ModelResident, draws: 0,
+		loads: true, draws: 0,
 		note: "an unmatched Node reports once and draws nothing",
 	},
 	{
 		name: "truncated", path: pathTruncated,
 		column: 1, row: 3, scale: 2.4,
 		size: m.Vec3{X: 1, Y: 1, Z: 1}, minY: 0,
-		expect: scene.ModelFailed, draws: 0,
-		note: "opens, then fails on EOF - asynchronously",
+		loads: false, draws: 0,
+		note: "opens, then fails on EOF: the decode refuses it",
 	},
 	{
 		name: "absent", path: pathMissing,
 		column: 2, row: 3, scale: 2.4,
 		size: m.Vec3{X: 1, Y: 1, Z: 1}, minY: 0,
-		expect: scene.ModelFailed, draws: 0,
-		note: "fs.ErrNotExist, and still async: the load looks",
+		loads: false, draws: 0,
+		note: "fs.ErrNotExist: the library's own read failure",
 	},
 	{
 		name: "not a path", path: pathInvalid,
 		column: 3, row: 3, scale: 2.4,
 		size: m.Vec3{X: 1, Y: 1, Z: 1}, minY: 0,
-		expect: scene.ModelFailed, draws: 0,
-		note: "absolute: refused before a load is enqueued",
+		loads: false, draws: 0,
+		note: "absolute: refused before it reaches the cache",
 	},
 }
 
@@ -530,15 +548,17 @@ var (
 type Loading struct {
 	step int
 	// preloaded is whether the one Preload pass has run. It runs on the first
-	// update rather than at construction because Preload needs a LookupAccess,
-	// which only a handler holding the Lookup write lock can build.
+	// update rather than at construction because Preload needs a device facade,
+	// which only a handler holding the three locks can build.
 	preloaded bool
 	// pending is the unload a key press asked for, applied at the top of the
 	// next update while the facade is in hand.
 	pending pendingUnload
-	// states is each station's residency as of this frame, and settled the step
-	// each one first stopped being ModelLoading.
-	states  [len(stations)]scene.ModelState
+	// states is each station's outcome as of this frame - nil where the file
+	// loaded - known says a frame has asked at all, and settled is the step
+	// each station last changed between loaded and not.
+	states  [len(stations)]error
+	known   [len(stations)]bool
 	settled [len(stations)]int
 	// poseBytes and morphBytes are the lookup-wide totals, which are what an
 	// unload visibly moves.
@@ -645,30 +665,38 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 		}
 }
 
-// draw records the whole frame. It takes the Lookup as a write dependency
-// beside the two queues, because Preload, the unloads and every residency query
-// the HUD prints go through a LookupAccess, which is the facade a demo builds
-// from them.
+// draw records the whole frame. It takes the Lookup, the filesystem and the
+// resource queue, because Preload, State and the node queries all load the file
+// they name, and the texture unloads free a GPU texture at the call. UnloadModel
+// needs none of that and comes off the other facade over the same resource.
+//
+// This is where the cost of a synchronous load is meant to be visible: a demo
+// that loads models declares what loading needs.
 func (p *Loading) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var lookup kernel.Write[*scene.Lookup]
 	var inputState kernel.Read[*input.State]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			lookup = access.GetWrite[*scene.Lookup]()
 			inputState = access.GetRead[*input.State]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			la := scene.NewLookupAccess(k, lookup.Get())
+			device := scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
 			p.rate.measure(time.Now())
-			p.readStats(q, la)
+			p.readStats(q, device)
 			p.advance(inputState.Get())
-			p.applyUnloads(la)
-			p.preload(la)
+			p.applyUnloads(la, device)
+			p.preload(device)
 			p.record(q)
-			p.readLookup(la)
+			p.readLookup(la, device)
 			p.hud(canvasQueue.Get())
 			return nil
 		}
@@ -710,13 +738,13 @@ func (p *Loading) UnloadAll()     { p.pending.all = true }
 func (p *Loading) Retry()         { p.pending.retry = true }
 
 // applyUnloads gives up whatever the last key press asked for. Every one of
-// these lands at the next frame boundary rather than at the call, so the frame
-// this update is about to record still draws what it always drew.
-func (p *Loading) applyUnloads(la scene.LookupAccess) {
+// these frees at the call, and the frame this update is about to record loads
+// back whatever it still draws: a free followed by a get is a reload.
+func (p *Loading) applyUnloads(la scene.LookupAccess, device scene.LookupDeviceAccess) {
 	pending := p.pending
 	p.pending = pendingUnload{}
 	if pending.all {
-		la.UnloadAll()
+		device.UnloadAll()
 	}
 	if pending.model {
 		// The truck's geometry, baked poses and material records. Not its
@@ -729,16 +757,18 @@ func (p *Loading) applyUnloads(la scene.LookupAccess) {
 	if pending.texture {
 		// The separate, deliberate lever. For a glb the path names the
 		// container, so this releases every image embedded in it.
-		la.UnloadTexture(pathTruck)
+		device.UnloadTexture(pathTruck)
 	}
 	if pending.retry {
 		// The only retry there is. A failed path clears here and nowhere else,
 		// and Preload is what asks again - there is no Retry, because a Retry
 		// that did not first free would be a second name for the idempotent
-		// load that already exists. All three fail again: they are still broken.
+		// load that already exists. The two calls sit in one handler because
+		// freeing is immediate: the preload behind the unload loads afresh.
+		// All three fail again: they are still broken.
 		for _, path := range []string{pathTruncated, pathMissing, pathInvalid} {
 			la.UnloadModel(path)
-			la.Preload(path)
+			device.Preload(path)
 		}
 	}
 }
@@ -752,7 +782,7 @@ func (p *Loading) applyUnloads(la scene.LookupAccess) {
 // waits for it - the stations are recorded on the very next line whatever their
 // state, because a draw of a model that is not resident is skipped, never
 // substituted, and that is what the bare pads show.
-func (p *Loading) preload(la scene.LookupAccess) {
+func (p *Loading) preload(la scene.LookupDeviceAccess) {
 	if p.preloaded {
 		return
 	}
@@ -797,7 +827,7 @@ func (p *Loading) record(q *scene.OpQueue) {
 	for i := range stations {
 		station := &stations[i]
 		pad := padColor
-		if station.expect == scene.ModelFailed {
+		if !station.loads {
 			pad = padFailColor
 		}
 		q.Plane(0, stationPad(station), m.Vec2{X: padSize, Y: padSize}, pad)
@@ -878,7 +908,7 @@ func stationPlacement(s *station) scene.Transform {
 // The first update has no flush behind it, so it takes no snapshot at all -
 // which also keeps Preload the first thing in the demo that names a path,
 // rather than a query fired to fill a table for a frame that does not exist.
-func (p *Loading) readStats(q *scene.OpQueue, la scene.LookupAccess) {
+func (p *Loading) readStats(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	if p.step == 0 {
 		return
 	}
@@ -891,7 +921,7 @@ func (p *Loading) readStats(q *scene.OpQueue, la scene.LookupAccess) {
 		p.stats.batches += len(views[i].Batches)
 	}
 	for i := range stations {
-		p.stats.resident[i] = la.State(stations[i].path) == scene.ModelResident
+		p.stats.resident[i] = la.State(stations[i].path) == nil
 	}
 }
 
@@ -907,18 +937,21 @@ func (p *Loading) LastFlush() (recorded int, resident [len(stations)]bool, ok bo
 
 // readLookup asks the facade what it knows, once per frame, for the HUD.
 //
-// Every query here fires the same idempotent load a draw fires, which is why it
-// runs after record rather than before: a station's state as printed is the
-// state its own draw saw. State is the only one of these that can tell "wait"
-// from "never coming" - every other query answers false for both, and a loading
-// screen watching only ok hangs forever on a typo.
-func (p *Loading) readLookup(la scene.LookupAccess) {
+// Every query here loads the file it names, which is why it runs after record
+// rather than before: a station's state as printed is the state its own draw
+// saw. State is the only one of these that says why a file is not there - every
+// other query answers false for a typo and for a broken file alike, and a
+// loading screen watching only ok can never print a reason.
+//
+// Two facades: the two totals need neither the filesystem nor the queue, so
+// they sit on the half a caller builds from the Lookup alone.
+func (p *Loading) readLookup(totals scene.LookupAccess, la scene.LookupDeviceAccess) {
 	for i := range stations {
 		state := la.State(stations[i].path)
-		if p.states[i] == scene.ModelLoading && state != scene.ModelLoading {
+		if !p.known[i] || (p.states[i] == nil) != (state == nil) {
 			p.settled[i] = p.step
 		}
-		p.states[i] = state
+		p.states[i], p.known[i] = state, true
 		p.nodes = p.nodes[:0]
 		if names, ok := la.Nodes(stations[i].ref(), p.nodes); ok {
 			p.nodes = names
@@ -927,22 +960,23 @@ func (p *Loading) readLookup(la scene.LookupAccess) {
 			p.nodeCount[i] = -1
 		}
 	}
-	p.poseBytes, p.morphBytes = la.TotalPoseBytes(), la.TotalMorphBytes()
+	p.poseBytes, p.morphBytes = totals.TotalPoseBytes(), totals.TotalMorphBytes()
 }
 
-// State is one station's residency as of the last frame the demo recorded.
-func (p *Loading) State(i int) scene.ModelState { return p.states[i] }
+// State is one station's outcome as of the last frame the demo recorded: nil
+// where the file loaded, and the reason it did not otherwise.
+func (p *Loading) State(i int) error { return p.states[i] }
 
 // NodeCount is how many addressable nodes one station's selector covered, or -1
-// where the query answered false - which is a loading path, a failed path and
-// an unmatched selector alike.
+// where the query answered false - which is a failed path and an unmatched
+// selector alike.
 func (p *Loading) NodeCount(i int) int { return p.nodeCount[i] }
 
 // Settled reports whether every station has reached the residency its table row
 // expects, which is when the frame is the one the reference screenshot shows.
 func (p *Loading) Settled() bool {
 	for i := range stations {
-		if p.states[i] != stations[i].expect {
+		if !p.known[i] || (p.states[i] == nil) != stations[i].loads {
 			return false
 		}
 	}

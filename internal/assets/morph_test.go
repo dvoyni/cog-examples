@@ -27,7 +27,7 @@ func morphTargetsOf(t *testing.T, path string, draw scene.ModelDraw) ([]string, 
 	var names []string
 	var bytes int
 	var ok bool
-	e.Lookup(func(la scene.LookupAccess) {
+	e.LookupDevice(func(la scene.LookupDeviceAccess) {
 		names, ok = la.MorphTargets(path, nil)
 		bytes, _ = la.MorphBytes(path)
 	})
@@ -141,7 +141,7 @@ func TestMorphStressTestPlaysItsWeightsOnlyClips(t *testing.T) {
 		t.Error("a weights-only file baked joints; morph weights reshape a mesh and leave the node")
 	}
 	var poses int
-	e.Lookup(func(la scene.LookupAccess) { poses, _ = la.PoseBytes(morphStressAsset) })
+	e.LookupDevice(func(la scene.LookupDeviceAccess) { poses, _ = la.PoseBytes(morphStressAsset) })
 	if poses != 0 {
 		t.Errorf("PoseBytes = %d, want none for a file with no rig", poses)
 	}

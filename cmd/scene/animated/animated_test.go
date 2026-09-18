@@ -16,11 +16,10 @@ import (
 // every file is resident, which is when the frame it records is the frame the
 // reference screenshot was taken of.
 //
-// The wait is wall clock rather than a frame count on purpose: a load does not
-// run on the frame's thread, and MorphStressTest reads half a megabyte of
-// float deltas to pack its 18 KiB of them.
-// That is exactly the hitch the asynchronous path exists to keep out of the
-// frame, and a test that waited in frames would be asserting it does not exist.
+// The loop settles on its first pass: a load runs inside the flush that named
+// the file. What that frame costs is the hitch this design accepts -
+// MorphStressTest reads half a megabyte of float deltas to pack its 18 KiB of
+// them - and Preload is the lever a game pulls to move it.
 //
 // Unlike pbr's, this harness does not fail on a reported error, because this
 // demo reports one on purpose: the interpolation station offers nine plays
@@ -65,11 +64,21 @@ func pass(t *testing.T, engine *headless.Engine) scene.PassView {
 	return passes[0]
 }
 
-// lookupOf runs one read against the demo's own facade.
+// lookupOf runs one read against the half of the demo's facade that needs no
+// device, which is where the two memory totals live.
 func lookupOf[T any](t *testing.T, engine *headless.Engine, read func(scene.LookupAccess) T) T {
 	t.Helper()
 	var out T
 	engine.Lookup(func(la scene.LookupAccess) { out = read(la) })
+	return out
+}
+
+// deviceOf runs one read against the loading half, which is where every
+// per-model query lives because every one of them loads the file it names.
+func deviceOf[T any](t *testing.T, engine *headless.Engine, read func(scene.LookupDeviceAccess) T) T {
+	t.Helper()
+	var out T
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) { out = read(la) })
 	return out
 }
 
@@ -201,14 +210,14 @@ func TestTheDemoReportsNothingButTheCap(t *testing.T) {
 // onto one 60 Hz grid.
 func TestTheFoxBakesItsRigAndItsThreeClips(t *testing.T) {
 	engine, _ := run(t)
-	joints := lookupOf(t, engine, func(la scene.LookupAccess) []string {
+	joints := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []string {
 		names, _ := la.Joints(foxPath, nil)
 		return names
 	})
 	if len(joints) != FoxJoints {
 		t.Errorf("the fox has %d joints, want its %d-bone rig", len(joints), FoxJoints)
 	}
-	clips := lookupOf(t, engine, func(la scene.LookupAccess) []scene.ClipInfo {
+	clips := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []scene.ClipInfo {
 		infos, _ := la.Clips(foxPath, nil)
 		return infos
 	})
@@ -241,7 +250,7 @@ const FoxJoints = 24
 // makes, so the number it produces is worth pinning to the real rig.
 func TestPoseMemoryIsTheRigTimesTheGrid(t *testing.T) {
 	engine, demo := run(t)
-	bytes := lookupOf(t, engine, func(la scene.LookupAccess) int {
+	bytes := deviceOf(t, engine, func(la scene.LookupDeviceAccess) int {
 		out, _ := la.PoseBytes(foxPath)
 		return out
 	})
@@ -335,7 +344,7 @@ func TestTheDemoOpensPausedAtTheReferenceTime(t *testing.T) {
 // the rule on a file with no skin to fall back on.
 func TestTheInterpolationCubesAreDegenerateSingleJointSkins(t *testing.T) {
 	engine, _ := run(t)
-	joints := lookupOf(t, engine, func(la scene.LookupAccess) []string {
+	joints := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []string {
 		names, _ := la.Joints(interpPath, nil)
 		return names
 	})
@@ -372,7 +381,7 @@ func TestTheInterpolationCubesAreDegenerateSingleJointSkins(t *testing.T) {
 // table.
 func TestTheGridCoversEveryClipTheFileDeclares(t *testing.T) {
 	engine, _ := run(t)
-	clips := lookupOf(t, engine, func(la scene.LookupAccess) []scene.ClipInfo {
+	clips := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []scene.ClipInfo {
 		infos, _ := la.Clips(interpPath, nil)
 		return infos
 	})
@@ -549,7 +558,7 @@ func TestTheTwoMorphCubesDifferByTheirAuthoredTangent(t *testing.T) {
 // drifted would print a confident wrong name.
 func TestTheTabulatedShapeNamesAreTheFilesOwn(t *testing.T) {
 	engine, _ := run(t)
-	names := lookupOf(t, engine, func(la scene.LookupAccess) []string {
+	names := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []string {
 		out, _ := la.MorphTargets(stressPath, nil)
 		return out
 	})

@@ -123,7 +123,7 @@ func TestPunctualLightsReachTheAppAsData(t *testing.T) {
 		t.Fatalf("%s never became resident", path)
 	}
 	var lights []scene.ModelLight
-	e.Lookup(func(la scene.LookupAccess) { lights, _ = la.ModelLights(path, nil) })
+	e.LookupDevice(func(la scene.LookupDeviceAccess) { lights, _ = la.ModelLights(path, nil) })
 	if len(lights) == 0 {
 		t.Fatal("the file declares punctual lights; none reached the app")
 	}
@@ -138,7 +138,7 @@ func TestPunctualLightsReachTheAppAsData(t *testing.T) {
 // flight before anything waits on it.
 func preload(t *testing.T, e *headless.Engine, paths ...string) {
 	t.Helper()
-	e.Lookup(func(la scene.LookupAccess) {
+	e.LookupDevice(func(la scene.LookupDeviceAccess) {
 		for _, path := range paths {
 			la.Preload(path)
 		}
@@ -173,7 +173,7 @@ func resident(t *testing.T, e *headless.Engine, path string) bool {
 func residentNow(t *testing.T, e *headless.Engine, path string) bool {
 	t.Helper()
 	var ok bool
-	e.Lookup(func(la scene.LookupAccess) { _, ok = la.ModelLights(path, nil) })
+	e.LookupDevice(func(la scene.LookupDeviceAccess) { _, ok = la.ModelLights(path, nil) })
 	return ok
 }
 
