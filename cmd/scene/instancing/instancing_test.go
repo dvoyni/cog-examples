@@ -17,11 +17,10 @@ import (
 // three files are resident, which is when the frame it records is the frame the
 // reference screenshot was taken of.
 //
-// The wait is wall clock rather than a frame count on purpose: a load does not
-// run on the frame's thread, and decoding WaterBottle's 1024px textures takes
-// longer than a few hundred headless frames of doing nothing else. That is
-// exactly the hitch the asynchronous path exists to keep out of the frame, and
-// a test that waited in frames would be asserting it does not exist.
+// The loop settles on its first pass: a load runs inside the flush that named
+// the file. What that frame costs is the hitch this design accepts - decoding
+// WaterBottle's 1024px textures is the expensive one here - and Preload is the
+// lever a game pulls to move it.
 func run(t *testing.T) (*headless.Engine, *Instancing) {
 	t.Helper()
 	config, err := assets.Config(storage.Config{})
@@ -733,7 +732,7 @@ func modelSphere(t *testing.T, engine *headless.Engine, path string) m.Sphere {
 	t.Helper()
 	var sphere m.Sphere
 	ok := false
-	engine.Lookup(func(la scene.LookupAccess) {
+	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 		var bounds m.Vec4
 		bounds, ok = la.Bounds(scene.ModelRef{Path: path})
 		sphere = m.Sphere{

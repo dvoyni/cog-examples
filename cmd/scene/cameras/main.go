@@ -310,6 +310,8 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var lookup kernel.Write[*scene.Lookup]
 	var inputState kernel.Read[*input.State]
 	var viewport kernel.Read[*gfx.Viewport]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
@@ -317,13 +319,16 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			lookup = access.GetWrite[*scene.Lookup]()
 			inputState = access.GetRead[*input.State]()
 			viewport = access.GetRead[*gfx.Viewport]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			la := scene.NewLookupAccess(k, lookup.Get())
+			device := scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
 			p.rate.measure(time.Now())
 			p.readStats(q)
 			p.advance(inputState.Get())
-			p.buildTargets(la)
+			p.buildTargets(device)
 			p.click(inputState.Get(), viewport.Get())
 			p.record(q, gfxQueue.Get(), la)
 			p.draw2D(canvasQueue.Get())
@@ -368,11 +373,12 @@ func (p *Cameras) time() float32 { return float32(p.step) * fixedStep }
 //
 // The model is the entry that has to ask scene anything. Its bounds are the
 // file's, which the app does not know and cannot hard-code without going stale
-// the first time the asset changes, so it comes from LookupAccess.Bounds and
+// the first time the asset changes, so it comes from Bounds on the device
+// facade and
 // goes through m.Sphere.Transform - exact under the uniform scale a
-// scene.Transform carries. Until it is resident it is simply not in the list,
-// which is the right answer: a click cannot pick what is not drawn.
-func (p *Cameras) buildTargets(la scene.LookupAccess) {
+// scene.Transform carries. A file that could not be loaded is simply not in the
+// list, which is the right answer: a click cannot pick what is not drawn.
+func (p *Cameras) buildTargets(la scene.LookupDeviceAccess) {
 	p.targets = p.targets[:0]
 	for i := range cubes {
 		p.targets = append(p.targets, pickable{name: cubes[i].name, sphere: cubeSphere(i)})

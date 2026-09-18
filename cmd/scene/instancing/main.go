@@ -604,11 +604,15 @@ func (p *Instancing) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
 	var lookup kernel.Write[*scene.Lookup]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
 			lookup = access.GetWrite[*scene.Lookup]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			p.rate.measure(time.Now())
@@ -621,7 +625,8 @@ func (p *Instancing) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// is asked at all because Ops(nil) would copy six hundred ops a
 			// frame to count them.
 			p.stats.ops = q.OpCount()
-			p.readResidency(scene.NewLookupAccess(k, lookup.Get()))
+			p.readResidency(scene.NewLookupDeviceAccess(
+				k, lookup.Get(), files.Get(), resources.Get()))
 			p.hud(canvasQueue.Get())
 			return nil
 		}
@@ -781,12 +786,12 @@ var RecordedDraws = (CrateCount+stackCount)*cratePrimitives +
 const InstancedBatches = debugShapes + 1 + 1 + 1 +
 	(panePrimitives - PaneBlendPrimitives) + len(paneStands)*PaneBlendPrimitives
 
-// readResidency asks each file whether it is drawable yet, for the HUD. State
-// is the residency predicate rather than an ok from some other query, because
-// it is the only one that tells "still loading" from "never coming".
-func (p *Instancing) readResidency(la scene.LookupAccess) {
+// readResidency asks each file whether it is drawable, for the HUD. State is
+// the predicate rather than an ok from some other query, because it is the only
+// one that says why a file is not there rather than only that it is not.
+func (p *Instancing) readResidency(la scene.LookupDeviceAccess) {
 	for i, path := range modelPaths {
-		p.resident[i] = la.State(path) == scene.ModelResident
+		p.resident[i] = la.State(path) == nil
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/dvoyni/cog/bundles/canvas"
-	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 )
 
@@ -97,34 +96,24 @@ func (p *Loading) stationLine(i int) string {
 		hudNamePad, station.name, stateName(p.states[i]), nodes, station.note)
 }
 
-// stateName is one residency in the width the table is laid out for.
-func stateName(state scene.ModelState) string {
-	switch state {
-	case scene.ModelLoading:
-		return "loading"
-	case scene.ModelResident:
-		return "resident"
-	case scene.ModelFailed:
-		return "failed"
+// stateName is one station's outcome in the width the table is laid out for.
+// There are two of them and there is no third: a load either finished or failed
+// inside the call that asked for it, so there is no in-flight word to print.
+func stateName(err error) string {
+	if err == nil {
+		return "loaded"
 	}
-	// ModelMissing is unobservable through State on a valid path - the very act
-	// of asking moves it to ModelLoading - so this line is what an unloaded
-	// slot looks like for the one frame before the next query reloads it.
-	return "missing"
+	return "failed"
 }
 
 // stateColor separates a station that reached what its table row expects from
 // one that has not. A failed path is green here when failing is the point,
 // which is the whole reason the expectation is in the table rather than assumed.
-func stateColor(state scene.ModelState, station *station) m.Color {
-	switch {
-	case state == station.expect:
+func stateColor(err error, station *station) m.Color {
+	if (err == nil) == station.loads {
 		return hudOkColor
-	case state == scene.ModelLoading:
-		return hudDimColor
-	default:
-		return hudWarnColor
 	}
+	return hudWarnColor
 }
 
 // bytes prints a byte count in the unit a human reads it in. The numbers here

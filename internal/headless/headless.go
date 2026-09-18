@@ -201,10 +201,19 @@ func (e *Engine) Input(changes ...input.Change) {
 	e.kernel.ExecuteCommand[input.ApplyCmd](input.ApplyRequest{Changes: changes})
 }
 
-// Lookup runs fn with a scoped LookupAccess, which is how a test preloads a
-// model or asks what is in one - the same facade a demo's own handler builds.
+// Lookup runs fn with a scoped LookupAccess, which is the half of the facade
+// that bakes meshes, unloads a model and reads the memory totals - the same
+// facade a demo's own handler builds.
 func (e *Engine) Lookup(fn func(scene.LookupAccess)) {
 	e.kernel.ExecuteCommand[lookupCmd](lookupRequest{run: fn})
+}
+
+// LookupDevice runs fn with a scoped LookupDeviceAccess, which is how a test
+// preloads a model or asks what is in one. It is a second method rather than a
+// wider first one because the facade split is the thing being demonstrated: the
+// loading half costs three locks and the other half costs one.
+func (e *Engine) LookupDevice(fn func(scene.LookupDeviceAccess)) {
+	e.kernel.ExecuteCommand[lookupDeviceCmd](lookupDeviceRequest{run: fn})
 }
 
 // inspect runs fn inside a handler holding scene's OpQueue, so a test reads the
@@ -224,6 +233,12 @@ type lookupCmd kernel.Command[lookupRequest, lookupResponse]
 type lookupRequest struct{ run func(scene.LookupAccess) }
 type lookupResponse struct{}
 
+type lookupDeviceCmd kernel.Command[lookupDeviceRequest, lookupDeviceResponse]
+type lookupDeviceRequest struct {
+	run func(scene.LookupDeviceAccess)
+}
+type lookupDeviceResponse struct{}
+
 func (*probe) Name() kernel.PluginName { return "headless-probe" }
 
 func (*probe) Dependencies() []kernel.PluginName {
@@ -233,6 +248,7 @@ func (*probe) Dependencies() []kernel.PluginName {
 func (*probe) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.HandleCommand[inspectCmd](inspectCmdImpl)
 	registrar.HandleCommand[lookupCmd](lookupCmdImpl)
+	registrar.HandleCommand[lookupDeviceCmd](lookupDeviceCmdImpl)
 	return nil
 }
 
@@ -253,6 +269,20 @@ func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]
 		}, func(k kernel.Kernel, req lookupRequest) (lookupResponse, error) {
 			req.run(scene.NewLookupAccess(k, lookup.Get()))
 			return lookupResponse{}, nil
+		}
+}
+
+func lookupDeviceCmdImpl() (kernel.Lock, kernel.Execute[lookupDeviceRequest, lookupDeviceResponse]) {
+	var lookup kernel.Write[*scene.Lookup]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
+	return func(access kernel.ResourceAccess) {
+			lookup = access.GetWrite[*scene.Lookup]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
+		}, func(k kernel.Kernel, req lookupDeviceRequest) (lookupDeviceResponse, error) {
+			req.run(scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
+			return lookupDeviceResponse{}, nil
 		}
 }
 

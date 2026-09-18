@@ -155,8 +155,9 @@ func renderBroken(out *strings.Builder, assets []asset) {
 		"bytes that are no longer there.\n\n", brokenSource.File, source.Title)
 	fmt.Fprintf(out, "*In the set for:* it is the only asset that makes a load *fail*. A model that\n"+
 		"fails is skipped, never substituted, and without a file that fails, nothing ever\n"+
-		"demonstrates that. It also fails asynchronously - the header parses - which is\n"+
-		"the case a missing path cannot cover.\n\n")
+		"demonstrates that. It also fails in the decode - the header parses, so the read\n"+
+		"succeeds and the loader is what refuses it - which is the case a missing path\n"+
+		"cannot cover.\n\n")
 	fmt.Fprintf(out, "- **Source:** derived from %s, above\n", source.Title)
 	fmt.Fprintf(out, "- **Licence:** `CC0-1.0`, inherited\n")
 	fmt.Fprintf(out, "- **Modifications:** packed as a `.glb`, then truncated mid-chunk\n")

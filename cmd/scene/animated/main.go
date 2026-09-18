@@ -621,26 +621,33 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 // draw records the whole frame: the camera, the ground, the four stations and
 // the HUD.
 //
-// It holds the Lookup and the filesystem because the clip and memory reads need
-// a LookupAccess, which is the facade a demo builds from them. Each read is a
-// map hit and a copy into a scratch slice; nothing here parses or uploads.
+// It holds the Lookup, the filesystem and the resource queue because the clip
+// and memory reads go through the device facade, and every query on that facade
+// loads the file it names. A demo pays for that in its own Lock closure, which
+// is where the cost of a synchronous load belongs.
 func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
 	var lookup kernel.Write[*scene.Lookup]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
 			lookup = access.GetWrite[*scene.Lookup]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
 			q := sceneQueue.Get()
 			a.rate.measure(time.Now())
 			a.readStats(q)
 			a.advance(inputState.Get())
 			a.record(q)
-			a.readLookup(scene.NewLookupAccess(k, lookup.Get()))
+			a.readLookup(
+				scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()),
+				scene.NewLookupAccess(k, lookup.Get()))
 			a.hud(canvasQueue.Get())
 			return nil
 		}
@@ -1001,17 +1008,20 @@ func (a *Animated) OverrideShape() int {
 // readLookup asks the facade what it knows about each file: whether it is
 // drawable yet, and what its baked animation costs.
 //
-// Clips' ok is the residency predicate the API has before the lookup facade
-// lands - it is false for a missing, loading and failed path alike - and it is
-// the apt one here, because a demo that cannot name a clip has nothing to play.
-func (a *Animated) readLookup(la scene.LookupAccess) {
+// Clips' ok is the drawable predicate: it is false for a file that never loaded
+// and for one that failed alike, and it is the apt one here, because a demo
+// that cannot name a clip has nothing to play.
+//
+// Two facades, because the two totals need neither the filesystem nor the queue
+// and therefore sit on the half that costs a caller one resource.
+func (a *Animated) readLookup(la scene.LookupDeviceAccess, totals scene.LookupAccess) {
 	for i, path := range ModelPaths {
 		a.clips, a.resident[i] = la.Clips(path, a.clips[:0])
 		a.memory.pose[i], _ = la.PoseBytes(path)
 		a.memory.morph[i], _ = la.MorphBytes(path)
 	}
-	a.memory.totalPose = la.TotalPoseBytes()
-	a.memory.totalMorph = la.TotalMorphBytes()
+	a.memory.totalPose = totals.TotalPoseBytes()
+	a.memory.totalMorph = totals.TotalMorphBytes()
 }
 
 // ResidentCount is how many files reported residency on the last frame.
