@@ -113,9 +113,17 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 	go running.Run(ctx)
 	<-running.Ready()
 
+	// A composition that failed refuses every dispatch, so a demo would assert
+	// against a frame that never ran. Fail here, where the cause is still the
+	// error that caused it.
+	if err := running.Err(); err != nil {
+		t.Fatalf("composition failed: %v", err)
+	}
+
 	engine.kernel = running.Executioner()
-	// A composition that failed never started app, so no Loop was attached;
-	// its errors are collected like any other, and nothing ticks.
+	// app attaches the Loop from its Start, and a Start failure this handler
+	// collects rather than terminates on skips that without failing
+	// composition; its errors are collected like any other, and nothing ticks.
 	if engine.mainLoop.loop != nil {
 		engine.mainLoop.loop.Init(engine.kernel)
 	}
