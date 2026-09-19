@@ -92,7 +92,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -130,9 +129,6 @@ const (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	// The one Khronos model this demo draws lives beside the repository rather
 	// than beside the executable, so the asset set is mounted explicitly and
 	// the demo refuses to start without it. A cameras demo that came up with a
@@ -171,7 +167,21 @@ func main() {
 		demo,
 	}
 
-	kernel.New(config).Handler(demo.report).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).Handler(demo.report).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // Name is the demo plugin's name.
@@ -259,39 +269,38 @@ func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
 // pixel of the frame, because the prepass writes into a texture of its own that
 // nothing samples. The same demo runs the pass for real in a browser, whose
 // WebGPU implementation has no such gap.
-func (p *Cameras) report(err error) bool {
+func (p *Cameras) report(err error) error {
 	p.reports++
 	p.lastReport = err.Error()
 	if duplicate, ok := err.(scene.ErrCameraAlreadyRecorded); ok && duplicate.Camera == CameraMain {
 		log.Printf("cameras: %v (expected: D is held)", err)
-		return false
+		return nil
 	}
 	var depthOnly gogpu.ErrDepthOnlyPassUnsupported
 	if errors.As(err, &depthOnly) {
 		log.Printf("cameras: %v (expected: this backend has no depth-only pass)", err)
-		return false
+		return nil
 	}
 	log.Printf("cameras: %v", err)
-	return true
+	return err
 }
 
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }
 
@@ -321,7 +330,7 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			viewport = access.GetRead[*gfx.Viewport]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			la := scene.NewLookupAccess(k, lookup.Get())
 			device := scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
@@ -332,7 +341,6 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			p.click(inputState.Get(), viewport.Get())
 			p.record(q, gfxQueue.Get(), la)
 			p.draw2D(canvasQueue.Get())
-			return nil
 		}
 }
 

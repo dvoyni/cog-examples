@@ -1101,7 +1101,7 @@ func (d *soloDemo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(_ kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			q.Camera(CameraMain, scene.CameraDescr{
 				Transform: scene.LookAt(m.Vec3{Y: 4, Z: 20}, m.Vec3{}, m.Vec3{Y: 1}),
@@ -1112,7 +1112,6 @@ func (d *soloDemo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 					Transform: scene.At(float32(i)*6, 0, 0),
 				})
 			}
-			return nil
 		}
 }
 

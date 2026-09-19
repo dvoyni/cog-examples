@@ -70,8 +70,8 @@
 package main
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -118,9 +118,6 @@ const (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: scene procedural"),
@@ -142,7 +139,21 @@ func main() {
 		demo,
 	}
 
-	kernel.New(config).Handler(demo.report).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).Handler(demo.report).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // report is the demo's error handler, and it is here because this demo reports
@@ -158,14 +169,14 @@ func main() {
 // last release staled, and everything else still terminates. A demo that
 // swallowed the whole class would be a demo that cannot tell you its material
 // stopped binding.
-func (p *Procedural) report(err error) bool {
+func (p *Procedural) report(err error) error {
 	var unavailable scene.ErrMeshUnavailable
 	if errors.As(err, &unavailable) && unavailable.Mesh == p.staleID.Load() {
 		log.Printf("procedural: %v (expected: the released ref is drawn once on purpose)", err)
-		return false
+		return nil
 	}
 	log.Printf("procedural: %v", err)
-	return true
+	return err
 }
 
 // Name is the demo plugin's name.
@@ -397,20 +408,19 @@ func (p *Procedural) Register(registrar *kernel.Registrar, _ any) error {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }
 
@@ -432,7 +442,7 @@ func (p *Procedural) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			lookup = access.GetWrite[*scene.Lookup]()
 			inputState = access.GetRead[*input.State]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			p.rate.measure(time.Now())
 			p.readStats(q)
@@ -440,7 +450,6 @@ func (p *Procedural) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			p.mint(q, scene.NewLookupAccess(k, lookup.Get()))
 			p.record(q)
 			p.hud(canvasQueue.Get())
-			return nil
 		}
 }
 

@@ -78,7 +78,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -132,9 +131,6 @@ const (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	// storage mounts nothing by default, and the vendored asset set lives in
 	// the repository rather than beside the executable, which `go run` builds
 	// into a temporary directory - so the demo mounts it explicitly and refuses
@@ -172,7 +168,21 @@ func main() {
 		demo,
 	}
 
-	kernel.New(config).Handler(demo.report).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).Handler(demo.report).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // report is the demo's error handler, and this is the demo that needs one most.
@@ -188,13 +198,13 @@ func main() {
 // demo did not deliberately break still terminates - which is the difference
 // between a demo that survives its own failures and one that cannot tell you
 // the loader stopped working.
-func (p *Loading) report(err error) bool {
+func (p *Loading) report(err error) error {
 	if expected, why := p.expectedReport(err); expected {
 		log.Printf("loading: %v (expected: %s)", err, why)
-		return false
+		return nil
 	}
 	log.Printf("loading: %v", err)
-	return true
+	return err
 }
 
 // expectedReport reports whether err is one of the five this demo provokes on
@@ -648,20 +658,19 @@ func (p *Loading) Register(registrar *kernel.Registrar, _ any) error {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }
 
@@ -686,7 +695,7 @@ func (p *Loading) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			inputState = access.GetRead[*input.State]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			la := scene.NewLookupAccess(k, lookup.Get())
 			device := scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
@@ -698,7 +707,6 @@ func (p *Loading) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			p.record(q)
 			p.readLookup(la, device)
 			p.hud(canvasQueue.Get())
-			return nil
 		}
 }
 

@@ -16,7 +16,6 @@
 package headless
 
 import (
-	"context"
 	"io/fs"
 	"sync"
 	"testing"
@@ -93,9 +92,7 @@ func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 //	config, err := assets.Config(storage.Config{})
 func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	engine := &Engine{backend: &Backend{}, mainLoop: &mainLoop{quit: cancel}}
+	engine := &Engine{backend: &Backend{}, mainLoop: &mainLoop{}}
 
 	config := map[kernel.PluginName]any{
 		storage.Name: storageConfig,
@@ -108,17 +105,32 @@ func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugi
 	}, plugins...)
 
 	running := kernel.New(config).
-		Handler(func(err error) bool { engine.report(err); return false }).
+		Handler(func(err error) error { engine.report(err); return nil }).
 		WithPlugins(all...)
-	go running.Run(ctx)
-	<-running.Ready()
 
 	// A composition that failed refuses every dispatch, so a demo would assert
-	// against a frame that never ran. Fail here, where the cause is still the
-	// error that caused it.
-	if err := running.Err(); err != nil {
-		t.Fatalf("composition failed: %v", err)
+	// against a frame that never ran. It closes Ready from WithPlugins, before
+	// Run is ever called, and Run answers with the cause instead of starting
+	// anything - so asking here, while Run has not run, is the one place the
+	// two states are still told apart without a race.
+	select {
+	case <-running.Ready():
+		t.Fatalf("composition failed: %v", running.Run())
+	default:
 	}
+
+	// Quit is the whole of how a run ends, and a headless engine has no Host, so
+	// Run blocks on it until Cleanup asks. The MainLoop's own Quit - what app
+	// calls for QuitCmd - is the same ask, and it is bound before anything can
+	// dispatch one.
+	engine.mainLoop.quit = running.Quit
+	done := make(chan error, 1)
+	go func() { done <- running.Run() }()
+	t.Cleanup(func() {
+		running.Quit()
+		<-done
+	})
+	<-running.Ready()
 
 	engine.kernel = running.Executioner()
 	// app attaches the Loop from its Start, and a Start failure this handler
@@ -256,9 +268,9 @@ func inspectCmdImpl() (kernel.Lock, kernel.Execute[inspectRequest, inspectRespon
 	var queue kernel.Write[*scene.OpQueue]
 	return func(access kernel.ResourceAccess) {
 			queue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, req inspectRequest) (inspectResponse, error) {
+		}, func(_ kernel.Kernel, req inspectRequest) inspectResponse {
 			req.run(queue.Get())
-			return inspectResponse{}, nil
+			return inspectResponse{}
 		}
 }
 
@@ -266,9 +278,9 @@ func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]
 	var lookup kernel.Write[*scene.Lookup]
 	return func(access kernel.ResourceAccess) {
 			lookup = access.GetWrite[*scene.Lookup]()
-		}, func(k kernel.Kernel, req lookupRequest) (lookupResponse, error) {
+		}, func(k kernel.Kernel, req lookupRequest) lookupResponse {
 			req.run(scene.NewLookupAccess(k, lookup.Get()))
-			return lookupResponse{}, nil
+			return lookupResponse{}
 		}
 }
 
@@ -280,9 +292,9 @@ func lookupDeviceCmdImpl() (kernel.Lock, kernel.Execute[lookupDeviceRequest, loo
 			lookup = access.GetWrite[*scene.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, req lookupDeviceRequest) (lookupDeviceResponse, error) {
+		}, func(k kernel.Kernel, req lookupDeviceRequest) lookupDeviceResponse {
 			req.run(scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
-			return lookupDeviceResponse{}, nil
+			return lookupDeviceResponse{}
 		}
 }
 
@@ -310,11 +322,11 @@ type gfxBackendAdapter kernel.Adapter[gfx.BackendPort]
 type appMainLoopAdapter kernel.Adapter[app.MainLoopPort]
 
 // mainLoop is app's MainLoop for a headless run. It has no platform loop of its own:
-// it keeps the Loop app attaches, Steps drives that Loop, and quitting cancels
-// the engine, which is what ending a loop nothing else is running comes to.
+// it keeps the Loop app attaches, Steps drives that Loop, and quitting asks the
+// engine to stop, which is what ending a loop nothing else is running comes to.
 type mainLoop struct {
 	loop app.Loop
-	quit context.CancelFunc
+	quit func()
 }
 
 func (d *mainLoop) Attach(loop app.Loop) { d.loop = loop }

@@ -56,7 +56,7 @@ func (r *recorder) record() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var queue kernel.Write[*scene.OpQueue]
 	return func(access kernel.ResourceAccess) {
 			queue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(_ kernel.Kernel, _ app.UpdateEvent) {
 			q := queue.Get()
 			// Well back, and far enough through, that nothing in the frame is
 			// culled: these tests are about which primitives a selector picked,
@@ -71,7 +71,6 @@ func (r *recorder) record() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			for _, draw := range r.draws {
 				q.Model(scene.LayersAll, r.path, draw)
 			}
-			return nil
 		}
 }
 

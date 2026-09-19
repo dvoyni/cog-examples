@@ -45,9 +45,11 @@ func run(t *testing.T, n int) *headless.Engine {
 
 func ask(t *testing.T, engine *headless.Engine) HUD {
 	t.Helper()
-	reply, err := engine.Executioner().ExecuteCommand[HUDCmd](HUDRequest{})
-	if err != nil {
-		t.Fatalf("hud: %v", err)
+	reply := engine.Executioner().ExecuteCommand[HUDCmd](HUDRequest{})
+	// A dispatch the kernel could not perform is reported rather than returned,
+	// and the zero response comes back, so the report is what says so.
+	if errs := engine.Errors(); len(errs) > 0 {
+		t.Fatalf("hud: the engine reported %d errors, first: %v", len(errs), errs[0])
 	}
 	return reply
 }

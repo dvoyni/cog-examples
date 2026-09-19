@@ -8,7 +8,7 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -34,9 +34,6 @@ import (
 const cameraMain scene.CameraID = -100
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: scene tracer"),
@@ -54,7 +51,21 @@ func main() {
 		newTracer(),
 	}
 
-	kernel.New(config).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 const Name kernel.PluginName = "tracer"
@@ -84,7 +95,7 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var queue kernel.Write[*scene.OpQueue]
 	return func(access kernel.ResourceAccess) {
 			queue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, event app.UpdateEvent) error {
+		}, func(_ kernel.Kernel, event app.UpdateEvent) {
 			p.time += float32(event.Dt)
 			q := queue.Get()
 			q.Camera(cameraMain, scene.CameraDescr{
@@ -105,7 +116,6 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// A second, smaller box behind the first: depth testing is only
 			// visible when something can be behind something else.
 			q.Box(0, scene.At(-1.2, 0, -1.2).WithScale(0.6), m.NewColorSrgb(0.94, 0.55, 0.35, 1))
-			return nil
 		}
 }
 

@@ -7,7 +7,7 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -39,9 +39,6 @@ const (
 const layerHello canvas.Layer = 0
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: hello"),
@@ -61,7 +58,19 @@ func main() {
 		newHello(),
 	}
 
-	kernel.New(config).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // Name is the demo plugin's name.
@@ -91,20 +100,19 @@ func (p *hello) Register(registrar *kernel.Registrar, _ any) error {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }
 
@@ -113,7 +121,7 @@ func draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var queue kernel.Write[*canvas.OpQueue]
 	return func(access kernel.ResourceAccess) {
 			queue = access.GetWrite[*canvas.OpQueue]()
-		}, func(_ kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(_ kernel.Kernel, _ app.UpdateEvent) {
 			q := queue.Get()
 			q.Clear(layerHello, m.NewColorSrgb(0.06, 0.07, 0.09, 1))
 			q.SetLayerTransform(layerHello,
@@ -122,6 +130,5 @@ func draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 				X: screenWidth/2 - 120, Y: screenHeight/2 - 80,
 				Width: 240, Height: 160,
 			}, canvas.ShapeDraw{Color: m.NewColorSrgb(0.42, 0.71, 0.94, 1)})
-			return nil
 		}
 }

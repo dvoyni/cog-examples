@@ -52,12 +52,12 @@ func start(t *testing.T) *rig {
 func (r *rig) steps(n int) Census {
 	r.t.Helper()
 	r.engine.Steps(n)
+	reply := r.engine.Executioner().ExecuteCommand[CensusCmd](CensusRequest{})
+	// The check comes after the dispatch, because a dispatch the kernel could
+	// not perform is reported rather than returned: one look covers the ticks
+	// and the census both.
 	if errs := r.engine.Errors(); len(errs) > 0 {
 		r.t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
-	}
-	reply, err := r.engine.Executioner().ExecuteCommand[CensusCmd](CensusRequest{})
-	if err != nil {
-		r.t.Fatalf("census: %v", err)
 	}
 	return reply
 }

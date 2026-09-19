@@ -81,7 +81,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -117,9 +116,6 @@ func main() {
 	// report pasted from a terminal carries this.
 	fmt.Printf("physics2dtable: seed %#016x\n", *seed)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: ecsphysics2d table"),
@@ -135,11 +131,25 @@ func main() {
 	}
 	permanentfs.Configure(config)
 
-	kernel.New(config).WithPlugins(
+	engine := kernel.New(config).WithPlugins(
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(),
 		gfxplugin.New(), canvasplugin.New(), gogpuplugin.New(),
 		ecsplugin.New(), ecsphysics2dplugin.New(), New(*seed),
-	).Run(ctx)
+	)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // Name is the demo plugin's name.
@@ -252,19 +262,18 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 // table is laid out in the logical screen this fit produces, so what undoes the
 // fit is the Viewport this writes. See pointerWorld.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }

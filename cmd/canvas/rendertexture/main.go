@@ -20,7 +20,7 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"math"
 	"os"
 	"os/signal"
@@ -87,9 +87,6 @@ const (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	config := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: rendertexture"),
@@ -109,7 +106,21 @@ func main() {
 		New(),
 	}
 
-	kernel.New(config).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // Name is the demo plugin's name.
@@ -145,20 +156,19 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }
 
@@ -172,7 +182,7 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	return func(access kernel.ResourceAccess) {
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			gfxQueue = access.GetWrite[*gfx.OpQueue]()
-		}, func(_ kernel.Kernel, event app.UpdateEvent) error {
+		}, func(_ kernel.Kernel, event app.UpdateEvent) {
 			p.elapsed += float32(event.Dt)
 			// TemporaryTarget hands back both handles onto one texture: the target
 			// a pass renders into and the texture a later pass samples. Its
@@ -187,7 +197,6 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			q := canvasQueue.Get()
 			p.recordPanel(q, target)
 			p.recordScreen(q, texture)
-			return nil
 		}
 }
 

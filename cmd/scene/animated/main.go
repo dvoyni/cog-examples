@@ -97,7 +97,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"math"
@@ -150,9 +149,6 @@ const (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	// storage mounts nothing by default, and the vendored asset set lives in
 	// the repository rather than beside the executable, which `go run` builds
 	// into a temporary directory - so the demo mounts it explicitly and refuses
@@ -190,7 +186,21 @@ func main() {
 		New(),
 	}
 
-	kernel.New(config).Handler(report).WithPlugins(plugins...).Run(ctx)
+	engine := kernel.New(config).Handler(report).WithPlugins(plugins...)
+	// Ctrl+C asks the host to leave its loop, the same way closing the window
+	// does.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	go func() {
+		<-interrupt
+		engine.Quit()
+	}()
+	if err := engine.Run(); err != nil {
+		// A composition that failed, or a report the error handler terminated
+		// on, ends Run with its cause. Say why, and fail the process.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // report is the demo's error handler, and it is not optional here.
@@ -205,9 +215,9 @@ func main() {
 //
 // Everything else is logged and survived too. A demo is a thing you look at:
 // one failed texture should cost that texture, not the window.
-func report(err error) bool {
+func report(err error) error {
 	log.Printf("animated: %v", err)
-	return false
+	return nil
 }
 
 // Name is the demo plugin's name.
@@ -601,20 +611,19 @@ func (a *Animated) Register(registrar *kernel.Registrar, _ any) error {
 // setViewport fits the logical screen inside the window, swapping the axes when
 // the window is taller than it is wide.
 func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) (gfx.SetDesiredViewportResponse, error)
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
 	return func(access kernel.ResourceAccess) {
 			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) error {
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
 			if event.Width <= 0 || event.Height <= 0 {
-				return nil
+				return
 			}
 			width, height := float32(screenWidth), float32(screenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
-			_, err := setDesiredViewport(k,
+			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-			return err
 		}
 }
 
@@ -639,7 +648,7 @@ func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			lookup = access.GetWrite[*scene.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) error {
+		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			a.rate.measure(time.Now())
 			a.readStats(q)
@@ -649,7 +658,6 @@ func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 				scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()),
 				scene.NewLookupAccess(k, lookup.Get()))
 			a.hud(canvasQueue.Get())
-			return nil
 		}
 }
 
