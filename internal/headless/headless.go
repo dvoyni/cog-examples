@@ -319,3 +319,6 @@ type mainLoop struct {
 
 func (d *mainLoop) Attach(loop app.Loop) { d.loop = loop }
 func (d *mainLoop) Quit()                { d.quit() }
+
+// ClipboardWrite has no clipboard to write: a headless run has no system.
+func (d *mainLoop) ClipboardWrite(string) error { return nil }
