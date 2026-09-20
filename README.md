@@ -15,10 +15,10 @@ examples are collected here for later publication alongside the engine.
   gameplay plugin in the same file. Everything two levels under `cmd/` is a
   demo, which is what the browser build and its guard walk; the tools beside
   them - `cmd/prepare-assets/`, `cmd/web/` - are one level and are not.
-  `cmd/sound/orbit/` is the one demo that opens no window: audio needs no GPU,
-  so it supplies its own `app.MainLoop` rather than composing `gogpu`, and it
-  prints what `sound` derived so it is worth running on a machine with no sound
-  card too.
+  The `cmd/sound/` demos are the ones that open no window: audio needs no GPU,
+  so each supplies its own `app.MainLoop` rather than composing `gogpu`, and
+  each prints what `sound` derived so all of them are worth running on a machine
+  with no sound card too.
 - `assets/` — the vendored demo models, one `.glb` per asset, plus
   [`ATTRIBUTION.md`](assets/ATTRIBUTION.md).
 - `cmd/prepare-assets/` — the tool that builds `assets/`, and the manifest that
@@ -90,6 +90,18 @@ The ecs demos:
 | `fountain` | the ecsscene showcase: every binding Component in one frame, spawned and retired by Systems |
 | `physics2d` | the ecsphysics2d showcase: a stack, a ramp and a jointed figure in one scene, with the app's own gravity |
 | `physics2dtable` | the same engine with no gravity at all: a hundred balls breaking inside four cushions, and a crate per click |
+
+The sound demos. None of them opens a window, each embeds its own copy of the
+same public-domain clip, and each prints what `sound` derived rather than what
+it was told — so every one of them says something on a machine with no sound
+card. `orbit` runs until Ctrl+C; the other three run a script and stop.
+
+| demo | what it is for |
+| --- | --- |
+| `orbit` | the smallest cog app that makes a sound, and the wiring every sound demo starts from: a clip circling the listener while audibility does not move |
+| `buses` | two Voices on two Buses, and the sliders a settings screen writes — including why `Master` is the default Bus and not a global trim |
+| `crowd` | the voice cap, at eight Voices: quiet music survives a loud crowd because `Priority` is a band above audibility, and falls to one alarm a band higher |
+| `emitters` | the `ecsaudio` binding with no renderer: a Voice dying with its Entity, and a finished one-shot that does not restart |
 
 ## Running in a browser
 
