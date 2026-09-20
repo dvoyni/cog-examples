@@ -9,11 +9,16 @@ examples are collected here for later publication alongside the engine.
 
 - `cmd/<plugin>/<demo>/main.go` — one `main.go` per demo, grouped by the plugin
   it exercises: `cmd/scene/` for the scene plugin, `cmd/canvas/` for canvas,
-  `cmd/ecs/` for the entity-component plugin and its scene binding.
+  `cmd/ecs/` for the entity-component plugin and its scene binding, `cmd/sound/`
+  for audio.
   Each demo is self-contained: it wires its own plugin list and holds its own
   gameplay plugin in the same file. Everything two levels under `cmd/` is a
   demo, which is what the browser build and its guard walk; the tools beside
   them - `cmd/prepare-assets/`, `cmd/web/` - are one level and are not.
+  `cmd/sound/orbit/` is the one demo that opens no window: audio needs no GPU,
+  so it supplies its own `app.MainLoop` rather than composing `gogpu`, and it
+  prints what `sound` derived so it is worth running on a machine with no sound
+  card too.
 - `assets/` — the vendored demo models, one `.glb` per asset, plus
   [`ATTRIBUTION.md`](assets/ATTRIBUTION.md).
 - `cmd/prepare-assets/` — the tool that builds `assets/`, and the manifest that
@@ -21,6 +26,9 @@ examples are collected here for later publication alongside the engine.
 - `internal/assets` — mounts `assets/` through `storage`.
 - `internal/permanentfs` — storage's `PermanentFS` Adapter for the platform a
   demo is built for: `diskstorage` on the desktop, `jsstorage` in a browser.
+- `internal/soundbackend` — the same choice for sound's Backend: `otosound` on
+  the desktop, `jssound` in a browser. The two cannot both be compiled, so a
+  demo that named either directly would build on one platform only.
 - `internal/headless` — runs a cog engine with no GPU, so a demo's assertions
   can be a plain `go test` beside its `main.go`.
 - `cmd/web/` — the WebAssembly page any demo can be built into. See
