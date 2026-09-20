@@ -19,6 +19,7 @@ import (
 	"github.com/dvoyni/cog/extensions/gogpu"
 	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
+	"github.com/dvoyni/cog/libs/config"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
 	"github.com/dvoyni/cog/slots/app/appplugin"
@@ -39,11 +40,14 @@ const (
 const layerHello canvas.Layer = 0
 
 func main() {
-	config := map[kernel.PluginName]any{
+	cfg := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: hello"),
 	}
-	permanentfs.Configure(config)
+	permanentfs.Configure(cfg)
+	// Last of the contributors, so every plugin an override may name is in the
+	// map by now: --cog.gogpu.Width=640, --cog.gogpu.Fullscreen, and so on.
+	cfg = config.Inject(cfg)
 
 	// hello is last because it records into the op queue the plugins before it
 	// declare.
@@ -58,7 +62,7 @@ func main() {
 		newHello(),
 	}
 
-	engine := kernel.New(config).WithPlugins(plugins...)
+	engine := kernel.New(cfg).WithPlugins(plugins...)
 	// Ctrl+C asks the host to leave its loop, the same way closing the window
 	// does.
 	interrupt := make(chan os.Signal, 1)

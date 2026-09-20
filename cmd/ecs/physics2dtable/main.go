@@ -97,6 +97,7 @@ import (
 	"github.com/dvoyni/cog/extensions/gogpu"
 	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
+	"github.com/dvoyni/cog/libs/config"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
 	"github.com/dvoyni/cog/slots/app/appplugin"
@@ -111,12 +112,8 @@ import (
 func main() {
 	seed := flag.Uint64("seed", DefaultSeed,
 		"the seed the break is dealt from; a run is reported and reproduced by this number")
-	flag.Parse()
-	// On stdout as well as on the HUD: a screenshot carries the HUD and a bug
-	// report pasted from a terminal carries this.
-	fmt.Printf("physics2dtable: seed %#016x\n", *seed)
 
-	config := map[kernel.PluginName]any{
+	cfg := map[kernel.PluginName]any{
 		storage.Name: storage.Config{},
 		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: ecsphysics2d table"),
 		ecs.Name:     ecs.Config{PrewarmEntities: prewarmEntities},
@@ -129,9 +126,20 @@ func main() {
 		// and a half cells by four.
 		ecsphysics2d.Name: ecsphysics2d.Config{},
 	}
-	permanentfs.Configure(config)
+	permanentfs.Configure(cfg)
+	// The engine's own arguments are taken out of os.Args here, so the -seed
+	// below still parses next to a --cog.gogpu.Width=640. That is why the
+	// cfg is built before the flags are read rather than after: Inject has
+	// to see every plugin an override may name, and flag.Parse has to run
+	// after Inject has taken what is not its business.
+	cfg = config.Inject(cfg)
 
-	engine := kernel.New(config).WithPlugins(
+	flag.Parse()
+	// On stdout as well as on the HUD: a screenshot carries the HUD and a bug
+	// report pasted from a terminal carries this.
+	fmt.Printf("physics2dtable: seed %#016x\n", *seed)
+
+	engine := kernel.New(cfg).WithPlugins(
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(),
 		gfxplugin.New(), canvasplugin.New(), gogpuplugin.New(),
 		ecsplugin.New(), ecsphysics2dplugin.New(), New(*seed),
