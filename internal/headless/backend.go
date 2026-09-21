@@ -18,6 +18,9 @@ type Backend struct {
 	// shaders remembers each shader's label, which is its resource path, so
 	// ShaderLayout can answer for the right one.
 	shaders map[gfx.ShaderID]string
+	// formats remembers the format each texture was baked or allocated in, so
+	// TextureFormat can key a pipeline to the target it renders into.
+	formats map[gfx.TextureID]gfx.TextureFormat
 
 	Passes   []gfx.PassDesc
 	Draws    []DrawCall
@@ -293,6 +296,13 @@ func (b *Backend) ScreenFramebuffer() (gfx.TextureViewID, int, int) {
 // headless run fails on a limit a browser would fail on.
 func (b *Backend) Limits() gfx.Limits { return gfx.DefaultLimits() }
 
+// TextureFormat reports the format a texture was baked or allocated in, and
+// that a texture this backend has not seen is unknown.
+func (b *Backend) TextureFormat(id gfx.TextureID) (gfx.TextureFormat, bool) {
+	format, ok := b.formats[id]
+	return format, ok
+}
+
 func (b *Backend) TextureView(gfx.TextureID, int, int) gfx.TextureViewID {
 	b.nextID++
 	return gfx.TextureViewID(b.nextID)
@@ -363,15 +373,25 @@ func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []by
 // level - and a count of uploads alone cannot tell a filtered texture from an
 // unfiltered one.
 func (b *Backend) BakeTexture(
-	_ gfx.TextureID, _, _ int, _ gfx.TextureFormat, _ []byte, mipmaps bool,
+	id gfx.TextureID, _, _ int, format gfx.TextureFormat, _ []byte, mipmaps bool,
 ) {
+	b.rememberFormat(id, format)
 	b.BakedTextures++
 	if mipmaps {
 		b.MippedTextures++
 	}
 }
-func (b *Backend) AllocateTexture(gfx.TextureID, gfx.TextureDesc)       {}
+func (b *Backend) AllocateTexture(id gfx.TextureID, desc gfx.TextureDesc) {
+	b.rememberFormat(id, desc.Format)
+}
 func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte) {}
+
+func (b *Backend) rememberFormat(id gfx.TextureID, format gfx.TextureFormat) {
+	if b.formats == nil {
+		b.formats = map[gfx.TextureID]gfx.TextureFormat{}
+	}
+	b.formats[id] = format
+}
 
 func (b *Backend) SetPipeline(id gfx.PipelineID)      { b.current = id }
 func (b *Backend) SetParams([]byte)                   {}
