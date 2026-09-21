@@ -30,13 +30,13 @@
 //	        anything, which is what makes that the mechanism on show rather
 //	        than a spacing trick.
 //
-// Gravity is the app's own write and not the engine's. The port ships none
-// deliberately, so the m*g a Body is pushed by is written into Force by an
-// ordinary System ordered Before[ecsphysics2d.IntegrateOnUpdate], which is also
-// what keeps gravity optional rather than assumed. A Force written this tick
-// moves the Body next tick — Solve turns it into velocity at the end of the
-// tick and the next Integrate spends it — so the closed forms this demo quotes
-// count that increment in, not out.
+// Gravity is a Constant: physics registers ecsphysics2d.Constants with gravity
+// 0, and the setup System writes Constants.Gravity once, on the init event,
+// through ecs.Write[*ecsphysics2d.Constants]. Nothing writes it afterwards, so
+// no System of the demo's waits on Solve for it on any tick. Solve adds it to
+// every Dynamic body's velocity exactly as a Force of m*g would be added: this
+// tick's Solve turns it into velocity and the next Integrate spends it, so the
+// closed forms this demo quotes count that increment in, not out.
 //
 // What is on screen is the Shapes themselves and nothing else: every Body is
 // its own outline, straight off the Component, with a red cross at each pivot
@@ -143,9 +143,6 @@ func (p *Demo) Dependencies() []kernel.PluginName {
 type (
 	// setupSystem builds the whole scene once, on the init event.
 	setupSystem kernel.Subscription[app.InitEvent]
-	// weighSystem writes m*g into every Dynamic body's Force. It is the one
-	// addition the port deliberately does not ship.
-	weighSystem kernel.Subscription[app.UpdateEvent]
 	// surveySystem reads the settled world back into the census, once the
 	// solver has finished with the tick.
 	surveySystem kernel.Subscription[app.UpdateEvent]
@@ -156,19 +153,15 @@ type (
 )
 
 // Register declares the demo's one Component, publishes the census and chains
-// the four Systems against physics' own.
+// the three Systems against physics' own.
 func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 	ecs.RegisterComponent[Look](registrar, prewarmEntities)
 	registrar.InitResource(&Scene{})
 
+	// Setup also writes the world's gravity, once: it is the one System that
+	// takes Write on Constants, and it runs on the init event, so it serialises
+	// against Solve on no tick at all.
 	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
-
-	// Gravity is the app's m*g write and goes in Before Integrate, which is
-	// where the package's doc puts every gameplay Force. Ordering it after
-	// would spend it a tick late and put every closed form here one increment
-	// out.
-	registrar.Subscribe[weighSystem](ecs.ToHandler[app.UpdateEvent](registrar, weigh)).
-		Before[ecsphysics2d.IntegrateOnUpdate]()
 
 	// The census is a reacting System — cp's PostSolve — so it reads the tick
 	// as the solver left it rather than as Detect found it.

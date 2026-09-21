@@ -19,10 +19,10 @@
 // Its sibling cmd/ecs/physics2d shows what the solver does under gravity. This
 // one shows what it does with none, which is the more interesting half:
 //
-//	**the port ships no gravity, so a top-down game writes none**. There is no
-//	weigh System here and no Force is written anywhere in this program. The
-//	whole of "top down" is that absence — not a flag, not a Config field, not a
-//	plane to choose. A Force Component is still on every Dynamic body, because
+//	**physics' gravity defaults to zero, so a top-down game writes none**.
+//	Nothing here takes Write on ecsphysics2d.Constants and no Force is written
+//	anywhere in this program. The whole of "top down" is that absence — not a
+//	flag, not a Config field, not a plane to choose. A Force Component is still on every Dynamic body, because
 //	a Dynamic body without one falls out of the velocity integrator's Query and
 //	silently never moves, and it stays zero from the first tick to the last.
 //
@@ -196,8 +196,8 @@ func (p *Demo) Dependencies() []kernel.PluginName {
 	return []kernel.PluginName{canvas.Name, ecs.Name, ecsphysics2d.Name, gfx.Name, input.Name}
 }
 
-// The demo's own Systems. There is deliberately no fifth one writing gravity:
-// see the package doc.
+// The demo's own Systems. There is deliberately no fifth one writing
+// Constants.Gravity: see the package doc.
 type (
 	// rackSystem builds the table and deals the break once, on the init event.
 	rackSystem kernel.Subscription[app.InitEvent]
