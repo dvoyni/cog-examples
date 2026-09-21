@@ -182,7 +182,7 @@ func trackZ(time float32) float32 {
 func mainCamera(time float32) scene.CameraDescr {
 	eye := m.Vec3{Y: eyeHeight, Z: trackZ(time)}
 	return scene.CameraDescr{
-		Transform: scene.LookAt(eye, eye.Add(m.Vec3{Y: eyeTilt, Z: 1}), m.Vec3{Y: 1}),
+		Transform: m.LookAt(eye, eye.Add(m.Vec3{Y: eyeTilt, Z: 1}), m.Vec3{Y: 1}),
 		FovY:      fieldOfView,
 		Near:      nearPlane,
 		Far:       farPlane,
@@ -209,7 +209,7 @@ func mainCamera(time float32) scene.CameraDescr {
 // about a plate is the visible half of the ok contract.
 func mapCamera(mask scene.LayerMask) scene.CameraDescr {
 	return scene.CameraDescr{
-		Transform:  scene.LookAt(m.Vec3{Y: mapHeight}, m.Vec3{}, m.Vec3{Z: -1}),
+		Transform:  m.LookAt(m.Vec3{Y: mapHeight}, m.Vec3{}, m.Vec3{Z: -1}),
 		Projection: scene.Orthographic,
 		Height:     mapExtent,
 		Near:       mapNear,
@@ -224,9 +224,9 @@ func mapCamera(mask scene.LayerMask) scene.CameraDescr {
 }
 
 // cubeTransform places one corridor cube.
-func cubeTransform(i int) scene.Transform {
+func cubeTransform(i int) m.Transform {
 	c := cubes[i].position
-	return scene.At(c.X, c.Y, c.Z).WithScale(cubeSide)
+	return m.At(c.X, c.Y, c.Z).WithScale(cubeSide)
 }
 
 // cubeSphere is a cube's bounding sphere in world space, which is what the
@@ -245,10 +245,10 @@ func nameplateAnchor(i int) m.Vec3 {
 }
 
 // obeliskTransform places the obelisk, and obeliskSphere bounds it for picking.
-func obeliskTransform() scene.Transform {
+func obeliskTransform() m.Transform {
 	// Yawed off the world axes so no face of it is parallel to a cube's, which
 	// is what puts its four sides at four angles to one sun.
-	return scene.At(obeliskPosition.X, obeliskPosition.Y, obeliskPosition.Z).
+	return m.At(obeliskPosition.X, obeliskPosition.Y, obeliskPosition.Z).
 		WithRotation(m.QuatAxisAngle(m.Vec3{Y: 1}, obeliskYaw))
 }
 
@@ -265,8 +265,8 @@ func obeliskSphere() m.Sphere {
 }
 
 // modelTransform places the Khronos model.
-func modelTransform() scene.Transform {
-	return scene.At(modelPosition.X, modelPosition.Y, modelPosition.Z).WithScale(modelScale)
+func modelTransform() m.Transform {
+	return m.At(modelPosition.X, modelPosition.Y, modelPosition.Z).WithScale(modelScale)
 }
 
 // frustumCorners is the four points the main camera's view covers at

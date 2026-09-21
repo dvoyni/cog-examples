@@ -99,7 +99,7 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			p.time += float32(event.Dt)
 			q := queue.Get()
 			q.Camera(cameraMain, scene.CameraDescr{
-				Transform: scene.LookAt(m.Vec3{X: 3, Y: 2, Z: 4}, m.Vec3{}, m.Vec3{Y: 1}),
+				Transform: m.LookAt(m.Vec3{X: 3, Y: 2, Z: 4}, m.Vec3{}, m.Vec3{Y: 1}),
 				FovY:      1.0472,
 				Near:      0.1,
 				Far:       100,
@@ -111,11 +111,11 @@ func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 				AmbientGround: m.NewColorSrgb(0.1, 0.09, 0.08, 1),
 				Passes:        []scene.Pass{{ClearColor: m.Some(clearColor), ClearDepth: m.Some(clearDepth)}},
 			})
-			q.Box(0, scene.At(0, 0, 0).WithRotation(m.QuatAxisAngle(m.Vec3{Y: 1}, p.time)),
+			q.Box(0, m.At(0, 0, 0).WithRotation(m.QuatAxisAngle(m.Vec3{Y: 1}, p.time)),
 				m.NewColorSrgb(0.42, 0.71, 0.94, 1))
 			// A second, smaller box behind the first: depth testing is only
 			// visible when something can be behind something else.
-			q.Box(0, scene.At(-1.2, 0, -1.2).WithScale(0.6), m.NewColorSrgb(0.94, 0.55, 0.35, 1))
+			q.Box(0, m.At(-1.2, 0, -1.2).WithScale(0.6), m.NewColorSrgb(0.94, 0.55, 0.35, 1))
 		}
 }
 

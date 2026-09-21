@@ -187,7 +187,7 @@ func TestThePerInstanceCullAgreesWithThePublishedFrustum(t *testing.T) {
 
 // isStretched reports whether a transform scales its axes by different amounts,
 // which in this field is what a pillar is.
-func isStretched(transform scene.Transform) bool {
+func isStretched(transform m.Transform) bool {
 	s := transform.Scale
 	return s.X != s.Y || s.Y != s.Z
 }

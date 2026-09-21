@@ -189,7 +189,7 @@ type Marked struct{}
 type (
 	siren struct {
 		Mark  Marked
-		Place ecsaudio.Transform
+		Place m.Transform
 		Sound ecsaudio.Emitter
 	}
 	chime struct {
@@ -201,7 +201,7 @@ type (
 	}
 	ears struct {
 		Mark  Marked
-		Place ecsaudio.Transform
+		Place m.Transform
 		Ears  ecsaudio.Listener
 	}
 )
@@ -384,7 +384,7 @@ func (p *emitters) runScript(
 			// sound never reads a camera, and neither does the binding.
 			listeners.New(ears{})
 			p.siren = sirens.New(siren{
-				Place: ecsaudio.Transform{Position: m.Vec3{X: sirenRange}},
+				Place: m.Transform{Position: m.Vec3{X: sirenRange}},
 				Sound: p.sirenEmitter(),
 			})
 			p.chime = chimes.New(chime{Sound: p.chimeEmitter()})

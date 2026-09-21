@@ -388,7 +388,7 @@ func (p *Box) spinCenter() m.Vec3 {
 // record records the frame's camera, its eight draw calls and its two lights.
 func (p *Box) record(q *scene.OpQueue) {
 	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: scene.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
+		Transform: m.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
 		Near:      0.1,
 		Far:       100,
@@ -408,13 +408,13 @@ func (p *Box) record(q *scene.OpQueue) {
 
 	// The spinning box is the TRS case: a position, a rotation and a scalar
 	// Scale, all three at once.
-	q.Box(0, scene.At(0, 0.5, 0).
+	q.Box(0, m.At(0, 0.5, 0).
 		WithRotation(m.QuatAxisAngle(m.Vec3{X: 0.3, Y: 1, Z: 0}.Normalize(), p.time())).
 		WithScale(0.9), spinColor)
 
 	// The resting box is the zero-value case: an unrotated, unscaled transform
 	// whose Scale field is never written, and a zero Scale means 1.
-	q.Box(0, scene.At(restPosition.X, restPosition.Y, restPosition.Z), restColor)
+	q.Box(0, m.At(restPosition.X, restPosition.Y, restPosition.Z), restColor)
 
 	q.Sphere(0, p.spinCenter(), sphereRadius, sphereColor)
 

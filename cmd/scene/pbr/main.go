@@ -516,8 +516,8 @@ var referenceEye = eyeAt(orbitTarget, overviewRadius, startAzimuth, startElevati
 // placement is one station's world transform and the plinth beneath it, built
 // once at package init because neither moves.
 type placement struct {
-	model  scene.Transform
-	plinth scene.Transform
+	model  m.Transform
+	plinth m.Transform
 	// center is the station's own middle, which the close-up camera looks at.
 	center m.Vec3
 	// scale is the uniform scale the model is drawn at, which a light declared
@@ -539,12 +539,12 @@ func buildPlacements() [len(stations)]placement {
 		middle := m.TRS4(m.Vec3{}, yaw, m.Vec3{X: s.scale, Y: s.scale, Z: s.scale}).
 			TransformPoint(m.Vec3{X: s.centerX, Z: s.centerZ})
 		out[i] = placement{
-			model: scene.Transform{
+			model: m.Transform{
 				Position: m.Vec3{X: s.x - middle.X, Y: s.lift, Z: s.z - middle.Z},
 				Rotation: yaw,
 				Scale:    m.NewVec3(s.scale),
 			},
-			plinth: scene.Transform{
+			plinth: m.Transform{
 				Position: m.Vec3{X: s.x, Y: plinthHeight / 2, Z: s.z},
 				Rotation: yaw,
 				Scale:    m.Vec3{X: plinthWidth, Y: plinthHeight, Z: plinthDepth},
@@ -773,7 +773,7 @@ func (p *Pbr) eye() m.Vec3 {
 // draws and twenty-one lights.
 func (p *Pbr) record(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: scene.LookAt(p.eye(), p.target(), m.Vec3{Y: 1}),
+		Transform: m.LookAt(p.eye(), p.target(), m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
 		Near:      nearPlane,
 		Far:       farPlane,

@@ -818,7 +818,7 @@ var PreloadOrder = []string{
 // record records the frame: one camera, sixteen pads and sixteen model draws.
 func (p *Loading) record(q *scene.OpQueue) {
 	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: scene.LookAt(cameraEye, cameraTarget, m.Vec3{Y: 1}),
+		Transform: m.LookAt(cameraEye, cameraTarget, m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
 		Near:      nearPlane,
 		Far:       farPlane,
@@ -891,9 +891,9 @@ func stationPad(s *station) m.Vec3 {
 // The lift is the file's own minY through the scale, which is why the table
 // carries minY: a Node draw re-roots, so the number is the subtree's, not the
 // scene's, and the two differ by a whole axis on this asset.
-func stationPlacement(s *station) scene.Transform {
+func stationPlacement(s *station) m.Transform {
 	pad := stationPad(s)
-	return scene.At(pad.X, pad.Y-s.minY*s.scale, pad.Z).WithScale(s.scale)
+	return m.At(pad.X, pad.Y-s.minY*s.scale, pad.Z).WithScale(s.scale)
 }
 
 // readStats reads the previous frame's flush result back out of the queue,

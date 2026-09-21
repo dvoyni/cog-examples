@@ -759,7 +759,7 @@ func eyeAt(target m.Vec3, radius, azimuth, elevation float32) m.Vec3 {
 // record records the frame: one camera, the ground and the four stations.
 func (a *Animated) record(q *scene.OpQueue) {
 	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: scene.LookAt(a.eye(), a.target(), m.Vec3{Y: 1}),
+		Transform: m.LookAt(a.eye(), a.target(), m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
 		Near:      nearPlane,
 		Far:       farPlane,
@@ -806,11 +806,11 @@ func (a *Animated) recordFox(q *scene.OpQueue) {
 // foxTransform stands one fox on the ground at x, turned to face the camera's
 // side of the row and carried to its own middle in Z so the two line up with
 // each other rather than with the file's origin.
-func foxTransform(x float32) scene.Transform {
+func foxTransform(x float32) m.Transform {
 	yaw := m.QuatAxisAngle(m.Vec3{Y: 1}, foxYaw)
 	middle := m.TRS4(m.Vec3{}, yaw, m.Vec3{X: foxScale, Y: foxScale, Z: foxScale}).
 		TransformPoint(m.Vec3{Z: foxCenterZ})
-	return scene.Transform{
+	return m.Transform{
 		Position: m.Vec3{X: x - middle.X, Y: foxLift, Z: -middle.Z},
 		Rotation: yaw,
 		Scale:    m.NewVec3(foxScale),
@@ -868,8 +868,8 @@ func (a *Animated) recordInterp(q *scene.OpQueue) {
 }
 
 // interpCellTransform places one cube of a grid whose middle column stands at x.
-func interpCellTransform(x float32, row, column int) scene.Transform {
-	return scene.Transform{
+func interpCellTransform(x float32, row, column int) m.Transform {
+	return m.Transform{
 		Position: m.Vec3{
 			X: x + float32(column-1)*interpCell,
 			Y: interpBaseY + float32(row)*interpCell,
@@ -903,7 +903,7 @@ func (a *Animated) recordInterpCap(q *scene.OpQueue, x float32) {
 	// units against this demo's interpCell, so the two are close but not
 	// identical, and the cap copy is the wider of the two.
 	q.Model(0, interpPath, scene.ModelDraw{
-		Transform: scene.Transform{
+		Transform: m.Transform{
 			Position: m.Vec3{X: x, Y: interpBaseY},
 			Scale:    m.NewVec3(interpScale),
 		},
@@ -947,8 +947,8 @@ func (a *Animated) recordCube(q *scene.OpQueue) {
 // yaw keeps the light identical; the distance is what keeps the perspective
 // skew between them down to a few degrees, which is far less misleading than a
 // difference in shading.
-func cubeTransform(x float32) scene.Transform {
-	return scene.Transform{
+func cubeTransform(x float32) m.Transform {
+	return m.Transform{
 		Position: m.Vec3{X: x, Y: cubeLift},
 		Rotation: m.QuatAxisAngle(m.Vec3{Y: 1}, cubeYaw),
 	}
@@ -986,8 +986,8 @@ func (a *Animated) recordStress(q *scene.OpQueue) {
 	q.Model(0, stressPath, draw)
 }
 
-func stressTransform(x float32) scene.Transform {
-	return scene.Transform{Position: m.Vec3{X: x, Y: stressLift}, Scale: m.NewVec3(stressScale)}
+func stressTransform(x float32) m.Transform {
+	return m.Transform{Position: m.Vec3{X: x, Y: stressLift}, Scale: m.NewVec3(stressScale)}
 }
 
 // OverrideWeights is the sparse MorphWeights array the second stress copy

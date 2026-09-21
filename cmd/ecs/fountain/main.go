@@ -112,7 +112,7 @@ type Life struct{ Remaining, Span float32 }
 // The Component sets: one per act of creation.
 type (
 	mote struct {
-		Place  ecsscene.Transform
+		Place  m.Transform
 		Draw   ecsscene.Mesh
 		Shade  ecsscene.Material
 		Tint   ecsscene.Params
@@ -120,25 +120,25 @@ type (
 		Age    Life
 	}
 	nozzle struct {
-		Place ecsscene.Transform
+		Place m.Transform
 		Model ecsscene.Model
 	}
 	fox struct {
-		Place ecsscene.Transform
+		Place m.Transform
 		Model ecsscene.Model
 		Gait  ecsscene.Animation
 	}
 	basin struct {
-		Place ecsscene.Transform
+		Place m.Transform
 		Draw  ecsscene.Mesh
 		Shade ecsscene.Material
 	}
 	lamp struct {
-		Place ecsscene.Transform
+		Place m.Transform
 		Light ecsscene.Light
 	}
 	eye struct {
-		Place  ecsscene.Transform
+		Place  m.Transform
 		Camera ecsscene.Camera
 	}
 )

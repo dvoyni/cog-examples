@@ -383,7 +383,7 @@ func (p *Cameras) time() float32 { return float32(p.step) * fixedStep }
 // the first time the asset changes, so it comes from Bounds on the device
 // facade and
 // goes through m.Sphere.Transform - exact under the uniform scale a
-// scene.Transform carries. A file that could not be loaded is simply not in the
+// m.Transform carries. A file that could not be loaded is simply not in the
 // list, which is the right answer: a click cannot pick what is not drawn.
 func (p *Cameras) buildTargets(la scene.LookupDeviceAccess) {
 	p.targets = p.targets[:0]
@@ -525,7 +525,7 @@ func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess
 		// underneath - so that "the first record wins" is a thing the picture
 		// says rather than a thing this comment says.
 		wrong := camera
-		wrong.Transform = scene.LookAt(m.Vec3{Y: -4}, m.Vec3{}, m.Vec3{Y: 1})
+		wrong.Transform = m.LookAt(m.Vec3{Y: -4}, m.Vec3{}, m.Vec3{Y: 1})
 		q.Camera(CameraMain, wrong)
 	}
 

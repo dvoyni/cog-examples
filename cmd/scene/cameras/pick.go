@@ -34,7 +34,7 @@ type pickable struct {
 // business and this demo has both cases: the debug cubes know their own half
 // extent, and the glTF model asks LookupAccess.Bounds for its local sphere and
 // puts it through m.Sphere.Transform - which is exact under the uniform scale a
-// scene.Transform carries, and conservative otherwise. That pairing is what
+// m.Transform carries, and conservative otherwise. That pairing is what
 // Bounds exists for.
 //
 // A model with an AABB that is tighter than its sphere - a long thin thing,

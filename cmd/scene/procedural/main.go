@@ -554,7 +554,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 // record records the frame's camera and its five draws.
 func (p *Procedural) record(q *scene.OpQueue) {
 	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: scene.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
+		Transform: m.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
 		Near:      0.1,
 		Far:       100,
@@ -583,7 +583,7 @@ func (p *Procedural) record(q *scene.OpQueue) {
 	// no baked sphere - scene cannot locate POSITION in bytes it has never seen
 	// a layout for - and a draw with no bounds at all is never culled.
 	q.Mesh(0, p.ridge, scene.MeshDraw{
-		Transform: scene.At(ridgePosition.X, ridgePosition.Y, ridgePosition.Z).WithScale(ridgeScale),
+		Transform: m.At(ridgePosition.X, ridgePosition.Y, ridgePosition.Z).WithScale(ridgeScale),
 		Material:  p.material,
 		Bounds:    m.Vec4{W: ridgeBounds},
 	})
@@ -594,7 +594,7 @@ func (p *Procedural) record(q *scene.OpQueue) {
 	// so rather than to maintain a number that would only ever be right by
 	// accident.
 	q.Mesh(0, p.ribbon, scene.MeshDraw{
-		Transform: scene.At(ribbonPosition.X, ribbonPosition.Y, ribbonPosition.Z),
+		Transform: m.At(ribbonPosition.X, ribbonPosition.Y, ribbonPosition.Z),
 		Material:  p.material,
 		NeverCull: true,
 	})
@@ -604,14 +604,14 @@ func (p *Procedural) record(q *scene.OpQueue) {
 	// stray does not, which is what makes the HUD's culled count a claim about
 	// a named object.
 	q.Mesh(0, p.beacon, scene.MeshDraw{
-		Transform: scene.At(beaconPosition.X, beaconPosition.Y, beaconPosition.Z).
+		Transform: m.At(beaconPosition.X, beaconPosition.Y, beaconPosition.Z).
 			WithRotation(m.QuatAxisAngle(m.Vec3{X: 0.35, Y: 1, Z: 0.2}.Normalize(), p.time()*beaconSpin)).
 			WithScale(beaconScale),
 		Material: p.material,
 		Bounds:   m.Vec4{W: 1},
 	})
 	q.Mesh(0, p.beacon, scene.MeshDraw{
-		Transform: scene.At(strayPosition.X, strayPosition.Y, strayPosition.Z).WithScale(beaconScale),
+		Transform: m.At(strayPosition.X, strayPosition.Y, strayPosition.Z).WithScale(beaconScale),
 		Material:  p.material,
 		Bounds:    m.Vec4{W: 1},
 	})
@@ -625,7 +625,7 @@ func (p *Procedural) record(q *scene.OpQueue) {
 	// started drawing whatever took its slot.
 	if p.staleDrawn {
 		q.Mesh(0, p.stale, scene.MeshDraw{
-			Transform: scene.At(beaconPosition.X, beaconPosition.Y, beaconPosition.Z).
+			Transform: m.At(beaconPosition.X, beaconPosition.Y, beaconPosition.Z).
 				WithScale(beaconScale),
 			Material: p.material,
 			Bounds:   m.Vec4{W: 1},

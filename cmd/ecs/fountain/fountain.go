@@ -111,7 +111,7 @@ var moteBounds = m.Vec4{W: 0.87}
 
 // stretch places a mote at position with its local Y along its velocity and
 // its length growing with its speed - a non-uniform scale.
-func stretch(position m.Vec3, motion Velocity) ecsscene.Transform {
+func stretch(position m.Vec3, motion Velocity) m.Transform {
 	speed := motion.V.Length()
 	up := m.Vec3{Y: 1}
 	var turn m.Quat
@@ -120,7 +120,7 @@ func stretch(position m.Vec3, motion Velocity) ecsscene.Transform {
 		angle := float32(math.Acos(float64(m.Clamp(up.Dot(along), -1, 1))))
 		turn = m.QuatAxisAngle(up.Cross(along), angle)
 	}
-	return ecsscene.Transform{
+	return m.Transform{
 		Position: position,
 		Rotation: turn,
 		Scale:    m.Vec3{X: moteWidth, Y: moteWidth + moteStretch*speed, Z: moteWidth},
@@ -168,10 +168,10 @@ func foxSpeed(t float32) float32 {
 }
 
 // foxPlace stands the fox on its circle at time t, facing along it.
-func foxPlace(t float32) ecsscene.Transform {
+func foxPlace(t float32) m.Transform {
 	angle := foxAngle(t)
 	sin, cos := float32(math.Sin(float64(angle))), float32(math.Cos(float64(angle)))
-	return ecsscene.Transform{
+	return m.Transform{
 		Position: m.Vec3{X: foxRadius * cos, Z: foxRadius * sin},
 		Rotation: m.QuatRotationY(-angle),
 		Scale:    m.NewVec3(foxScale),
@@ -201,9 +201,9 @@ var (
 )
 
 // spotPlace hangs the spot straight above the fox, aimed down at it.
-func spotPlace(t float32) ecsscene.Transform {
+func spotPlace(t float32) m.Transform {
 	target := foxPlace(t).Position
-	return ecsscene.Transform(scene.LookAt(target.Add(m.Vec3{Y: spotHeight}), target, m.Vec3{X: 1}))
+	return m.LookAt(target.Add(m.Vec3{Y: spotHeight}), target, m.Vec3{X: 1})
 }
 
 // The camera orbits the basin on the demo clock.
@@ -217,7 +217,7 @@ const (
 
 var orbitTarget = m.Vec3{Y: 0.9}
 
-func cameraPlace(t float32) ecsscene.Transform {
+func cameraPlace(t float32) m.Transform {
 	azimuth := float64(startAzimuth + orbitRate*t)
 	flat := orbitRadius * float32(math.Cos(orbitElevation))
 	eye := orbitTarget.Add(m.Vec3{
@@ -225,7 +225,7 @@ func cameraPlace(t float32) ecsscene.Transform {
 		Y: orbitRadius * float32(math.Sin(orbitElevation)),
 		Z: flat * float32(math.Cos(azimuth)),
 	})
-	return ecsscene.Transform(scene.LookAt(eye, orbitTarget, m.Vec3{Y: 1}))
+	return m.LookAt(eye, orbitTarget, m.Vec3{Y: 1})
 }
 
 var (

@@ -29,7 +29,7 @@ func setup(
 	f.disc = la.BakeMesh(discVertices, discIndices, gfx.TopologyTriangleList)
 
 	nozzles.New(nozzle{
-		Place: ecsscene.Transform{
+		Place: m.Transform{
 			Position: m.Vec3{Y: nozzleLift},
 			Scale:    m.NewVec3(nozzleScale),
 		},
@@ -48,7 +48,7 @@ func setup(
 		Shade: basinMaterial(),
 	})
 	lamps.New(lamp{
-		Place: ecsscene.Transform{Position: m.Vec3{Y: lampHeight}},
+		Place: m.Transform{Position: m.Vec3{Y: lampHeight}},
 		Light: ecsscene.Light{Kind: scene.LightPoint, Color: lampColor, Intensity: lampIntensity, Range: lampRange},
 	})
 	lamps.New(lamp{
@@ -84,7 +84,7 @@ func accelerate(q *ecs.Query[fallQuery]) {
 }
 
 type driftQuery struct {
-	Place  *ecsscene.Transform
+	Place  *m.Transform
 	Tint   *ecsscene.Params
 	Age    *Life
 	Motion Velocity
@@ -114,11 +114,11 @@ func reap(q *ecs.Query[reapQuery], dead *ecs.WriteableEntities, state *ecs.Write
 
 type (
 	foxQuery struct {
-		Place *ecsscene.Transform
+		Place *m.Transform
 		Gait  *ecsscene.Animation
 	}
 	spotQuery struct {
-		Place *ecsscene.Transform
+		Place *m.Transform
 		Light ecsscene.Light
 	}
 )
@@ -148,7 +148,7 @@ func prowl(foxes *ecs.Query[foxQuery], lights *ecs.Query[spotQuery], state *ecs.
 }
 
 type cameraQuery struct {
-	Place  *ecsscene.Transform
+	Place  *m.Transform
 	Camera ecsscene.Camera
 }
 

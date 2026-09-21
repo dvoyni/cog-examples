@@ -1101,12 +1101,12 @@ func (d *soloDemo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 		}, func(_ kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			q.Camera(CameraMain, scene.CameraDescr{
-				Transform: scene.LookAt(m.Vec3{Y: 4, Z: 20}, m.Vec3{}, m.Vec3{Y: 1}),
+				Transform: m.LookAt(m.Vec3{Y: 4, Z: 20}, m.Vec3{}, m.Vec3{Y: 1}),
 				FovY:      fieldOfViewY, Near: nearPlane, Far: farPlane,
 			})
 			for i := range max(d.copies, 1) {
 				q.Model(0, d.path, scene.ModelDraw{
-					Transform: scene.At(float32(i)*6, 0, 0),
+					Transform: m.At(float32(i)*6, 0, 0),
 				})
 			}
 		}

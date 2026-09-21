@@ -482,9 +482,9 @@ var (
 //
 // The pillar count is returned alongside, and it is what the HUD and the
 // assertions call the colonnade rather than a number anyone worked out by hand.
-func buildField() ([]scene.Transform, int) {
+func buildField() ([]m.Transform, int) {
 	center := gridSide / 2
-	transforms := make([]scene.Transform, 0, gridSide*gridSide)
+	transforms := make([]m.Transform, 0, gridSide*gridSide)
 	pillars := 0
 	for i := range gridSide {
 		for j := range gridSide {
@@ -492,7 +492,7 @@ func buildField() ([]scene.Transform, int) {
 				continue
 			}
 			if isPillar(i, j) {
-				transforms = append(transforms, scene.Transform{
+				transforms = append(transforms, m.Transform{
 					Position: m.Vec3{X: latticeAt(i, center) - pillarWidth/2, Z: latticeAt(j, center) - pillarWidth/2},
 					Rotation: m.Quat{W: 1},
 					Scale:    m.Vec3{X: pillarWidth, Y: pillarHeight, Z: pillarWidth},
@@ -500,7 +500,7 @@ func buildField() ([]scene.Transform, int) {
 				pillars++
 				continue
 			}
-			transforms = append(transforms, scene.Transform{
+			transforms = append(transforms, m.Transform{
 				Position: m.Vec3{
 					X: latticeAt(i, center) - crateSize/2,
 					Y: -crateMinY * crateSize,
@@ -538,12 +538,12 @@ func abs(v int) int {
 
 // buildBottles stands the bottles in a row across the courtyard, each lifted by
 // its own minY so it rests on the floor rather than sinking into it.
-func buildBottles() ([]scene.Transform, int) {
-	out := make([]scene.Transform, bottleCount)
+func buildBottles() ([]m.Transform, int) {
+	out := make([]m.Transform, bottleCount)
 	squats := 0
 	for i := range out {
 		if isSquat(i) {
-			out[i] = scene.Transform{
+			out[i] = m.Transform{
 				Position: m.Vec3{X: spread(i, bottleCount, bottleSpacing), Z: bottleZ},
 				Rotation: m.QuatAxisAngle(m.Vec3{Y: 1}, squatYaw),
 				Scale:    m.Vec3{X: bottleScale * squatWiden, Y: bottleScale * squatFlatten, Z: bottleScale * squatWiden},
@@ -551,7 +551,7 @@ func buildBottles() ([]scene.Transform, int) {
 			squats++
 			continue
 		}
-		out[i] = scene.Transform{
+		out[i] = m.Transform{
 			Position: m.Vec3{
 				X: spread(i, bottleCount, bottleSpacing),
 				Y: -bottleMinY * bottleScale,
@@ -569,10 +569,10 @@ func buildBottles() ([]scene.Transform, int) {
 func isSquat(i int) bool { return i%2 == 1 }
 
 // buildPanes stands the two screens at their own depths.
-func buildPanes() []scene.Transform {
-	out := make([]scene.Transform, len(paneStands))
+func buildPanes() []m.Transform {
+	out := make([]m.Transform, len(paneStands))
 	for i, stand := range paneStands {
-		out[i] = scene.Transform{
+		out[i] = m.Transform{
 			Position: m.Vec3{X: stand.X, Y: -paneMinY * paneScale, Z: stand.Y},
 			Scale:    m.NewVec3(paneScale),
 		}
@@ -581,10 +581,10 @@ func buildPanes() []scene.Transform {
 }
 
 // buildStack piles the stack's crates on one another in the courtyard's corner.
-func buildStack() []scene.Transform {
-	out := make([]scene.Transform, stackCount)
+func buildStack() []m.Transform {
+	out := make([]m.Transform, stackCount)
 	for i := range out {
-		out[i] = scene.Transform{
+		out[i] = m.Transform{
 			Position: m.Vec3{
 				X: stackCorner.X - stackScale/2,
 				Y: float32(i) * stackScale,
@@ -695,7 +695,7 @@ func (p *Instancing) eye() m.Vec3 {
 // and one lamp.
 func (p *Instancing) record(q *scene.OpQueue) {
 	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: scene.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
+		Transform: m.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
 		Near:      nearPlane,
 		Far:       farPlane,

@@ -61,7 +61,7 @@ func (r *recorder) record() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// culled: these tests are about which primitives a selector picked,
 			// and a frustum with an opinion would confuse the two.
 			q.Camera(cameraMain, scene.CameraDescr{
-				Transform: scene.LookAt(m.Vec3{Z: 40}, m.Vec3{}, m.Vec3{Y: 1}),
+				Transform: m.LookAt(m.Vec3{Z: 40}, m.Vec3{}, m.Vec3{Y: 1}),
 				FovY:      1.0472,
 				Near:      0.1, Far: 500,
 			})
@@ -135,8 +135,8 @@ func TestAnEmptyNodeStillDrawsTheWholeMilkTruck(t *testing.T) {
 // case the feature exists for, and the one a shared entry would break.
 func TestTwoNodesOfOneFileDrawSideBySide(t *testing.T) {
 	e := drawing(t, truckAsset,
-		scene.ModelDraw{Node: "Wheels", Transform: scene.At(-3, 0, 0)},
-		scene.ModelDraw{Node: "Wheels.001", Transform: scene.At(3, 0, 0)})
+		scene.ModelDraw{Node: "Wheels", Transform: m.At(-3, 0, 0)},
+		scene.ModelDraw{Node: "Wheels.001", Transform: m.At(3, 0, 0)})
 	if got := batches(t, e); got != 2 {
 		t.Errorf("two wheel draws made %d batches, want one each", got)
 	}
@@ -166,7 +166,7 @@ func TestATypoedNodeOnARealFileSkipsAndReports(t *testing.T) {
 func TestMultipleScenesHasNoAddressableSceneButItsDefault(t *testing.T) {
 	e := drawing(t, scenesAsset,
 		scene.ModelDraw{},
-		scene.ModelDraw{Scene: "second", Transform: scene.At(3, 0, 0)})
+		scene.ModelDraw{Scene: "second", Transform: m.At(3, 0, 0)})
 	if got := batches(t, e); got != 1 {
 		t.Errorf("drew %d batches, want the default scene's one and nothing for the named one", got)
 	}
