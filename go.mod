@@ -47,6 +47,6 @@ replace github.com/gogpu/gogpu => github.com/dvoyni/gogpu v0.54.1-0.202609101716
 // replace, so without these the build resolves the decoders against upstream
 // and fails to compile once the forks add API (dvoyni/cog#511). Keep them on
 // the versions cog pins; they come out when cog's do.
-replace github.com/jfreymuth/vorbis => github.com/dvoyni/vorbis v1.0.3-0.20260921121822-291b14d32ed5
+replace github.com/jfreymuth/vorbis => github.com/dvoyni/vorbis v1.0.3-0.20260921150454-ab3e6ce988a8
 
-replace github.com/jfreymuth/oggvorbis => github.com/dvoyni/oggvorbis v1.0.6-0.20260921122117-b3049fee30b6
+replace github.com/jfreymuth/oggvorbis => github.com/dvoyni/oggvorbis v1.0.6-0.20260921150857-546236badfd4
