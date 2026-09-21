@@ -23,10 +23,11 @@
 //
 // **Voices overlap, and the cap is a band rather than a weight.** The engine is
 // composed with MaxVoices at 12, and B records sixteen plays into a single
-// tick, so four of them are stolen in the flush that starts the other twelve.
-// The music is at Priority 1 and the one-shots at 0, so the music is never one
-// of the four however loud the burst is; that is cmd/sound/crowd's subject,
-// shown here as the thing it actually protects.
+// tick, so the cap takes at least four of them in the flush that starts the
+// rest - five while the music holds a slot of its own. The music is at
+// Priority 1 and the one-shots at 0, so the music is never among them however
+// loud the burst is; that is cmd/sound/crowd's subject, shown here as the
+// thing it actually protects.
 //
 // **A Bus volume moves one set of rows and not the other.** Each row's
 // audibility is drawn as a bar, so turning the music Bus down moves one bar and
@@ -440,12 +441,16 @@ func (p *mixer) hotkeys(q *sound.Queue, keys *input.State, live *sound.Voices) {
 		return
 	}
 
+	// Whether the music is on is asked of the live view rather than read off
+	// the handle. A handle outlives its Voice - a Clip that failed to load ends
+	// the Voice it was played on - and a toggle that trusted the handle would
+	// spend its first press stopping a Voice that was already gone.
 	if keys.JustPressed(input.KeyM) {
-		if p.voice == sound.NoVoice {
-			p.startMusic(q)
-		} else {
+		if _, on := live.Info(p.voice); on {
 			q.Stop(p.voice)
 			p.voice = sound.NoVoice
+		} else {
+			p.startMusic(q)
 		}
 	}
 
@@ -502,9 +507,10 @@ func (p *mixer) hotkeys(q *sound.Queue, keys *input.State, live *sound.Voices) {
 // The hotkeys' numbers.
 const (
 	// burstSize is how many one-shots B records in one tick. Sixteen against a
-	// table of twelve, so four of them are stolen in the same flush that starts
-	// the other twelve - and the music, a priority band above all of them, is
-	// not one of the four however loud the burst is.
+	// table of twelve, so the cap takes at least four of them in the same
+	// flush that starts the rest - five while the music holds a slot - and the
+	// music, a priority band above all of them, is never among them however
+	// loud the burst is.
 	burstSize = 16
 	// The pitches keys 1 and 3 fire at. The Clip is the same one every time:
 	// there is no Ogg encoder in this tree, and a rate change is a real,
