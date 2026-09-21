@@ -89,10 +89,15 @@ type BufferBinding struct {
 // HUD: a draw carries no label of its own, and one canvas Text op is a single
 // instanced draw of a few hundred glyphs, which is indistinguishable by its
 // numbers alone from an instanced field. Filter on IsScenePipeline first.
+//
+// Pass is the index into Backend.Passes of the pass the draw was made in, which
+// is what says which of a camera's passes drew it: a pass carries the label its
+// renderer gave it, and a draw carries none.
 type DrawCall struct {
 	First, Count, Instances, FirstInstance int
 	Indexed                                bool
 	Pipeline                               gfx.PipelineID
+	Pass                                   int
 }
 
 // sceneShaderPath is the bundled scene shader, the one shader whose reflected
@@ -425,6 +430,7 @@ func (b *Backend) Draw(first, count, instances, firstInstance int, indexed bool)
 	b.Draws = append(b.Draws, DrawCall{
 		First: first, Count: count, Instances: instances,
 		FirstInstance: firstInstance, Indexed: indexed, Pipeline: b.current,
+		Pass: len(b.Passes) - 1,
 	})
 }
 
