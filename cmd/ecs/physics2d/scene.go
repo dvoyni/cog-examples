@@ -17,9 +17,9 @@ const (
 	// census; the Systems themselves are fed the step out of the event.
 	fixedStep = 1.0 / 60
 
-	// gravityAccel is the acceleration the weigh System writes as m*g. It is an
-	// acceleration and not a Force, because the Force a Body is pushed by is
-	// its own mass times this and the scene carries five different masses.
+	// gravityAccel is the acceleration setup writes into Constants.Gravity,
+	// pointing down. It is an acceleration and not a Force, and physics applies
+	// it to every Dynamic body whatever its mass — the scene carries five.
 	gravityAccel = 9.81
 
 	// floorFriction is the floor's and the ramp's, and it is 1 so that a pair's
@@ -317,16 +317,18 @@ func (s *Scene) isLimb(e ecs.Entity) bool {
 	return false
 }
 
-// setup builds the whole scene once, on the init event: the floor and the ramp,
-// the stack, the two crates and the figure. Nothing is spawned afterwards, so
-// step N is the same frame on every machine.
+// setup builds the whole scene once, on the init event: the world's gravity,
+// the floor and the ramp, the stack, the two crates and the figure. Nothing is
+// spawned or written afterwards, so step N is the same frame on every machine.
 func setup(
+	constants *ecs.Write[*ecsphysics2d.Constants],
 	state *ecs.Write[*Scene],
 	walls *ecs.Spawn[wall],
 	hooks *ecs.Spawn[hook],
 	bodies *ecs.Spawn[body],
 	hinges *ecs.Spawn[hinge],
 ) {
+	constants.Get().Gravity = m.Vec2d{Y: -gravityAccel}
 	s := state.Get()
 	setupGround(walls)
 	setupStack(s, bodies)
@@ -442,26 +444,4 @@ func setupFigure(s *Scene, hooks *ecs.Spawn[hook], bodies *ecs.Spawn[body], hing
 func dynamic(mass, moment float64) ecsphysics2d.Dynamic {
 	value, _ := ecsphysics2d.NewDynamic(mass, moment, 0, 0)
 	return value
-}
-
-// weightQuery drives the gravity System: every Dynamic body's Force is written
-// and its Dynamic is read, which is the whole of this System's lock set. A
-// Static has no Dynamic and a Kinematic has no Dynamic either, so neither
-// enters the walk and neither is pushed — which is exactly right.
-type weightQuery struct {
-	Force   *ecsphysics2d.Force
-	Dynamic ecsphysics2d.Dynamic
-}
-
-// weigh adds m*g to every Dynamic body. This is the port's addition 4: cp
-// carries gravity in its space and this port ships none, so a scene that wants
-// it says so in an ordinary System of its own, ordered Before Integrate.
-//
-// It adds rather than assigns, because Force is what gameplay adds this tick
-// and Solve clears it — so a second System pushing the same Body would
-// otherwise be silently overwritten by whichever of the two ran last.
-func weigh(bodies *ecs.Query[weightQuery]) {
-	for _, it := range bodies.All() {
-		it.Force.Force.Y -= it.Dynamic.Mass() * gravityAccel
-	}
 }

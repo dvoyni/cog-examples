@@ -112,9 +112,9 @@ func TestTheRampBehavesAtItsFrictionLimit(t *testing.T) {
 
 	r := start(t)
 	// While it is on the ramp the slipping crate slides at g(sin t - u cos t),
-	// and the increment is counted from the first tick and not the second: the
-	// Force gravity writes this tick is turned into velocity by this tick's
-	// Solve, so after n ticks the crate has taken n of them.
+	// and the increment is counted from the first tick and not the second:
+	// gravity is turned into velocity by this tick's Solve, so after n ticks
+	// the crate has taken n of them.
 	const onRamp = 60
 	worst := 0.0
 	for n := 1; n <= onRamp; n++ {
