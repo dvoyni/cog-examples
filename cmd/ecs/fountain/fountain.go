@@ -3,7 +3,6 @@ package main
 import (
 	"math"
 
-	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
@@ -99,7 +98,7 @@ func (f *Fountain) spray() mote {
 		Place:  place,
 		Draw:   ecsscene.Mesh{Ref: f.cube, Bounds: moteBounds},
 		Shade:  moteMaterial(),
-		Tint:   ecsscene.Params{Values: ecs.NewList(gfx.ColorParam(moteTintParam, tint(age)))},
+		Tint:   ecsscene.Params{Values: m.NewList(gfx.ColorParam(moteTintParam, tint(age)))},
 		Motion: motion,
 		Age:    age,
 	}
@@ -248,7 +247,7 @@ func camera() ecsscene.Camera {
 		SunIntensity:  0.35,
 		AmbientSky:    skyColor,
 		AmbientGround: earthColor,
-		Passes: ecs.NewList(
+		Passes: m.NewList(
 			scene.Pass{Tag: tagGround, ClearColor: m.Some(backdropColor), ClearDepth: m.Some[float32](1)},
 			scene.Pass{Tag: scene.TagForward, ClearDepth: m.Some[float32](1), Order: 1},
 		),

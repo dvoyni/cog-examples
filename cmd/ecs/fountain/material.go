@@ -4,7 +4,6 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
@@ -84,7 +83,7 @@ const moteTintParam = "moteTint"
 // the same value, so scene keys them to one material, and the per-mote colour
 // rides in Params instead: a colour inside the Material would make every mote a
 // material of its own, fading every frame.
-var sharedMote = ecsscene.Material{Tags: ecs.NewList(ecsscene.MaterialTag{
+var sharedMote = ecsscene.Material{Tags: m.NewList(ecsscene.MaterialTag{
 	Tag:    scene.TagForward,
 	Shader: gfx.ShaderWithText(scenePrelude + moteShader),
 	State:  twoSided(gfx.StateOpaque3D()),
@@ -96,7 +95,7 @@ func moteMaterial() ecsscene.Material { return sharedMote }
 // ripples blended over it in the forward pass, where the motes and the fox
 // occlude them.
 func basinMaterial() ecsscene.Material {
-	return ecsscene.Material{Tags: ecs.NewList(
+	return ecsscene.Material{Tags: m.NewList(
 		ecsscene.MaterialTag{
 			Tag:    tagGround,
 			Shader: gfx.ShaderWithText(scenePrelude + stoneShader),
