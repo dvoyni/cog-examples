@@ -6,9 +6,7 @@ import (
 	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneplugin"
 	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/slots/storage"
 
-	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 )
 
@@ -18,11 +16,7 @@ import (
 // reaches at step n once its loads have long finished.
 func run(t *testing.T, n int) *headless.Engine {
 	t.Helper()
-	assetConfig, err := assets.Config(storage.Config{})
-	if err != nil {
-		t.Fatalf("locate assets: %v", err)
-	}
-	engine := headless.NewOver(t, assetConfig, ecsplugin.New(), ecssceneplugin.New(), New())
+	engine := headless.New(t, ecsplugin.New(), ecssceneplugin.New(), New())
 
 	// Preload loads: by the time it returns, the file has been read, parsed and
 	// uploaded. There is nothing to wait for, so what used to be a polling loop

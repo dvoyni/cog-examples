@@ -6,12 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
-	"github.com/dvoyni/cog/slots/storage"
 )
 
 // run starts the demo headless over the vendored asset set and steps until
@@ -25,12 +23,8 @@ import (
 // a test that waited in frames would be asserting it does not exist.
 func run(t *testing.T) (*headless.Engine, *Pbr) {
 	t.Helper()
-	config, err := assets.Config(storage.Config{})
-	if err != nil {
-		t.Fatalf("locate assets: %v", err)
-	}
 	demo := New()
-	engine := headless.NewOver(t, config, demo)
+	engine := headless.New(t, demo)
 	deadline := time.Now().Add(60 * time.Second)
 	for demo.ResidentCount() < len(stations) {
 		if time.Now().After(deadline) {

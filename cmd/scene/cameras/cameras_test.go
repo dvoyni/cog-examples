@@ -7,14 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
-	"github.com/dvoyni/cog/slots/storage"
 )
 
 // run starts the demo headless over the vendored asset set and steps until the
@@ -25,12 +23,8 @@ import (
 // the file, so the frame that draws the model is the frame that loaded it.
 func run(t *testing.T) (*headless.Engine, *Cameras) {
 	t.Helper()
-	config, err := assets.Config(storage.Config{})
-	if err != nil {
-		t.Fatalf("locate assets: %v", err)
-	}
 	demo := New()
-	engine := headless.NewOver(t, config, demo)
+	engine := headless.New(t, demo)
 	deadline := time.Now().Add(60 * time.Second)
 	for len(demo.targets) < len(cubes)+2 {
 		if time.Now().After(deadline) {

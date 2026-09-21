@@ -134,7 +134,7 @@ Python's `http.server` does — and open it in a WebGPU-capable browser: Chrome
 or Edge 113+, Safari 18+, or Firefox with WebGPU enabled.
 
 **No demo carries a line of code about the browser.** The whole of the platform
-difference is `internal/assets.Config`: on disk it walks up to the checkout's
+difference is `internal/assets.Mount`: on disk it walks up to the checkout's
 `assets/` directory, and under `GOOS=js` it takes the map `index.html` unpacked
 out of the tar before the module booted. Both land on the `assets` mount and
 answer the same `assets/Fox/Fox.glb` paths, so a demo that runs on the desktop
@@ -198,11 +198,20 @@ underneath the set — it verifies that before it writes a byte, and stops if th
 terms have moved.
 
 A demo reaches the set through `internal/assets`, because storage mounts
-nothing by default and `go run` builds into a temporary directory.
+nothing by default and `go run` builds into a temporary directory. The demo's
+own plugin contributes the mount in its `Register`, so every composition of it
+- `main.go`'s and its tests' alike - reads the same files:
 
 ```go
-config, err := assets.Config(storage.Config{})
+mount, err := assets.Mount()
+if err != nil {
+	return err
+}
+registrar.ProvideAdapter[assets.StorageReadMount](mount)
 ```
+
+A test whose plugins provide no mount - a stand-in recorder, or no demo at all -
+adds one with `headless.Mounting(mount)`.
 
 storage also requires a `PermanentFS` Adapter. Every demo composes
 `permanentfs.New()`, which is `diskstorageplugin.New()` on the desktop and

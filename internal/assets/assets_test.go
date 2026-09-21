@@ -4,27 +4,23 @@ import (
 	"errors"
 	"io/fs"
 	"testing"
-
-	"github.com/dvoyni/cog/slots/storage"
 )
 
 // TestTheVendoredSetIsReachable is this package's whole reason to exist: a
 // demo configuring nothing but the app id reads no models at all, and does it
 // without an error.
 func TestTheVendoredSetIsReachable(t *testing.T) {
-	config, err := Config(storage.Config{})
+	mount, err := Mount()
 	if err != nil {
-		t.Fatalf("Config: %v", err)
+		t.Fatalf("Mount: %v", err)
 	}
-	var mounted fs.FS
-	for _, mount := range config.ReadMounts {
-		if mount.Id == Mount {
-			mounted = mount.FS
-		}
+	if mount.Id != MountId {
+		t.Fatalf("mount id %q, want %q", mount.Id, MountId)
 	}
-	if mounted == nil {
-		t.Fatalf("no %q mount in %v", Mount, config.ReadMounts)
+	if mount.FS == nil {
+		t.Fatal("the mount has no filesystem")
 	}
+	mounted := mount.FS
 
 	for _, name := range []string{
 		"assets/Fox/Fox.glb",
@@ -48,16 +44,11 @@ func TestTheVendoredSetIsReachable(t *testing.T) {
 // loading demo's failure pair working: a mount that answered some other error
 // would stop storage falling through to the next one.
 func TestAPathThatDoesNotExistFailsAsNotExist(t *testing.T) {
-	config, err := Config(storage.Config{})
+	mount, err := Mount()
 	if err != nil {
-		t.Fatalf("Config: %v", err)
+		t.Fatalf("Mount: %v", err)
 	}
-	var mounted fs.FS
-	for _, mount := range config.ReadMounts {
-		if mount.Id == Mount {
-			mounted = mount.FS
-		}
-	}
+	mounted := mount.FS
 	for _, name := range []string{"assets/broken/does-not-exist.glb", "assets/NoSuchModel/x.glb"} {
 		if _, err := fs.ReadFile(mounted, name); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("read %s: %v, want fs.ErrNotExist", name, err)

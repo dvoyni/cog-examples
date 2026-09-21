@@ -44,12 +44,8 @@ func run(t *testing.T) (*headless.Engine, *Loading) {
 // what the first few frames do.
 func start(t *testing.T) (*headless.Engine, *Loading) {
 	t.Helper()
-	config, err := assets.Config(storage.Config{})
-	if err != nil {
-		t.Fatalf("locate assets: %v", err)
-	}
 	demo := New()
-	return headless.NewOver(t, config, demo), demo
+	return headless.New(t, demo), demo
 }
 
 // settle steps until every station has reached its expected residency, then
@@ -250,12 +246,13 @@ func TestPreloadNamesEveryPathTheGridDraws(t *testing.T) {
 // idempotent load a draw fires, fired without one, which is the whole of moving
 // a decode into a loading screen the app controls.
 func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
-	config, err := assets.Config(storage.Config{})
+	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	// No demo plugin: nothing in this engine records a single op.
-	engine := headless.NewOver(t, config)
+	// No demo plugin: nothing in this engine records a single op, so the
+	// asset set is mounted on its own.
+	engine := headless.New(t, headless.Mounting(mount))
 	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
 		la.Preload(pathQuantized)
 		if err := la.State(pathQuantized); err != nil {
@@ -685,11 +682,11 @@ func TestTheTextureCacheBakesOneTexturePerImageNotPerGlTFTexture(t *testing.T) {
 	// this file's and nothing else's: the grid's own engine also carries
 	// canvas's font atlas and scene's two 1x1 defaults, and a total that had to
 	// subtract them would be an assertion about the subtraction.
-	config, err := assets.Config(storage.Config{})
+	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	engine := headless.NewOver(t, config)
+	engine := headless.New(t, headless.Mounting(mount))
 	engine.LookupDevice(func(la scene.LookupDeviceAccess) { la.Preload(pathSamplers) })
 	loadNow(t, engine, pathSamplers)
 	backend := engine.Backend()
@@ -721,13 +718,13 @@ func TestDrawingOneModelManyTimesBakesItsTextureOnce(t *testing.T) {
 	if copies < 2 {
 		t.Fatalf("only %d station draws the truck; this assertion needs several", copies)
 	}
-	config, err := assets.Config(storage.Config{})
+	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
 	// The same number of draws the grid makes, alone in an engine with no HUD,
 	// so the mipped count is the truck's and needs no subtraction.
-	engine := headless.NewOver(t, config, &soloDemo{path: pathTruck, copies: copies})
+	engine := headless.New(t, headless.Mounting(mount), &soloDemo{path: pathTruck, copies: copies})
 	loadNow(t, engine, pathTruck)
 	truck := parse(t, pathTruck)
 	if got := engine.Backend().MippedTextures; got != len(truck.Images) {
@@ -1011,12 +1008,12 @@ func required(doc *gltf.Document, name string) bool {
 // The expected number is summed out of the file rather than typed: a
 // transcribed table has been the wrong thing here before.
 func TestAnEightBitIndexedModelDrawsTheFilesOwnIndexCount(t *testing.T) {
-	config, err := assets.Config(storage.Config{})
+	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
 	solo := &soloDemo{path: pathNarrowIndices}
-	engine := headless.NewOver(t, config, solo)
+	engine := headless.New(t, headless.Mounting(mount), solo)
 	loadNow(t, engine, pathNarrowIndices)
 	engine.Steps(2)
 

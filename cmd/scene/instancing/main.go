@@ -163,18 +163,7 @@ const (
 )
 
 func main() {
-	// storage mounts nothing by default, and the vendored asset set lives in
-	// the repository rather than beside the executable, which `go run` builds
-	// into a temporary directory - so the demo mounts it explicitly and refuses
-	// to start without it.
-	storageConfig, err := assets.Config(storage.Config{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
 	config := map[kernel.PluginName]any{
-		storage.Name: storageConfig,
 		gogpu.Name: gogpu.Config{}.
 			WithTitle("cog examples: scene instancing").
 			WithSize(windowWidth, windowHeight),
@@ -445,6 +434,16 @@ func (p *Instancing) Dependencies() []kernel.PluginName {
 }
 
 func (p *Instancing) Register(registrar *kernel.Registrar, _ any) error {
+	// storage mounts nothing by default, and the vendored asset set lives in
+	// the repository rather than beside the executable, which `go run` builds
+	// into a temporary directory - so the demo contributes it explicitly and
+	// refuses to start without it.
+	mount, err := assets.Mount()
+	if err != nil {
+		return err
+	}
+	registrar.ProvideAdapter[assets.StorageReadMount](mount)
+
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
 	registrar.Subscribe[updateEventHandler](p.draw)
 	return nil

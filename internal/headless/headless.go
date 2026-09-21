@@ -16,10 +16,8 @@
 package headless
 
 import (
-	"io/fs"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
@@ -76,27 +74,17 @@ func (e *Engine) report(err error) {
 // error the engine reports is collected rather than fatal, so a test can assert
 // on the whole list at once.
 //
-// Storage is mounted over an empty filesystem: a headless demo run must not
-// depend on the working directory `go test` happens to choose, and the plugins'
-// own builtin mounts (canvas's shaders, scene's) install themselves regardless.
+// It mounts nothing of its own: a headless demo run reads exactly the mounts its
+// plugins contribute - canvas's shaders, scene's, and the asset set a demo's own
+// plugin provides - so it does not depend on the working directory `go test`
+// happens to choose. A test that needs files no plugin in it provides adds them
+// with Mounting.
 func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
-	t.Helper()
-	return NewOver(t, storage.Config{}.
-		WithReadFS("headless", 10, fs.FS(fstest.MapFS{})), plugins...)
-}
-
-// NewOver is New over a storage configuration the caller chose, which is how a
-// test that loads real assets reaches them: storage mounts nothing by default,
-// and `go test` runs from a package directory rather than the module root.
-//
-//	config, err := assets.Config(storage.Config{})
-func NewOver(t testing.TB, storageConfig storage.Config, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
 	engine := &Engine{backend: &Backend{}, mainLoop: &mainLoop{}}
 
 	config := map[kernel.PluginName]any{
-		storage.Name: storageConfig,
-		app.Name:     app.Config{Step: Step},
+		app.Name: app.Config{Step: Step},
 	}
 	permanentfs.Configure(config)
 	all := append([]kernel.Plugin{
@@ -314,6 +302,35 @@ func (a adapter) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.ProvideAdapter[appMainLoopAdapter](app.MainLoop(a.mainLoop))
 	return nil
 }
+
+// Mounting is a plugin that contributes mount to storage, for a test whose
+// plugins read files none of them provides - a stand-in for a demo, or no demo
+// at all:
+//
+//	mount, err := assets.Mount()
+//	engine := headless.New(t, headless.Mounting(mount), &recorder{})
+//
+// Its name carries the mount id, so two Mountings of different mounts compose
+// side by side; the same mount twice is storage.ErrDuplicateMount either way.
+func Mounting(mount storage.ReadMount) kernel.Plugin {
+	return mounting{mount: mount}
+}
+
+type mounting struct{ mount storage.ReadMount }
+
+func (m mounting) Name() kernel.PluginName {
+	return kernel.PluginName("headless-mount-" + string(m.mount.Id))
+}
+
+func (mounting) Dependencies() []kernel.PluginName { return nil }
+
+func (m mounting) Register(registrar *kernel.Registrar, _ any) error {
+	registrar.ProvideAdapter[storageReadMount](m.mount)
+	return nil
+}
+
+// storageReadMount is the Adapter Mounting contributes its mount to storage as.
+type storageReadMount kernel.Adapter[storage.ReadMountPort]
 
 // gfxBackendAdapter is the Adapter the headless engine fills gfx's backend Port as.
 type gfxBackendAdapter kernel.Adapter[gfx.BackendPort]

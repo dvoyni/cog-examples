@@ -46,7 +46,6 @@ import (
 	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
 	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
-	"github.com/dvoyni/cog/slots/storage"
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
@@ -76,14 +75,9 @@ const prewarmEntities = 512
 const peakMotes = 256
 
 func main() {
-	assetConfig, err := assets.Config(storage.Config{})
-	if err != nil {
-		panic(err)
-	}
 	config := map[kernel.PluginName]any{
-		storage.Name: assetConfig,
-		gogpu.Name:   gogpu.Config{}.WithTitle("cog examples: ecs fountain"),
-		ecs.Name:     ecs.Config{PrewarmEntities: prewarmEntities},
+		gogpu.Name: gogpu.Config{}.WithTitle("cog examples: ecs fountain"),
+		ecs.Name:   ecs.Config{PrewarmEntities: prewarmEntities},
 	}
 	permanentfs.Configure(config)
 
@@ -173,6 +167,14 @@ type (
 )
 
 func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
+	// The nozzle and the fox are vendored models, and storage mounts nothing
+	// by default, so the demo contributes the asset set itself.
+	mount, err := assets.Mount()
+	if err != nil {
+		return err
+	}
+	registrar.ProvideAdapter[assets.StorageReadMount](mount)
+
 	ecs.RegisterComponent[Velocity](registrar, peakMotes)
 	ecs.RegisterComponent[Life](registrar, peakMotes)
 	registrar.InitResource(&Fountain{random: randomSeed})

@@ -129,19 +129,7 @@ const (
 )
 
 func main() {
-	// The one Khronos model this demo draws lives beside the repository rather
-	// than beside the executable, so the asset set is mounted explicitly and
-	// the demo refuses to start without it. A cameras demo that came up with a
-	// missing model would render two viewports of an empty flank and blame the
-	// loader.
-	storageConfig, err := assets.Config(storage.Config{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
 	config := map[kernel.PluginName]any{
-		storage.Name: storageConfig,
 		gogpu.Name: gogpu.Config{}.
 			WithTitle("cog examples: scene cameras").
 			// Launched at the size the reference screenshot was taken at rather
@@ -246,6 +234,17 @@ func (p *Cameras) Dependencies() []kernel.PluginName {
 }
 
 func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
+	// The one Khronos model this demo draws lives beside the repository rather
+	// than beside the executable, so the demo contributes the asset set
+	// explicitly and refuses to start without it. A cameras demo that came up
+	// with a missing model would render two viewports of an empty flank and
+	// blame the loader.
+	mount, err := assets.Mount()
+	if err != nil {
+		return err
+	}
+	registrar.ProvideAdapter[assets.StorageReadMount](mount)
+
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
 	registrar.Subscribe[updateEventHandler](p.frame)
 	return nil

@@ -10,7 +10,6 @@ import (
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
-	"github.com/dvoyni/cog/slots/storage"
 )
 
 // The vendored files the Scene and Node selectors are judged against.
@@ -79,11 +78,11 @@ func (r *recorder) record() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 // actually reached the pass.
 func drawing(t *testing.T, path string, draws ...scene.ModelDraw) *headless.Engine {
 	t.Helper()
-	config, err := assets.Config(storage.Config{})
+	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	e := headless.NewOver(t, config, &recorder{path: path, draws: draws})
+	e := headless.New(t, headless.Mounting(mount), &recorder{path: path, draws: draws})
 	if !resident(t, e, path) {
 		t.Fatalf("%s never became resident; engine reported %v", path, e.Errors())
 	}

@@ -142,18 +142,7 @@ const (
 )
 
 func main() {
-	// storage mounts nothing by default, and the music lives in the repository
-	// rather than beside the executable, which `go run` builds into a temporary
-	// directory - so the demo mounts assets/ explicitly and refuses to start
-	// without it.
-	storageConfig, err := assets.Config(storage.Config{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
 	cfg := map[kernel.PluginName]any{
-		storage.Name: storageConfig,
 		// MaxVoices is the one number a game tunes: how many sounds it wants at
 		// once. Twelve is small so that one press of B overruns it; the memory
 		// follows from what is played, and nothing here says a word about which
@@ -291,6 +280,16 @@ func (p *mixer) Dependencies() []kernel.PluginName {
 }
 
 func (p *mixer) Register(registrar *kernel.Registrar, _ any) error {
+	// storage mounts nothing by default, and the music lives in the repository
+	// rather than beside the executable, which `go run` builds into a temporary
+	// directory - so the demo contributes assets/ explicitly and refuses to
+	// start without it.
+	mount, err := assets.Mount()
+	if err != nil {
+		return err
+	}
+	registrar.ProvideAdapter[assets.StorageReadMount](mount)
+
 	p.sounds = [clipCount]clip{
 		clipMusic: {
 			// ClipWithResource names a Clip by a storage path. The bytes are

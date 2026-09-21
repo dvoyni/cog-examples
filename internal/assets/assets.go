@@ -1,13 +1,21 @@
 // Package assets mounts the vendored demo asset set through storage.
 //
 // It exists because storage mounts nothing by default: a read mount is an fs.FS
-// the composition root chooses, and `go run` builds into a temporary directory,
-// so a demo that configures nothing finds no models - and finds them by
-// silently loading zero of them, which is the worst
+// some plugin contributes through storage.ReadMountPort, and `go run` builds
+// into a temporary directory, so a demo that contributes nothing finds no
+// models - and finds them by silently loading zero of them, which is the worst
 // available failure mode for a set of demos whose whole subject is that a model
 // which fails to load is skipped rather than substituted.
 //
-//	config, err := assets.Config(storage.Config{})
+// A demo that reads the set says so in its own plugin's Register, which is what
+// keeps every composition of that plugin - main.go's, a test's - reading the
+// same files:
+//
+//	mount, err := assets.Mount()
+//	if err != nil {
+//		return err
+//	}
+//	registrar.ProvideAdapter[assets.StorageReadMount](mount)
 //
 // Paths keep the assets/ prefix the repository uses, so a demo names a model
 // exactly as ATTRIBUTION.md and the manifest do:
@@ -21,7 +29,7 @@
 //
 // # Two mounts, one spelling
 //
-// Config is the whole of the platform difference, and a demo sees none of it.
+// Mount is the whole of the platform difference, and a demo sees none of it.
 // On disk it locates the checkout's assets/ directory and presents it under its
 // own name. Under GOOS=js there is no filesystem to walk, so it takes the map
 // that cmd/web/index.html unpacked out of assets.tar.gz before the module
@@ -31,12 +39,22 @@
 package assets
 
 import (
+	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/slots/storage"
 )
 
+// StorageReadMount is the Adapter a demo's plugin contributes the asset set to
+// storage as, providing the ReadMount that Mount returns. storage installs it
+// at its own Start, ahead of every plugin that depends on storage, so a demo
+// loading a model from its first frame finds it; a second contribution of the
+// same mount fails that Start with storage.ErrDuplicateMount.
+type StorageReadMount kernel.Adapter[storage.ReadMountPort]
+
 const (
-	// Mount is the storage mount id the asset set lands on, on every platform.
-	Mount storage.MountId = "assets"
+	// MountId is the storage mount id the asset set lands on, on every
+	// platform. It is not called Mount only because the function that returns
+	// the mount is.
+	MountId storage.MountId = "assets"
 	// Dir is the directory the set lives in, and the prefix every asset path
 	// carries - inside the repository, inside the tar, and inside the mount.
 	Dir = "assets"

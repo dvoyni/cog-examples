@@ -16,13 +16,18 @@ import (
 // disk-only escape hatch: a browser has nowhere to point it at.
 const EnvDir = "COG_EXAMPLES_ASSETS"
 
-// Config adds the vendored asset set to base as a read mount.
-func Config(base storage.Config) (storage.Config, error) {
+// Mount returns the vendored asset set as a read mount, for a demo's plugin to
+// provide as its StorageReadMount.
+func Mount() (storage.ReadMount, error) {
 	dir, err := Locate()
 	if err != nil {
-		return base, err
+		return storage.ReadMount{}, err
 	}
-	return base.WithReadFS(Mount, storage.DefaultReadPriority, prefixFS{prefix: Dir, inner: os.DirFS(dir)}), nil
+	return storage.ReadMount{
+		Id:       MountId,
+		Priority: storage.DefaultReadPriority,
+		FS:       prefixFS{prefix: Dir, inner: os.DirFS(dir)},
+	}, nil
 }
 
 // Locate returns the directory holding the vendored asset set.

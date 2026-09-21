@@ -21,26 +21,28 @@ import (
 // reason the disk mount presents the prefix rather than mounting it.
 const Global = "__cogAssets"
 
-// Config adds the preloaded asset bundle to base as a read mount.
+// Mount returns the preloaded asset bundle as a read mount, for a demo's plugin
+// to provide as its StorageReadMount.
 //
 // The bundle is taken once and the global deleted, so the browser can release
 // the copy the page decompressed into as soon as the map is unreachable from
-// JavaScript. It is a hard failure rather than a warning: a demo with no assets
-// renders an empty room and blames the loader, which is exactly the failure the
-// loading demo exists to catch.
-func Config(base storage.Config) (storage.Config, error) {
+// JavaScript. A second call therefore fails, which a demo never makes: one
+// plugin provides the mount once per composition. It is a hard failure rather
+// than a warning: a demo with no assets renders an empty room and blames the
+// loader, which is exactly the failure the loading demo exists to catch.
+func Mount() (storage.ReadMount, error) {
 	files := js.Global().Get(Global)
 	if files.Type() != js.TypeObject {
-		return base, fmt.Errorf(
+		return storage.ReadMount{}, fmt.Errorf(
 			"assets: %s was not preloaded - cmd/web/index.html unpacks assets.tar.gz into it before the module boots",
 			Global)
 	}
 	js.Global().Delete(Global)
 	bundle := webFS{files: files}
 	if _, err := fs.Stat(bundle, path.Join(Dir, marker)); err != nil {
-		return base, fmt.Errorf("assets: the bundle holds no %s/%s, so it was built from the wrong directory", Dir, marker)
+		return storage.ReadMount{}, fmt.Errorf("assets: the bundle holds no %s/%s, so it was built from the wrong directory", Dir, marker)
 	}
-	return base.WithReadFS(Mount, storage.DefaultReadPriority, bundle), nil
+	return storage.ReadMount{Id: MountId, Priority: storage.DefaultReadPriority, FS: bundle}, nil
 }
 
 // Locate has no answer under GOOS=js. It is kept so the package presents one
