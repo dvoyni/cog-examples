@@ -14,7 +14,8 @@ examples are collected here for later publication alongside the engine.
   Each demo is self-contained: it wires its own plugin list and holds its own
   gameplay plugin in the same file. Everything two levels under `cmd/` is a
   demo, which is what the browser build and its guard walk; the tools beside
-  them - `cmd/prepare-assets/`, `cmd/web/` - are one level and are not.
+  them - `cmd/prepare-assets/`, `cmd/looptag/`, `cmd/web/` - are one level and
+  are not.
   The `cmd/sound/` demos are the ones that open no window: audio needs no GPU,
   so each supplies its own `app.MainLoop` rather than composing `gogpu`, and
   each prints what `sound` derived so all of them are worth running on a machine
@@ -23,6 +24,11 @@ examples are collected here for later publication alongside the engine.
   [`ATTRIBUTION.md`](assets/ATTRIBUTION.md).
 - `cmd/prepare-assets/` — the tool that builds `assets/`, and the manifest that
   says where each model comes from and what its licence obliges.
+- `cmd/looptag/` — the tool that writes `LOOPSTART` and `LOOPLENGTH` into a
+  copy of an Ogg Vorbis file, keeping its comments and every audio page byte for
+  byte, and refuses to write unless the copy decodes to its source's frame
+  count. Its logic is `internal/looptag`, so a demo can check its own clip
+  against the recording it came from.
 - `internal/assets` — mounts `assets/` through `storage`.
 - `internal/permanentfs` — storage's `PermanentFS` Adapter for the platform a
   demo is built for: `diskstorage` on the desktop, `jsstorage` in a browser.
@@ -91,10 +97,10 @@ The ecs demos:
 | `physics2d` | the ecsphysics2d showcase: a stack, a ramp and a jointed figure in one scene, with the app's own gravity |
 | `physics2dtable` | the same engine with no gravity at all: a hundred balls breaking inside four cushions, and a crate per click |
 
-The sound demos. None of them opens a window, each embeds its own copy of the
-same public-domain clip, and each prints what `sound` derived rather than what
+The sound demos. None of them opens a window, each embeds its own cut of the
+same public-domain recording, and each prints what `sound` derived rather than what
 it was told — so every one of them says something on a machine with no sound
-card. `orbit` runs until Ctrl+C; the other three run a script and stop.
+card. `orbit` runs until Ctrl+C; the others run a script and stop.
 
 | demo | what it is for |
 | --- | --- |
@@ -102,6 +108,7 @@ card. `orbit` runs until Ctrl+C; the other three run a script and stop.
 | `buses` | two Voices on two Buses, and the sliders a settings screen writes — including why `Master` is the default Bus and not a global trim |
 | `crowd` | the voice cap, at eight Voices: quiet music survives a loud crowd because `Priority` is a band above audibility, and falls to one alarm a band higher |
 | `emitters` | the `ecsaudio` binding with no renderer: a Voice dying with its Entity, and a finished one-shot that does not restart |
+| `loopregion` | a clip whose own `LOOPSTART` / `LOOPLENGTH` tags make a second of intro play once and four seconds repeat with no gap, with the playhead printed so the wrap is visible |
 
 ## Running in a browser
 

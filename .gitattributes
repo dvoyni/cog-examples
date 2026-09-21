@@ -1,0 +1,3 @@
+# Binary assets are stored byte for byte. core.autocrlf is on in some
+# checkouts, and a clip committed through a newline conversion no longer decodes.
+*.ogg binary

@@ -4,6 +4,7 @@ go 1.27
 
 require (
 	github.com/dvoyni/cog v0.0.0-00010101000000-000000000000
+	github.com/jfreymuth/oggvorbis v1.0.5
 	github.com/qmuntal/gltf v0.29.0
 	golang.org/x/image v0.44.0
 )
@@ -19,7 +20,6 @@ require (
 	github.com/gogpu/naga v0.19.0 // indirect
 	github.com/gogpu/wgpu v0.34.5 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/jfreymuth/oggvorbis v1.0.5 // indirect
 	github.com/jfreymuth/pulse v0.1.3 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/modelcontextprotocol/go-sdk v1.7.0 // indirect
