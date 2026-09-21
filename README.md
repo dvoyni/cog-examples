@@ -15,10 +15,12 @@ examples are collected here for later publication alongside the engine.
   gameplay plugin in the same file. Everything two levels under `cmd/` is a
   demo, which is what the browser build and its guard walk; the tools beside
   them - `cmd/prepare-assets/`, `cmd/web/` - are one level and are not.
-  The `cmd/sound/` demos are the ones that open no window: audio needs no GPU,
-  so each supplies its own `app.MainLoop` rather than composing `gogpu`, and
-  each prints what `sound` derived so all of them are worth running on a machine
-  with no sound card too.
+  Four of the five `cmd/sound/` demos open no window: audio needs no GPU, so
+  each supplies its own `app.MainLoop` rather than composing `gogpu`, and each
+  prints what `sound` derived so all of them are worth running on a machine
+  with no sound card too. `mixer` is the exception and composes `gogpu` like
+  any other windowed demo, because it is the one you drive and cog's `input`
+  binds to gogpu's window.
 - `assets/` — the vendored demo models, one `.glb` per asset, plus
   [`ATTRIBUTION.md`](assets/ATTRIBUTION.md).
 - `cmd/prepare-assets/` — the tool that builds `assets/`, and the manifest that
@@ -91,10 +93,13 @@ The ecs demos:
 | `physics2d` | the ecsphysics2d showcase: a stack, a ramp and a jointed figure in one scene, with the app's own gravity |
 | `physics2dtable` | the same engine with no gravity at all: a hundred balls breaking inside four cushions, and a crate per click |
 
-The sound demos. None of them opens a window, each embeds its own copy of the
-same public-domain clip, and each prints what `sound` derived rather than what
-it was told — so every one of them says something on a machine with no sound
-card. `orbit` runs until Ctrl+C; the other three run a script and stop.
+The sound demos. Each embeds its own copy of the same public-domain clip, and
+each shows what `sound` derived rather than what it was told — so every one of
+them says something on a machine with no sound card. Four of them open no
+window and print to the console: `orbit` runs until Ctrl+C, and `buses`,
+`crowd` and `emitters` run a script and stop. `mixer` is the one that opens a
+window, because it is the one you drive from the keyboard, and it is also the
+only one that plays a Clip too long to hold in memory.
 
 | demo | what it is for |
 | --- | --- |
@@ -102,6 +107,7 @@ card. `orbit` runs until Ctrl+C; the other three run a script and stop.
 | `buses` | two Voices on two Buses, and the sliders a settings screen writes — including why `Master` is the default Bus and not a global trim |
 | `crowd` | the voice cap, at eight Voices: quiet music survives a loud crowd because `Priority` is a band above audibility, and falls to one alarm a band higher |
 | `emitters` | the `ecsaudio` binding with no renderer: a Voice dying with its Entity, and a finished one-shot that does not restart |
+| `mixer` | the demo a game actually is, and the only windowed one: a 176 s track streaming under one-shots that overlap it, music and effects on separate Buses, and the live Voice table drawn on screen — driven by hotkeys |
 
 ## Running in a browser
 
@@ -198,3 +204,13 @@ on its config map, which supplies that Adapter's `Config` under its `Name`
 (`diskstorage.Name` or `jsstorage.Name`). No demo names a platform.
 
 Paths keep the repository's spelling — `assets/Fox/Fox.glb`.
+
+One thing under `assets/` is neither a model nor generated: `assets/music/`
+holds the public-domain track `cmd/sound/mixer` streams, with its own
+[`ATTRIBUTION.md`](assets/music/ATTRIBUTION.md) beside it. It stays outside
+`cmd/prepare-assets`' manifest because that manifest verifies licences against
+Khronos' `metadata.json`, which has nothing to say about an audio file, and
+`TestAttributionCoversTheVendoredSet` asserts the generated credits match the
+manifest exactly — so a row appended by hand would read as stale.
+`cmd/web/build.sh` tars the whole directory, so the browser bundle carries the
+music with no change to the recipe.
