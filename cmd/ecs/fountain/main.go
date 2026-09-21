@@ -15,9 +15,20 @@
 //
 // There is no input. Demo time is fixed steps and the spray's random stream is
 // seeded by a constant, so step N is the same frame on every machine.
-// reference.png is step referenceStep, taken with mcpplugin.New() added to the
-// plugin list and docs/narrowing/capture.py; fountain_test.go asserts the frame
-// at that step, and that its HUD reads as the image's does.
+// reference.png is step fountain.ReferenceStep, taken with mcpplugin.New() added
+// to the plugin list and docs/narrowing/capture.py; fountain_test.go asserts the
+// frame at that step, and that its HUD reads as the image's does.
+//
+// cmd/scene/fountain draws the same frame through scene.OpQueue. The two share
+// internal/fountain - the spray, the clock, the random stream, the layout, the
+// geometry and shaders, the HUD's text and the figures the reference step is
+// expected to have - and this program keeps only its recording: the Entities,
+// their Components and the Systems above.
+//
+// The HUD's frame figures are read off gfx's frame snapshot, exactly as
+// cmd/scene/fountain reads them. The HUD holds gfx's one snapshot slot every
+// tick, so an agent asking for a snapshot of its own while this runs is refused
+// as busy.
 //
 // Why the binding is shaped the way it is lives in ecsscene's README:
 // https://github.com/dvoyni/cog/blob/main/bundles/ecsscene/docs/README.md
@@ -28,6 +39,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/dvoyni/cog-examples/internal/fountain"
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
@@ -52,18 +64,8 @@ import (
 )
 
 const (
-	screenWidth  = 960
-	screenHeight = 540
-)
-
-const (
 	CameraMain scene.CameraID = -100
 	layerHUD   canvas.Layer   = 0
-)
-
-const (
-	nozzlePath = "assets/WaterBottle/WaterBottle.glb"
-	foxPath    = "assets/Fox/Fox.glb"
 )
 
 // prewarmEntities is how many Entities the world reserves room for up front,
@@ -103,12 +105,6 @@ func main() {
 
 const Name kernel.PluginName = "fountain"
 
-// Velocity is how fast a mote travels, in world units a second.
-type Velocity struct{ V m.Vec3 }
-
-// Life is how much longer a mote lasts, and how long it had.
-type Life struct{ Remaining, Span float32 }
-
 // The Component sets: one per act of creation.
 type (
 	mote struct {
@@ -116,8 +112,8 @@ type (
 		Draw   ecsscene.Mesh
 		Shade  ecsscene.Material
 		Tint   ecsscene.Params
-		Motion Velocity
-		Age    Life
+		Motion fountain.Velocity
+		Age    fountain.Life
 	}
 	nozzle struct {
 		Place m.Transform
@@ -150,7 +146,7 @@ func New() *Demo { return &Demo{} }
 func (p *Demo) Name() kernel.PluginName { return Name }
 
 func (p *Demo) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, scene.Name}
+	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, scene.Name}
 }
 
 type (
@@ -162,6 +158,7 @@ type (
 	prowlSystem      kernel.Subscription[app.UpdateEvent]
 	orbitSystem      kernel.Subscription[app.UpdateEvent]
 	hudSystem        kernel.Subscription[app.UpdateEvent]
+	rearmHandler     kernel.Subscription[app.UpdateEvent]
 
 	windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
 )
@@ -175,9 +172,9 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 	}
 	registrar.ProvideAdapter[assets.StorageReadMount](mount)
 
-	ecs.RegisterComponent[Velocity](registrar, peakMotes)
-	ecs.RegisterComponent[Life](registrar, peakMotes)
-	registrar.InitResource(&Fountain{random: randomSeed})
+	ecs.RegisterComponent[fountain.Velocity](registrar, peakMotes)
+	ecs.RegisterComponent[fountain.Life](registrar, peakMotes)
+	registrar.InitResource(&Fountain{spray: fountain.NewSpray()})
 
 	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
 	registrar.Subscribe[hatchSystem](ecs.ToHandler[app.UpdateEvent](registrar, hatch)).First()
@@ -195,7 +192,12 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 		Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
 		After[reapSystem]()
-	registrar.HandleCommand[HUDCmd](ecs.ToExecute[HUDRequest, HUD](registrar, readHUD))
+	// The snapshot of a tick is taken inside gfx's present, so the handler
+	// that collects it and arms the next runs after present, at the very end
+	// of the tick: the arm lands between two ticks, and the next tick answers
+	// it.
+	registrar.Subscribe[rearmHandler](rearm).Last().After[gfx.PresentOnUpdate]()
+	registrar.HandleCommand[HUDCmd](ecs.ToExecute[HUDRequest, Shown](registrar, readHUD))
 
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
 	return nil
@@ -210,7 +212,7 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 			if event.Width <= 0 || event.Height <= 0 {
 				return
 			}
-			width, height := float32(screenWidth), float32(screenHeight)
+			width, height := float32(fountain.ScreenWidth), float32(fountain.ScreenHeight)
 			if event.Height > event.Width {
 				width, height = height, width
 			}
