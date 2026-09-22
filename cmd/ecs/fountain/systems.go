@@ -5,17 +5,16 @@ import (
 	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/model"
-	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
 )
 
-// setup bakes the two meshes through scene's lookup and spawns everything that
+// setup bakes the two meshes through model's lookup and spawns everything that
 // is not a mote. It runs once, on the init event.
 func setup(
 	k kernel.Kernel,
-	lookup *ecs.Write[*scene.Lookup],
+	lookup *ecs.Write[*model.Lookup],
 	state *ecs.Write[*Fountain],
 	nozzles *ecs.Spawn[nozzle],
 	foxes *ecs.Spawn[fox],
@@ -23,7 +22,7 @@ func setup(
 	lamps *ecs.Spawn[lamp],
 	eyes *ecs.Spawn[eye],
 ) {
-	f, la := state.Get(), scene.NewLookupAccess(k, lookup.Get())
+	f, la := state.Get(), model.NewLookupAccess(k, lookup.Get())
 	cubeVertices, cubeIndices := fountain.CubeGeometry()
 	f.cube = la.BakeMesh(cubeVertices, cubeIndices, gfx.TopologyTriangleList)
 	discVertices, discIndices := fountain.DiscGeometry()
@@ -122,8 +121,8 @@ type (
 
 // prowl walks the fox round its circle and keeps the spot on it.
 //
-// Clip time is advanced here, by the game, because scene and the binding are
-// both stateless about animation: each clip runs at the rate that matches its
+// Clip time is advanced here, by the game, because ecsscene is
+// stateless about animation: each clip runs at the rate that matches its
 // stride to the fox's ground speed, which only the game knows.
 func prowl(foxes *ecs.Query[foxQuery], lights *ecs.Query[spotQuery], state *ecs.Read[*Fountain]) {
 	t := state.Get().spray.Clock()

@@ -12,7 +12,7 @@ import (
 const tagGround = ecsscene.PassTag(fountain.TagGround)
 
 // sharedMote is the one mote material. Every mote's Material Component holds
-// the same value, so scene keys them to one material, and the per-mote colour
+// the same value, so ecsscene keys them to one material and batches equal tints, and the per-mote colour
 // rides in Params instead: a colour inside the Material would make every mote a
 // material of its own, fading every frame.
 var sharedMote = ecsscene.Material{Tags: m.NewList(ecsscene.MaterialTag{

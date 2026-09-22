@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog-examples/internal/fountain"
 	"github.com/dvoyni/cog/bundles/ecsscene"
-	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -14,7 +14,7 @@ import (
 type Fountain struct {
 	spray fountain.Spray
 
-	cube, disc scene.MeshRef
+	cube, disc model.MeshRef
 
 	spawned, retired int
 
