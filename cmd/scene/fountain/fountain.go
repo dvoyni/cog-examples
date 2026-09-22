@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog-examples/internal/fountain"
 	"github.com/dvoyni/cog/bundles/canvas"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -22,10 +23,10 @@ type Fountain struct {
 
 	spawned, retired int
 
-	cube, disc scene.MeshRef
+	cube, disc model.MeshRef
 
 	moteMaterial, basinMaterial scene.Material
-	foxPlays                    [2]scene.ClipPlay
+	foxPlays                    [2]model.ClipPlay
 
 	// tint and passes are reused call to call: scene copies what a call is
 	// given before the call returns.
@@ -61,7 +62,7 @@ func New() *Fountain {
 				Descr: gfx.MaterialWithState(fountain.RippleShader(), fountain.RippleState()),
 			},
 		},
-		foxPlays: [2]scene.ClipPlay{
+		foxPlays: [2]model.ClipPlay{
 			{Clip: fountain.FoxWalk, Loop: true, Weight: 1},
 			{Clip: fountain.FoxRun, Loop: true},
 		},
@@ -72,11 +73,11 @@ func New() *Fountain {
 // setup bakes the two meshes through scene's lookup. It runs once, on the init
 // event.
 func (p *Fountain) setup() (kernel.Lock, kernel.Observe[app.InitEvent]) {
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	return func(access kernel.ResourceAccess) {
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 		}, func(k kernel.Kernel, _ app.InitEvent) {
-			la := scene.NewLookupAccess(k, lookup.Get())
+			la := model.NewLookupAccess(k, lookup.Get())
 			cubeVertices, cubeIndices := fountain.CubeGeometry()
 			p.cube = la.BakeMesh(cubeVertices, cubeIndices, gfx.TopologyTriangleList)
 			discVertices, discIndices := fountain.DiscGeometry()
@@ -153,14 +154,14 @@ func (p *Fountain) record(q *scene.OpQueue) fountain.HUD {
 	}
 	q.Mesh(0, p.disc, scene.MeshDraw{Material: p.basinMaterial, Bounds: fountain.BasinBounds})
 
-	q.PointLight(0, scene.LightDescr{
+	q.PointLight(0, model.LightDescr{
 		Position:  m.Vec3{Y: fountain.LampHeight},
 		Color:     fountain.LampColor,
 		Intensity: fountain.LampIntensity,
 		Range:     fountain.LampRange,
 	})
 	spot := fountain.SpotPlace(t)
-	q.SpotLight(0, scene.LightDescr{
+	q.SpotLight(0, model.LightDescr{
 		Position:  spot.Position,
 		Direction: spot.Rotation.Rotate(fountain.Facing),
 		Color:     fountain.SpotColor,

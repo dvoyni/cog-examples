@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -28,7 +29,7 @@ import (
 // # What it declares
 //
 // Two of the three parameters scene binds on every draw, and no textures. The
-// vertex stage reads locations 0 and 1 of scene.Vertex; a shader may read fewer
+// vertex stage reads locations 0 and 1 of model.Vertex; a shader may read fewer
 // attributes than the pipeline's vertex layout supplies, so the other four cost
 // nothing to leave undeclared. Group 2 - the pose, joint and morph buffers -
 // is undeclared too, which is why this station draws the truck's body rather
@@ -46,7 +47,7 @@ import (
 // equal what the layout supplies - which is the only reason it is not a silent
 // mis-shade, since WebGPU would have filled the third component with zero and
 // lit the station from a direction lying in the XY plane.
-const repaintShaderSource = "//#include " + scene.VertexDecodePath + `
+const repaintShaderSource = "//#include " + model.VertexDecodePath + `
 // The prefix of scene's SceneFrame this shader reads. The binding is longer
 // than this struct - the punctual light array follows - and a storage binding
 // larger than the type it is read as is legal, so the tail costs nothing to

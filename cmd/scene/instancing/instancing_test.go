@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 )
@@ -726,9 +727,9 @@ func modelSphere(t *testing.T, engine *headless.Engine, path string) m.Sphere {
 	t.Helper()
 	var sphere m.Sphere
 	ok := false
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		var bounds m.Vec4
-		bounds, ok = la.Bounds(scene.ModelRef{Path: path})
+		bounds, ok = la.Bounds(model.ModelRef{Path: path})
 		sphere = m.Sphere{
 			Center: m.Vec3{X: bounds.X, Y: bounds.Y, Z: bounds.Z}, Radius: bounds.W,
 		}

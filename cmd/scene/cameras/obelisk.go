@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
@@ -110,7 +111,7 @@ fn worldOf(instance: SceneInstance, local: vec3<f32>) -> vec3<f32> {
 // equal what the layout supplies - which is the only reason it is not a silent
 // mis-shade, since WebGPU would have filled the third component with zero and
 // lit the obelisk from a direction lying in the XY plane.
-const obeliskForwardShader = "//#include " + scene.VertexDecodePath + obeliskShared + `
+const obeliskForwardShader = "//#include " + model.VertexDecodePath + obeliskShared + `
 const PI: f32 = 3.14159265359;
 
 // Linear, not sRGB: everything past the vertex stage is.
@@ -163,7 +164,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 // carries no fragment stage, so there is no fs_main to find.
 //
 // It reads only location 0. A shader may read fewer attributes than the
-// pipeline's vertex layout supplies, so the other five of scene.Vertex cost
+// pipeline's vertex layout supplies, so the other five of model.Vertex cost
 // nothing to leave undeclared.
 const obeliskDepthShader = obeliskShared + `
 @vertex
@@ -203,11 +204,11 @@ const (
 // obeliskMesh builds the pillar: four tapered side quads and a cap, flat-shaded,
 // which needs its own four vertices per face rather than eight shared corners.
 //
-// It uses scene.Vertex - the standard layout - even though the shaders read two
+// It uses model.Vertex - the standard layout - even though the shaders read two
 // of its six attributes. A custom layout would oblige every consumer of this
 // mesh to match it, and the twenty vertices here are not where this demo's
 // bytes go.
-func obeliskMesh() ([]scene.Vertex, []uint32) {
+func obeliskMesh() ([]model.Vertex, []uint32) {
 	base := [4]m.Vec3{
 		{X: -obeliskBase, Z: obeliskBase},
 		{X: obeliskBase, Z: obeliskBase},
@@ -220,7 +221,7 @@ func obeliskMesh() ([]scene.Vertex, []uint32) {
 		{X: obeliskTop, Y: obeliskHeight, Z: -obeliskTop},
 		{X: -obeliskTop, Y: obeliskHeight, Z: -obeliskTop},
 	}
-	var vertices []scene.Vertex
+	var vertices []model.Vertex
 	var indices []uint32
 	quad := func(a, b, c, d m.Vec3) {
 		// Counter-clockwise seen from outside, which is what gfx.FrontCCW and
@@ -228,7 +229,7 @@ func obeliskMesh() ([]scene.Vertex, []uint32) {
 		normal := b.Sub(a).Cross(d.Sub(a)).Normalize()
 		start := uint32(len(vertices))
 		for _, corner := range [4]m.Vec3{a, b, c, d} {
-			vertices = append(vertices, scene.Vertex{Position: corner, Normal: normal})
+			vertices = append(vertices, model.Vertex{Position: corner, Normal: normal})
 		}
 		indices = append(indices, start, start+1, start+2, start, start+2, start+3)
 	}

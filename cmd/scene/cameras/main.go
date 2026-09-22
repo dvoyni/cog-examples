@@ -196,7 +196,7 @@ type Cameras struct {
 	// the first frame that has a lookup to bake it with. material is built at
 	// construction: it holds no GPU handle, and scene keys a material by
 	// content, so the same value interns to one id every frame.
-	obelisk  scene.MeshRef
+	obelisk  model.MeshRef
 	material scene.Material
 
 	// The frame's two composited textures, published by record for draw2D to
@@ -317,7 +317,7 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var gfxQueue kernel.Write[*gfx.OpQueue]
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var inputState kernel.Read[*input.State]
 	var viewport kernel.Read[*gfx.Viewport]
 	var files kernel.Read[storage.FileSystem]
@@ -326,15 +326,15 @@ func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			gfxQueue = access.GetWrite[*gfx.OpQueue]()
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			inputState = access.GetRead[*input.State]()
 			viewport = access.GetRead[*gfx.Viewport]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
-			la := scene.NewLookupAccess(k, lookup.Get())
-			device := scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+			la := model.NewLookupAccess(k, lookup.Get())
+			device := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
 			p.rate.measure(time.Now())
 			p.readStats(q)
 			p.advance(inputState.Get())
@@ -387,13 +387,13 @@ func (p *Cameras) time() float32 { return float32(p.step) * fixedStep }
 // goes through m.Sphere.Transform - exact under the uniform scale a
 // m.Transform carries. A file that could not be loaded is simply not in the
 // list, which is the right answer: a click cannot pick what is not drawn.
-func (p *Cameras) buildTargets(la scene.LookupDeviceAccess) {
+func (p *Cameras) buildTargets(la model.LookupDeviceAccess) {
 	p.targets = p.targets[:0]
 	for i := range cubes {
 		p.targets = append(p.targets, pickable{name: cubes[i].name, sphere: cubeSphere(i)})
 	}
 	p.targets = append(p.targets, pickable{name: "obelisk", sphere: obeliskSphere()})
-	if bounds, ok := la.Bounds(scene.ModelRef{Path: modelPath}); ok {
+	if bounds, ok := la.Bounds(model.ModelRef{Path: modelPath}); ok {
 		local := m.Sphere{Center: m.Vec3{X: bounds.X, Y: bounds.Y, Z: bounds.Z}, Radius: bounds.W}
 		p.targets = append(p.targets, pickable{
 			name:   "model",
@@ -481,7 +481,7 @@ var (
 
 // record allocates this frame's targets, declares the three cameras with their
 // passes, and records the world.
-func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess) {
+func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la model.LookupAccess) {
 	mainTarget, mainTexture := g.TemporaryTarget(
 		int(mainPanel.size.X), int(mainPanel.size.Y), gfx.FormatRGBA8Srgb)
 	mapTarget, mapTexture := g.TemporaryTarget(
@@ -565,7 +565,7 @@ func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la scene.LookupAccess
 // recordWorld records everything on the world layer: the ground, the four
 // cubes, the obelisk and the model. Every camera that draws the world layer
 // sees all of it.
-func (p *Cameras) recordWorld(q *scene.OpQueue, la scene.LookupAccess) {
+func (p *Cameras) recordWorld(q *scene.OpQueue, la model.LookupAccess) {
 	q.Plane(LayerWorld, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
 	for i := range cubes {
 		q.Box(LayerWorld, cubeTransform(i), p.tint(cubes[i].name, cubes[i].color))

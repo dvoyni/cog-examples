@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -60,19 +61,19 @@ func pass(t *testing.T, engine *headless.Engine) scene.PassView {
 
 // lookupOf runs one read against the half of the demo's facade that needs no
 // device, which is where the two memory totals live.
-func lookupOf[T any](t *testing.T, engine *headless.Engine, read func(scene.LookupAccess) T) T {
+func lookupOf[T any](t *testing.T, engine *headless.Engine, read func(model.LookupAccess) T) T {
 	t.Helper()
 	var out T
-	engine.Lookup(func(la scene.LookupAccess) { out = read(la) })
+	engine.Lookup(func(la model.LookupAccess) { out = read(la) })
 	return out
 }
 
 // deviceOf runs one read against the loading half, which is where every
 // per-model query lives because every one of them loads the file it names.
-func deviceOf[T any](t *testing.T, engine *headless.Engine, read func(scene.LookupDeviceAccess) T) T {
+func deviceOf[T any](t *testing.T, engine *headless.Engine, read func(model.LookupDeviceAccess) T) T {
 	t.Helper()
 	var out T
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) { out = read(la) })
+	engine.LookupDevice(func(la model.LookupDeviceAccess) { out = read(la) })
 	return out
 }
 
@@ -189,7 +190,7 @@ func TestNoShaderExceedsTheWebLimits(t *testing.T) {
 func TestTheDemoReportsNothingButTheCap(t *testing.T) {
 	engine, _ := run(t)
 	for _, err := range engine.Errors() {
-		var over scene.ErrModelPlaysOverLimit
+		var over model.ErrModelPlaysOverLimit
 		if errors.As(err, &over) {
 			continue
 		}
@@ -204,14 +205,14 @@ func TestTheDemoReportsNothingButTheCap(t *testing.T) {
 // onto one 60 Hz grid.
 func TestTheFoxBakesItsRigAndItsThreeClips(t *testing.T) {
 	engine, _ := run(t)
-	joints := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []string {
+	joints := deviceOf(t, engine, func(la model.LookupDeviceAccess) []string {
 		names, _ := la.Joints(foxPath, nil)
 		return names
 	})
 	if len(joints) != FoxJoints {
 		t.Errorf("the fox has %d joints, want its %d-bone rig", len(joints), FoxJoints)
 	}
-	clips := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []scene.ClipInfo {
+	clips := deviceOf(t, engine, func(la model.LookupDeviceAccess) []model.ClipInfo {
 		infos, _ := la.Clips(foxPath, nil)
 		return infos
 	})
@@ -244,7 +245,7 @@ const FoxJoints = 24
 // makes, so the number it produces is worth pinning to the real rig.
 func TestPoseMemoryIsTheRigTimesTheGrid(t *testing.T) {
 	engine, demo := run(t)
-	bytes := deviceOf(t, engine, func(la scene.LookupDeviceAccess) int {
+	bytes := deviceOf(t, engine, func(la model.LookupDeviceAccess) int {
 		out, _ := la.PoseBytes(foxPath)
 		return out
 	})
@@ -338,7 +339,7 @@ func TestTheDemoOpensPausedAtTheReferenceTime(t *testing.T) {
 // the rule on a file with no skin to fall back on.
 func TestTheInterpolationCubesAreDegenerateSingleJointSkins(t *testing.T) {
 	engine, _ := run(t)
-	joints := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []string {
+	joints := deviceOf(t, engine, func(la model.LookupDeviceAccess) []string {
 		names, _ := la.Joints(interpPath, nil)
 		return names
 	})
@@ -375,7 +376,7 @@ func TestTheInterpolationCubesAreDegenerateSingleJointSkins(t *testing.T) {
 // table.
 func TestTheGridCoversEveryClipTheFileDeclares(t *testing.T) {
 	engine, _ := run(t)
-	clips := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []scene.ClipInfo {
+	clips := deviceOf(t, engine, func(la model.LookupDeviceAccess) []model.ClipInfo {
 		infos, _ := la.Clips(interpPath, nil)
 		return infos
 	})
@@ -432,7 +433,7 @@ func TestTheU8IndexedFileDrawsEveryPrimitive(t *testing.T) {
 // it, so the copy still renders and the drop is a report rather than a hole.
 func TestTheCapReportsOnceAndDropsTheLightestPlays(t *testing.T) {
 	engine, _ := run(t)
-	var over scene.ErrModelPlaysOverLimit
+	var over model.ErrModelPlaysOverLimit
 	found := 0
 	for _, err := range engine.Errors() {
 		if errors.As(err, &over) {
@@ -541,7 +542,7 @@ func TestTheTwoMorphCubesDifferByTheirAuthoredTangent(t *testing.T) {
 	if plain == quantized {
 		t.Error("both cubes report the same delta bytes; the mask was taken from the targets")
 	}
-	total := lookupOf(t, engine, func(la scene.LookupAccess) int { return la.TotalMorphBytes() })
+	total := lookupOf(t, engine, func(la model.LookupAccess) int { return la.TotalMorphBytes() })
 	if want := plain + quantized + demo.memory.morph[4]; total != want {
 		t.Errorf("TotalMorphBytes = %d, want the three morphed models' %d", total, want)
 	}
@@ -552,7 +553,7 @@ func TestTheTwoMorphCubesDifferByTheirAuthoredTangent(t *testing.T) {
 // drifted would print a confident wrong name.
 func TestTheTabulatedShapeNamesAreTheFilesOwn(t *testing.T) {
 	engine, _ := run(t)
-	names := deviceOf(t, engine, func(la scene.LookupDeviceAccess) []string {
+	names := deviceOf(t, engine, func(la model.LookupDeviceAccess) []string {
 		out, _ := la.MorphTargets(stressPath, nil)
 		return out
 	})

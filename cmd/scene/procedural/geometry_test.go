@@ -9,7 +9,7 @@ import (
 	"github.com/dvoyni/cog/slots/gfx"
 )
 
-// The demo's vertex is not scene.Vertex, and that is the whole point: it is 36
+// The demo's vertex is not model.Vertex, and that is the whole point: it is 36
 // bytes with three attributes where the standard layout is 32 with six, so
 // nothing about it could be mistaken for the layout the bundled PBR reads.
 func TestTheVertexIsTheDemosOwnThirtySixByteLayout(t *testing.T) {
