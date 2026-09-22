@@ -56,13 +56,13 @@
 // even though the sphere is shaded by the bundled PBR and the ridge by a shader
 // this program wrote.
 //
-// One sentence, three failures: a sceneFrame struct declared with a field out
-// of place reads the sun from the wrong bytes and lights the ridge from a
-// direction the ground disagrees with; a normal built from the instance record
-// the wrong way round makes the beacon's shading swim as it spins while the
-// ground stays put; and a material that lost its bindings renders nothing at
-// all, because a bind group that fails to build takes the whole frame's command
-// buffer with it.
+// One sentence, two failures: a normal built from the instance record the wrong
+// way round makes the beacon's shading swim as it spins while the ground stays
+// put; and a material that declared a binding nothing fills draws nothing, with
+// gfx.ErrStorageBufferUnsupplied reported for it. A third it used to catch - a
+// hand-copied SceneFrame with a field out of place, lighting the ridge from a
+// direction the ground disagrees with - is gone: the material includes
+// model.PbrPath and lights through the engine's own sceneShadeSurface.
 //
 // The ribbon's two faces are lit as one surface - no seam runs along the band
 // where its front side meets its back - and the beacon changes colour every

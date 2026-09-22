@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -8,59 +9,47 @@ import (
 // The demo's own material: a whole gfx.MaterialDescr with inline WGSL, which is
 // what a custom vertex layout obliges a caller to supply.
 //
+// # What it includes
+//
+// model.PbrPath, by absolute storage name, and through it model.FramePath. That
+// is the engine's own lighting: SceneFrame and the sceneFrame binding, the
+// accessors that read the sun, the ambient and the punctual lights, and
+// sceneShadeSurface, which lights a SceneSurface exactly as the bundled PBR
+// lights the ground and the reference sphere. The shader fills a SceneSurface
+// from its own vertices and hands it over, so nothing about the frame's layout
+// or the BRDF is re-typed here. Before the prelude was published this shader
+// carried a hand-copied prefix of SceneFrame, and the copy had already drifted:
+// it predated viewDirection, so it read the sun out of the view-direction slot.
+//
+// PbrPath declares names this file must not declare again. model.PbrPath's doc
+// lists them; everything below that is not theirs is prefixed or plainly the
+// demo's own.
+//
 // # What a caller-supplied material may declare
 //
-// Scene binds three parameters on every draw, whatever material it uses:
-// sceneFrame, sceneInstances and scenePbrMaterial. Those are the whole
-// contract. A material that declares anything else has to bind it itself
-// through MeshDraw.Params, and a binding a draw does not bind fails
-// CreateBindGroup, whose error is swallowed - the frame's whole command buffer
-// vanishes with no error anywhere. So this material declares two of the three
-// and no parameters at all, and every colour the demo shows rides in its
-// vertices instead.
+// Every binding a material declares has to be bound on every draw that uses it,
+// or gfx drops the draw and reports gfx.ErrStorageBufferUnsupplied. The renderer
+// binds three parameters on every draw: sceneFrame, sceneInstances and
+// scenePbrMaterial. The prelude brings sceneFrame; this material declares
+// sceneInstances itself, because the instance record is not published and the
+// vertex stage needs the world rows. It declares no parameter and no storage
+// buffer of its own - the bundled shader already holds all eight the browser
+// floor allows - so every colour the demo shows rides in its vertices.
 //
-// The third, scenePbrMaterial, is bound but useless here: a mesh draw's record
-// is the bundled PBR's white paint, and a MeshDraw carries no colour to change
-// it with - OverrideParams is a ModelDraw field, and MeshDraw.Params reach gfx
-// rather than the record. Reading it would bind correctly and say nothing.
+// scenePbrMaterial is bound but useless here: a mesh draw's record is the
+// bundled PBR's white paint, and a MeshDraw carries no colour to change it with.
 //
-// # What it does not get
-//
-// No scene helper functions. gfx does no shader preprocessing of any kind -
-// ShaderDescr is inline text or a storage path handed straight to the backend,
-// with no include, macro or injection point - so a published shading contract
-// would mean every consumer carrying its own copy of the BRDF. The struct
-// declarations below are that copy-paste in miniature, and they are the price
-// of the feature: keep them to the prefix the shader actually reads, because
-// every field is one more thing to get out of step with scene.
-//
-// The group and binding numbers are this shader's own. gfx binds by reflected
-// name, never by slot, so they have to be consistent here and nowhere else;
-// they mirror scene's frequency convention because a reader comparing the two
-// files should not have to hold two numbering schemes at once.
+// The group and binding numbers of sceneInstances are scene's own, because gfx
+// binds by reflected name and scene binds that name at 0/1.
 //
 // # Shading
 //
-// Lambert plus scene's hemispheric ambient, which is the bundled PBR's own
-// diffuse term for a rough dielectric with the specular lobe left off. That is
-// deliberate: the ground plane beside the ridge takes the bundled PBR, and two
-// materials reading the same sun out of the same sceneFrame should agree about
-// where it is.
-const shaderSource = `
-// The prefix of scene's SceneFrame this shader reads. The binding is longer
-// than this struct - the punctual light array follows - and a storage binding
-// larger than the type it is read as is legal, so the tail costs nothing to
-// leave undeclared.
-struct SceneFrame {
-    view: mat4x4<f32>,
-    projection: mat4x4<f32>,
-    viewProjection: mat4x4<f32>,
-    cameraPosition: vec4<f32>,
-    sunDirection: vec4<f32>,
-    sunColor: vec4<f32>,
-    ambientSky: vec4<f32>,
-    ambientGround: vec4<f32>,
-};
+// sceneShadeSurface on a rough dielectric: the sun, every punctual light in the
+// pass and the hemispheric ambient, with the vertex tint as the base colour.
+// The ground plane beside the ridge takes the bundled PBR, and two materials
+// lighting through the same function out of the same sceneFrame agree about
+// where the sun is by construction rather than by care.
+const shaderSource = "//#include " + model.PbrPath + `
 
 // Scene's 64-byte instance record. world0..world2 are the *rows* of the 4x3
 // world matrix, translation in w, so a row-wise dot is the matrix product.
@@ -68,7 +57,7 @@ struct SceneFrame {
 // by this one: every buffer-built draw carries SCENE_NOSKIN and animates
 // nothing, so there is no pose to fetch and the fields are declared only to
 // keep the record's size right.
-struct SceneInstance {
+struct ProceduralInstance {
     world0: vec4<f32>,
     world1: vec4<f32>,
     world2: vec4<f32>,
@@ -77,14 +66,15 @@ struct SceneInstance {
     spare: vec2<u32>,
 };
 
-struct SceneInstances {
-    data: array<SceneInstance>,
+struct ProceduralInstances {
+    data: array<ProceduralInstance>,
 };
 
-@group(0) @binding(0) var<storage, read> sceneFrame: SceneFrame;
-@group(0) @binding(1) var<storage, read> sceneInstances: SceneInstances;
+@group(0) @binding(1) var<storage, read> sceneInstances: ProceduralInstances;
 
-const PI: f32 = 3.14159265359;
+// The surface every piece of caller geometry is: a dielectric rough enough that
+// the specular lobe stays a sheen rather than a highlight.
+const proceduralRoughness: f32 = 0.9;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -94,8 +84,9 @@ struct VertexIn {
 
 struct VertexOut {
     @builtin(position) clipPosition: vec4<f32>,
-    @location(0) normal: vec3<f32>,
-    @location(1) tint: vec3<f32>,
+    @location(0) world: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tint: vec3<f32>,
 };
 
 @vertex
@@ -109,6 +100,7 @@ fn vs_main(vertex: VertexIn, @builtin(instance_index) index: u32) -> VertexOut {
     );
     var out: VertexOut;
     out.clipPosition = sceneFrame.viewProjection * vec4<f32>(world, 1.0);
+    out.world = world;
     // Every instance this demo records scales uniformly, so the basis is its
     // own normal matrix and no inverse-transpose is needed. A demo that
     // squashed something through a non-uniform Scale would have to take one,
@@ -131,34 +123,37 @@ fn fs_main(in: VertexOut, @builtin(front_facing) frontFacing: bool) -> @location
     if !frontFacing {
         normal = -normal;
     }
-    // sunDirection is the sun's direction of travel, so the direction towards
-    // it is its negation, and it is already normalised. Every colour in
-    // sceneFrame is linear radiance with its intensity premultiplied.
-    let nDotL = max(dot(normal, -sceneFrame.sunDirection.xyz), 0.0);
-    let ambient = mix(sceneFrame.ambientGround.rgb, sceneFrame.ambientSky.rgb,
-                      normal.y * 0.5 + 0.5);
-    let lit = in.tint / PI * sceneFrame.sunColor.rgb * nDotL + in.tint * ambient;
-    return vec4<f32>(lit, 1.0);
+    let surface = SceneSurface(in.world, normal, in.tint, 0.0, proceduralRoughness, 1.0);
+    return vec4<f32>(sceneShadeSurface(surface), 1.0);
 }
 `
 
-// newMaterial builds the demo's scene material: one forward entry, no
-// parameters, and two-sided.
+// materialShader is the demo's shader and materialState the state it draws
+// with, apart so that scene's Material and ecsscene's MaterialTag are built from
+// the same two values.
 //
 // Two-sided because half the demo is surfaces with no inside - a rebuilt band
 // and an undulating sheet - and back-face culling on those means holes that
 // appear and vanish as the camera orbits. It is a material property, not a
 // draw's, so the beacon is two-sided too and pays a little for it; a demo that
 // minded would carry a second material.
+func materialShader() gfx.ShaderDescr { return gfx.ShaderWithText(shaderSource) }
+
+func materialState() gfx.MaterialState {
+	state := gfx.StateOpaque3D()
+	state.Cull = gfx.CullNone
+	return state
+}
+
+// newMaterial builds the demo's scene material: one forward entry, no
+// parameters, and two-sided.
 //
 // It is a plain value with no GPU handle in it, so the demo builds it once at
 // construction rather than waiting for a backend, and passes the same slice on
 // every draw: scene keys a material by content, so two draws naming this one
 // intern to a single id and sort together.
 func newMaterial() scene.Material {
-	state := gfx.StateOpaque3D()
-	state.Cull = gfx.CullNone
 	return scene.Material{{
-		Descr: gfx.MaterialWithState(gfx.ShaderWithText(shaderSource), state),
+		Descr: gfx.MaterialWithState(materialShader(), materialState()),
 	}}
 }
