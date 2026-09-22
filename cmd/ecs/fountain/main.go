@@ -48,6 +48,8 @@ import (
 	"github.com/dvoyni/cog/bundles/ecsscene"
 	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneplugin"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
@@ -84,7 +86,7 @@ func main() {
 	permanentfs.Configure(config)
 
 	engine := kernel.New(config).WithPlugins(
-		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(), canvasplugin.New(), sceneplugin.New(), gogpuplugin.New(),
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(), canvasplugin.New(), modelplugin.New(), sceneplugin.New(), gogpuplugin.New(),
 		ecsplugin.New(), ecssceneplugin.New(), New(),
 	)
 	// Ctrl+C asks the host to leave its loop, the same way closing the window
@@ -146,7 +148,7 @@ func New() *Demo { return &Demo{} }
 func (p *Demo) Name() kernel.PluginName { return Name }
 
 func (p *Demo) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, scene.Name}
+	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, model.Name, scene.Name}
 }
 
 type (

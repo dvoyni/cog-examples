@@ -15,6 +15,7 @@ import (
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
@@ -46,7 +47,7 @@ func main() {
 		inputplugin.New(),
 		appplugin.New(),
 		gfxplugin.New(),
-		sceneplugin.New(),
+		modelplugin.New(), sceneplugin.New(),
 		gogpuplugin.New(),
 		newTracer(),
 	}

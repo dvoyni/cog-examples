@@ -25,6 +25,8 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/kernel"
@@ -89,7 +91,7 @@ func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	permanentfs.Configure(config)
 	all := append([]kernel.Plugin{
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(),
-		adapter{backend: engine.backend, mainLoop: engine.mainLoop}, canvasplugin.New(), sceneplugin.New(), &probe{},
+		adapter{backend: engine.backend, mainLoop: engine.mainLoop}, canvasplugin.New(), modelplugin.New(), sceneplugin.New(), &probe{},
 	}, plugins...)
 
 	running := kernel.New(config).
@@ -242,7 +244,7 @@ type lookupDeviceResponse struct{}
 func (*probe) Name() kernel.PluginName { return "headless-probe" }
 
 func (*probe) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{scene.Name, canvas.Name}
+	return []kernel.PluginName{model.Name, scene.Name, canvas.Name}
 }
 
 func (*probe) Register(registrar *kernel.Registrar, _ any) error {

@@ -145,6 +145,8 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
+	"github.com/dvoyni/cog/bundles/model"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
@@ -205,7 +207,7 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		sceneplugin.New(),
+		modelplugin.New(), sceneplugin.New(),
 		gogpuplugin.New(),
 		mcpplugin.New(),
 		New(),
@@ -333,7 +335,7 @@ func New() *Pbr { return &Pbr{azimuth: startAzimuth, elevation: startElevation} 
 func (p *Pbr) Name() kernel.PluginName { return Name }
 
 func (p *Pbr) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, scene.Name, storage.Name}
+	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
 }
 
 func (p *Pbr) Register(registrar *kernel.Registrar, _ any) error {

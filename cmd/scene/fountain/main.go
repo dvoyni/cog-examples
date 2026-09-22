@@ -39,6 +39,8 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
@@ -64,7 +66,7 @@ func main() {
 
 	engine := kernel.New(config).WithPlugins(
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(),
-		canvasplugin.New(), sceneplugin.New(), gogpuplugin.New(), New(),
+		canvasplugin.New(), modelplugin.New(), sceneplugin.New(), gogpuplugin.New(), New(),
 	)
 	// Ctrl+C asks the host to leave its loop, the same way closing the window
 	// does.
@@ -95,7 +97,7 @@ type (
 func (p *Fountain) Name() kernel.PluginName { return Name }
 
 func (p *Fountain) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, scene.Name}
+	return []kernel.PluginName{canvas.Name, gfx.Name, model.Name, scene.Name}
 }
 
 func (p *Fountain) Register(registrar *kernel.Registrar, _ any) error {

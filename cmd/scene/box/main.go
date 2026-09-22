@@ -56,6 +56,7 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
@@ -109,7 +110,7 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		sceneplugin.New(),
+		modelplugin.New(), sceneplugin.New(),
 		gogpuplugin.New(),
 		New(),
 	}
