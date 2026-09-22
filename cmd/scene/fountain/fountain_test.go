@@ -59,8 +59,9 @@ func TestTheHUDsArithmetic(t *testing.T) {
 		}
 		// Two passes: the ground pass draws the basin, and the forward pass
 		// draws every mote, the nozzle, the fox and the basin's ripples. Each
-		// is its own scene call, and scene never merges calls, so each is its
-		// own draw.
+		// is its own scene call, and scene merges only equal draws that sort
+		// side by side, and no two motes side by side in the sort share a
+		// tint. So each is its own draw.
 		if h.Passes != 2 {
 			t.Errorf("step %d: %d passes, want 2", h.Step, h.Passes)
 		}

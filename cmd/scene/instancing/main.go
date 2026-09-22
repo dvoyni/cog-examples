@@ -55,13 +55,13 @@
 // and there the flag decides where the highlight lands.
 //
 // A stack of three crates stands in one corner of the courtyard, and it is a
-// second call of the same model. It stays a batch of its own beside the
-// field's, because the batch is the call rather than the key - collapsing two
-// calls that share a mesh and a material is the deferred automatic collapse,
-// and doing it here would make that ticket unfalsifiable. It is also the one
-// draw in the frame the sort has to move: recorded after the bottles and the
-// screens, it carries a material interned before either of theirs, so a
-// material-keyed sort lifts it back beside the field.
+// second call of the same model. It is the one draw in the frame the sort has
+// to move: recorded after the bottles and the screens, it carries a material
+// interned before either of theirs, so a material-keyed sort lifts it back
+// beside the field. Once there it merges into the field's batch, because scene
+// collapses equal draws that sort side by side whichever call recorded them:
+// the stack shares the field's mesh, material and (absent) per-draw data, so
+// its three crates pack straight after the field's survivors in one batch.
 //
 // # One call or five hundred
 //
@@ -69,12 +69,11 @@
 // per crate. The picture does not change and neither does the packed instance
 // array: the crates share a mesh and a material, so they share a sort key, the
 // sort's final tiebreak is the recording ordinal, and the two orders coincide.
-// What changes is the batch count on the HUD - from one to as many crates as
-// survived the frustum.
+// Nor does the batch count on the HUD: scene collapses consecutive equal draws,
+// so the per-crate calls merge back into the one batch the instanced call packs.
 //
-// That is the deferred automatic collapse of consecutive equal draws, seen from
-// the other side. When it lands it has to be output-identical to the instanced
-// form, and this key is the pair of frames that says what identical means.
+// That pair of frames is what output-identical means for the collapse: the same
+// instance array, byte for byte, in the same batches.
 //
 // # The reference pose
 //
@@ -714,9 +713,9 @@ func (p *Instancing) record(q *scene.OpQueue) {
 	q.Plane(0, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
 
 	// The field, either way round. One call with a Transforms slice and N calls
-	// with a Transform each pack the same instances in the same order; what
-	// differs is that the first is one batch and the second is one batch per
-	// surviving crate.
+	// with a Transform each pack the same instances in the same order and in
+	// the same one batch: the second is merged back into it because the calls
+	// are equal and sort side by side.
 	if p.perCall {
 		for i := range crateTransforms {
 			q.Model(0, cratePath, scene.ModelDraw{Transform: crateTransforms[i]})
@@ -734,11 +733,9 @@ func (p *Instancing) record(q *scene.OpQueue) {
 	// sort lifts it back beside the field over two models recorded ahead of it
 	// - and everything else here is already in key order as it is recorded.
 	//
-	// It stays a batch of its own beside the field's, which is the other half
-	// of what it is here for: two separate calls of one mesh and one material
-	// are two batches, because a batch is the call. Collapsing them is the
-	// deferred automatic collapse, and doing it early would make that ticket
-	// unfalsifiable.
+	// Once beside the field it merges into the field's batch, which is the
+	// other half of what it is here for: two separate calls of one mesh and one
+	// material with nothing else to tell them apart are one batch.
 	q.Model(0, cratePath, scene.ModelDraw{Transforms: stackTransforms})
 
 	// The lamp, and a marker on it so the light has somewhere visible to come
@@ -787,12 +784,13 @@ const debugShapes = 2
 var RecordedDraws = (CrateCount+stackCount)*cratePrimitives +
 	bottleCount*bottlePrimitives + len(paneTransforms)*panePrimitives + debugShapes
 
-// InstancedBatches is how many batches the frame packs when the field is one
-// call: the two debug shapes, the field, the stack, the bottles, the screens'
-// opaque primitives, and one per blended primitive per screen. Culling does not
-// change it - a batch is the call, not its survivors - until a whole call is
-// culled away, which the reference pose does not do.
-const InstancedBatches = debugShapes + 1 + 1 + 1 +
+// InstancedBatches is how many batches the frame packs, the field drawn either
+// way round: the two debug shapes, the field with the stack merged into it, the
+// bottles, the screens' opaque primitives, and one per blended primitive per
+// screen. Culling does not change it - a batch is a run of equal draws, not its
+// survivors - until a whole run is culled away, which the reference pose does
+// not do.
+const InstancedBatches = debugShapes + 1 + 1 +
 	(panePrimitives - PaneBlendPrimitives) + len(paneStands)*PaneBlendPrimitives
 
 // readResidency asks each file whether it is drawable, for the HUD. State is

@@ -94,7 +94,8 @@ func TestEveryModelBecomesResidentAndEveryPrimitiveBecomesADraw(t *testing.T) {
 	if view.Instances != RecordedDraws {
 		t.Errorf("packed %d instances, want %d", view.Instances, RecordedDraws)
 	}
-	// Nothing here is an instanced draw, so a batch is a draw.
+	// Nothing here is an instanced draw and no two draws are equal neighbours in
+	// the sort, so a batch is a draw.
 	if len(view.Batches) != RecordedDraws {
 		t.Errorf("emitted %d batches for %d draws, want one each",
 			len(view.Batches), RecordedDraws)

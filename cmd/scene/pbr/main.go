@@ -653,8 +653,21 @@ const (
 	emissivePrimitives = 6
 	// Six "Test" nodes share a two-primitive mesh, and the label board is a
 	// seventh node with one.
-	lightsPrimitives = 6*2 + 1
+	lightsPrimitives = lightsTestNodes*lightsTestPrimitives + 1
+	lightsTestNodes  = 6
+	// lightsTestPrimitives is the primitive count of the mesh the six "Test"
+	// nodes share.
+	lightsTestPrimitives = 2
 )
+
+// Batches is how many batches the frame packs once every model is resident.
+// scene collapses equal draws that sort side by side into one batch, so it is
+// RecordedDraws less what merges: the six plinths are one batch, the alpha
+// model's opaque primitives pair up across its two copies, and the lights
+// model's six "Test" nodes are one batch per primitive of the mesh they share.
+// Nothing else in the frame is equal to its neighbour in the sort.
+const Batches = RecordedDraws - (len(stations) - 1) - (alphaPrimitives - BlendPrimitives) -
+	lightsTestPrimitives*(lightsTestNodes-1)
 
 // BlendPrimitives is how many of the alpha model's primitives are alphaMode
 // BLEND: TestBlendMesh and DecalBlendMesh, both MatBlend. Everything else in the
