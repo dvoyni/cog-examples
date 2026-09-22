@@ -9,6 +9,7 @@ import (
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
 	"github.com/dvoyni/cog/slots/gfx"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // Fountain is the demo plugin and the fountain's whole state: the spray, the
@@ -26,7 +27,12 @@ type Fountain struct {
 	cube, disc model.MeshRef
 
 	moteMaterial, basinMaterial scene.Material
-	foxPlays                    [2]model.ClipPlay
+
+	// gait is the fox's gait machine, zero until rig finds Fox.glb resident,
+	// and foxPlays the array its plays are read into each step.
+	gait     model.ClipMachine
+	rigged   bool
+	foxPlays [model.MaxClipPlays]model.ClipPlay
 
 	// tint and passes are reused call to call: scene copies what a call is
 	// given before the call returns.
@@ -62,10 +68,6 @@ func New() *Fountain {
 				Descr: gfx.MaterialWithState(fountain.RippleShader(), fountain.RippleState()),
 			},
 		},
-		foxPlays: [2]model.ClipPlay{
-			{Clip: fountain.FoxWalk, Loop: true, Weight: 1},
-			{Clip: fountain.FoxRun, Loop: true},
-		},
 		tint: make([]gfx.ParameterDescr, 0, 1),
 	}
 }
@@ -82,6 +84,37 @@ func (p *Fountain) setup() (kernel.Lock, kernel.Observe[app.InitEvent]) {
 			p.cube = la.BakeMesh(cubeVertices, cubeIndices, gfx.TopologyTriangleList)
 			discVertices, discIndices := fountain.DiscGeometry()
 			p.disc = la.BakeMesh(discVertices, discIndices, gfx.TopologyTriangleList)
+		}
+}
+
+// rig builds the fox's gait machine the first step Fox.glb answers Clips,
+// caught up to the steps already taken. It holds the device facade's three
+// resources because Clips loads the file it names; once the fox is rigged it
+// does nothing.
+func (p *Fountain) rig() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
+	var lookup kernel.Write[*model.Lookup]
+	var files kernel.Read[storage.FileSystem]
+	var resources kernel.Write[*gfx.ResourceQueue]
+	return func(access kernel.ResourceAccess) {
+			lookup = access.GetWrite[*model.Lookup]()
+			files = access.GetRead[storage.FileSystem]()
+			resources = access.GetWrite[*gfx.ResourceQueue]()
+		}, func(k kernel.Kernel, _ app.UpdateEvent) {
+			if p.rigged || resources.Get() == nil || !resources.Get().Ready() {
+				return
+			}
+			la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+			clips, ok := la.Clips(fountain.FoxPath, nil)
+			if !ok {
+				return
+			}
+			p.rigged = true
+			gait, err := fountain.FoxGaitAt(clips, p.spray.Step())
+			if err != nil {
+				k.ReportError(err)
+				return
+			}
+			p.gait = gait
 		}
 }
 
@@ -125,9 +158,7 @@ func (p *Fountain) simulate() {
 	clear(p.motes[len(live):])
 	p.motes = live
 
-	t := p.spray.Clock()
-	walk, run := fountain.FoxGait(t, &p.foxPlays[0].Time, &p.foxPlays[1].Time)
-	p.foxPlays[0].Weight, p.foxPlays[1].Weight = walk, run
+	fountain.FoxGait(&p.gait, p.spray.Clock())
 }
 
 // record records the frame: one call per mote, the basin, the nozzle and the
@@ -138,7 +169,7 @@ func (p *Fountain) record(q *scene.OpQueue) fountain.HUD {
 	census := fountain.HUD{Step: p.spray.Step(), Spawned: p.spawned, Retired: p.retired}
 
 	q.Model(0, fountain.NozzlePath, scene.ModelDraw{Transform: fountain.NozzlePlace()})
-	q.Model(0, fountain.FoxPath, scene.ModelDraw{Transform: fountain.FoxPlace(t), Plays: p.foxPlays[:]})
+	q.Model(0, fountain.FoxPath, scene.ModelDraw{Transform: fountain.FoxPlace(t), Plays: p.gait.Plays(p.foxPlays[:0])})
 	census.Foxes++
 
 	for i := range p.motes {

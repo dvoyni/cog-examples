@@ -236,3 +236,25 @@ func TestTheHUDReadsAsInReferencePNG(t *testing.T) {
 		}
 	}
 }
+
+// The fox is rigged from Fox.glb's own clips, and its gait at the reference
+// step is the gait a machine stepped from step 1 has there, whenever the rig
+// happened.
+func TestTheFoxGaitAtTheReferenceStepIsCaughtUp(t *testing.T) {
+	engine, demo := run(t, fountain.ReferenceStep)
+	if !demo.rigged {
+		t.Fatal("the fox was never rigged")
+	}
+	var clips []model.ClipInfo
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
+		clips, _ = la.Clips(fountain.FoxPath, nil)
+	})
+	want, err := fountain.FoxGaitAt(clips, fountain.ReferenceStep)
+	if err != nil {
+		t.Fatalf("FoxGaitAt: %v", err)
+	}
+	got, expected := demo.gait.Plays(nil), want.Plays(nil)
+	if !slices.Equal(got, expected) {
+		t.Errorf("at the reference step the fox plays %+v, want %+v", got, expected)
+	}
+}

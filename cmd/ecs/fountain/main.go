@@ -10,7 +10,7 @@
 //	Params      each mote's own tint, fading with its life                                (drift)
 //	Material    the mote shader, and the basin's two pass tags: ground and forward        (material.go, setup, hatch)
 //	Model       the nozzle (WaterBottle) and the fox                                      (setup)
-//	Animation   the fox's walk and run, blended by its speed                              (prowl)
+//	Animation   the fox's walk and run, read off its gait machine                         (prowl)
 //	Light       a point lamp over the nozzle, and a spot light following the fox         (setup, prowl)
 //	Camera      one camera orbiting on the demo clock, its two passes clearing via m.Maybe (setup, orbit)
 //
@@ -60,6 +60,7 @@ import (
 	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
 	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
+	"github.com/dvoyni/cog/slots/storage"
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
@@ -124,7 +125,8 @@ type (
 	fox struct {
 		Place m.Transform
 		Model ecsscene.Model
-		Gait  ecsscene.Animation
+		Gait  model.ClipMachine
+		Pose  ecsscene.Animation
 	}
 	basin struct {
 		Place m.Transform
@@ -148,7 +150,7 @@ func New() *Demo { return &Demo{} }
 func (p *Demo) Name() kernel.PluginName { return Name }
 
 func (p *Demo) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, model.Name}
+	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, model.Name, storage.Name}
 }
 
 type (
@@ -157,6 +159,7 @@ type (
 	accelerateSystem kernel.Subscription[app.UpdateEvent]
 	driftSystem      kernel.Subscription[app.UpdateEvent]
 	reapSystem       kernel.Subscription[app.UpdateEvent]
+	rigSystem        kernel.Subscription[app.UpdateEvent]
 	prowlSystem      kernel.Subscription[app.UpdateEvent]
 	orbitSystem      kernel.Subscription[app.UpdateEvent]
 	hudSystem        kernel.Subscription[app.UpdateEvent]
@@ -176,6 +179,9 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 
 	ecs.RegisterComponent[fountain.Velocity](registrar, peakMotes)
 	ecs.RegisterComponent[fountain.Life](registrar, peakMotes)
+	// The fox's gait machine is a Component of its own, beside the Animation
+	// it fills: one fox, so one row.
+	ecs.RegisterComponent[model.ClipMachine](registrar, 1)
 	registrar.InitResource(&Fountain{spray: fountain.NewSpray()})
 
 	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
@@ -188,8 +194,10 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 		After[accelerateSystem]().Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[reapSystem](ecs.ToHandler[app.UpdateEvent](registrar, reap)).
 		After[driftSystem]().Before[ecsscene.RecordOnUpdate]()
+	registrar.Subscribe[rigSystem](ecs.ToHandler[app.UpdateEvent](registrar, rig)).
+		After[hatchSystem]()
 	registrar.Subscribe[prowlSystem](ecs.ToHandler[app.UpdateEvent](registrar, prowl)).
-		Before[ecsscene.RecordOnUpdate]()
+		After[rigSystem]().Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[orbitSystem](ecs.ToHandler[app.UpdateEvent](registrar, orbit)).
 		Before[ecsscene.RecordOnUpdate]()
 	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).

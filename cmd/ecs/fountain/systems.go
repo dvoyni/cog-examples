@@ -8,6 +8,7 @@ import (
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
+	"github.com/dvoyni/cog/slots/storage"
 )
 
 // setup bakes the two meshes through model's lookup and spawns everything that
@@ -35,10 +36,6 @@ func setup(
 	foxes.New(fox{
 		Place: fountain.FoxPlace(0),
 		Model: ecsscene.Model{Ref: model.ModelRef{Path: fountain.FoxPath}},
-		Gait: ecsscene.Animation{Plays: [model.MaxClipPlays]model.ClipPlay{
-			{Clip: fountain.FoxWalk, Loop: true, Weight: 1},
-			{Clip: fountain.FoxRun, Loop: true},
-		}},
 	})
 	basins.New(basin{
 		Draw:  ecsscene.Mesh{Ref: f.disc, Bounds: fountain.BasinBounds},
@@ -108,10 +105,48 @@ func reap(q *ecs.Query[reapQuery], dead *ecs.WriteableEntities, state *ecs.Write
 	}
 }
 
+type rigQuery struct {
+	Gait *model.ClipMachine
+}
+
+// rig gives the fox its gait machine the first step Fox.glb answers Clips,
+// caught up to the steps before this one, which prowl is about to take. It
+// holds the device facade's three resources because Clips loads the file it
+// names; once the fox is rigged it does nothing.
+func rig(
+	k kernel.Kernel,
+	foxes *ecs.Query[rigQuery],
+	lookup *ecs.Write[*model.Lookup],
+	files *ecs.Read[storage.FileSystem],
+	resources *ecs.Write[*gfx.ResourceQueue],
+	state *ecs.Write[*Fountain],
+) {
+	f := state.Get()
+	if f.rigged || resources.Get() == nil || !resources.Get().Ready() {
+		return
+	}
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	clips, ok := la.Clips(fountain.FoxPath, nil)
+	if !ok {
+		return
+	}
+	f.rigged = true
+	// hatch has already advanced the spray onto this step, and prowl takes it.
+	gait, err := fountain.FoxGaitAt(clips, f.spray.Step()-1)
+	if err != nil {
+		k.ReportError(err)
+		return
+	}
+	for _, it := range foxes.All() {
+		*it.Gait = gait
+	}
+}
+
 type (
 	foxQuery struct {
 		Place *m.Transform
-		Gait  *ecsscene.Animation
+		Gait  *model.ClipMachine
+		Pose  *ecsscene.Animation
 	}
 	spotQuery struct {
 		Place *m.Transform
@@ -119,17 +154,19 @@ type (
 	}
 )
 
-// prowl walks the fox round its circle and keeps the spot on it.
+// prowl walks the fox round its circle, steps its gait machine, and keeps the
+// spot on it.
 //
-// Clip time is advanced here, by the game, because ecsscene is
-// stateless about animation: each clip runs at the rate that matches its
-// stride to the fox's ground speed, which only the game knows.
+// The machine is stepped here, by the game, because ecsscene is stateless
+// about animation: the gait's clock is the ground the fox covered, which only
+// the game knows, and the machine's plays are copied into the Animation
+// ecsscene draws.
 func prowl(foxes *ecs.Query[foxQuery], lights *ecs.Query[spotQuery], state *ecs.Read[*Fountain]) {
 	t := state.Get().spray.Clock()
 	for _, it := range foxes.All() {
 		*it.Place = fountain.FoxPlace(t)
-		plays := &it.Gait.Plays
-		plays[0].Weight, plays[1].Weight = fountain.FoxGait(t, &plays[0].Time, &plays[1].Time)
+		fountain.FoxGait(it.Gait, t)
+		it.Gait.PlaysInto(&it.Pose.Plays)
 	}
 	for _, it := range lights.All() {
 		if it.Light.Descr.Kind == model.LightSpot {
