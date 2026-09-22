@@ -77,7 +77,7 @@ The scene demos:
 | `hello` | the smallest cog app, and the wiring every scene demo starts from |
 | `tracer` | the narrowest complete path through every layer, made to be looked at |
 | `box` | the whole debug vocabulary, with no file on disk anywhere in the frame |
-| `procedural` | caller-owned geometry, and a material this program wrote itself |
+| `procedural` | caller-owned geometry, and a material this program wrote itself, lit through the engine's published `sceneShadeSurface` under scene and ecsscene |
 | `pbr` | the material and lighting contract, over six Khronos models |
 | `animated` | skinning, morph targets, and the browser canary |
 | `instancing` | one call for five hundred crates, per-instance culling, and the sort key |

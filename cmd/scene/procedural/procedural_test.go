@@ -20,7 +20,8 @@ const referenceStep = 120
 // reflected: the headless backend has no shader front end, and the point of the
 // assertion below is that this list is shorter than scene's own - a caller
 // material may declare fewer bindings than scene binds, and must never declare
-// more.
+// more. sceneFrame is the one binding model.PbrPath brings in, and
+// sceneInstances the one the material declares itself.
 var demoShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
 	{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
 	{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
@@ -232,7 +233,7 @@ func TestABeaconSwapSkipsADrawOfTheReleasedRef(t *testing.T) {
 // draw, and that is the constraint the whole demo exists to prove livable: gfx
 // binds what reflection reports and ignores the rest, so a parameter a shader
 // does not declare costs nothing, while a binding it declares and nobody binds
-// takes the frame's whole command buffer with it.
+// costs the draw, reported as gfx.ErrStorageBufferUnsupplied.
 //
 // Every draw in the frame binds sceneFrame and sceneInstances. Only the ground
 // plane, which takes the bundled PBR, binds scenePbrMaterial as well.
