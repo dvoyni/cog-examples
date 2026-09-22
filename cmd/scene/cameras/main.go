@@ -46,16 +46,15 @@
 // Input may run, pause and pick freely, and touching it voids nothing: the
 // assertions live in cameras_test.go rather than in the running app.
 //
-// # One pass the desktop build skips
+// # One pass some backends skip
 //
 // The minimap's depth-only prepass - no colour attachment, one depth texture,
-// the shape a shadow map takes - runs in a browser and is declined on the
-// desktop, where cog's gogpu backend reports it once rather than encoding it.
-// gogpu's Vulkan HAL never begins a render pass with no colour attachments and
-// then faults ending it, so declining the pass is what turns a segfault into a
-// line on the HUD. Nothing samples that depth texture, so the skip changes no
-// pixel: the reports counter goes to one and the frame is the frame. Run the
-// demo through cmd/web/build.sh to see the pass actually execute.
+// the shape a shadow map takes - runs on Vulkan and in a browser, and is
+// declined on GLES, where cog's gogpu backend reports it once rather than
+// encoding it: the GLES HAL binds no framebuffer for a colourless pass and would
+// draw into whatever was bound last. Nothing samples that depth texture, so the
+// skip changes no pixel: the reports counter goes to one and the frame is the
+// frame.
 //
 // # What only eyes can judge
 //
@@ -261,15 +260,14 @@ func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
 // terminate, which is the difference between a demo that survives the failure
 // it means to show and one that cannot tell you scene stopped working.
 //
-// The second entry is not a failure this demo provokes, it is one the desktop
-// backend has: it cannot encode a pass with a depth attachment and no colour
-// attachment, because gogpu's Vulkan HAL never begins such a render pass and
-// then faults ending it. cog's gogpu backend declines the pass and reports it
-// once rather than dying inside the driver. So on desktop this demo's depth
-// prepass is skipped and its depth texture is left untouched - which changes no
-// pixel of the frame, because the prepass writes into a texture of its own that
-// nothing samples. The same demo runs the pass for real in a browser, whose
-// WebGPU implementation has no such gap.
+// The second entry is not a failure this demo provokes, it is one some backends
+// have: GLES cannot encode a pass with a depth attachment and no colour
+// attachment, so cog's gogpu backend declines the pass there and reports it
+// once, as it does for any backend it does not know can encode one. Vulkan and
+// the browser run it. Where it is declined, this demo's depth prepass is
+// skipped and its depth texture is left untouched - which changes no pixel of
+// the frame, because the prepass writes into a texture of its own that nothing
+// samples.
 func (p *Cameras) report(err error) error {
 	p.reports++
 	p.lastReport = err.Error()
