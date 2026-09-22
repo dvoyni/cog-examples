@@ -137,10 +137,10 @@ func TestEveryPadIsDrawnAndOnlyResolvedStationsDrawAModel(t *testing.T) {
 	if view.Instances != RecordedDraws {
 		t.Errorf("packed %d instances, want %d", view.Instances, RecordedDraws)
 	}
-	// Nothing here is an instanced draw, so a batch is a draw.
-	if len(view.Batches) != RecordedDraws {
-		t.Errorf("emitted %d batches for %d draws, want one each",
-			len(view.Batches), RecordedDraws)
+	// Nothing here is an instanced draw, but equal draws side by side merge.
+	if len(view.Batches) != Batches {
+		t.Errorf("emitted %d batches for %d draws, want %d",
+			len(view.Batches), RecordedDraws, Batches)
 	}
 	if ops := len(engine.Ops()); ops != RecordedOps {
 		t.Errorf("reported %d ops, want %d", ops, RecordedOps)

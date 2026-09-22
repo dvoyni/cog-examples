@@ -869,6 +869,18 @@ func (p *Loading) record(q *scene.OpQueue) {
 // expands to, exactly as a WireBox is one.
 const RecordedOps = 1 + len(stations) + len(stations)
 
+// Batches is how many batches the frame packs once every station has settled.
+// scene collapses equal draws that sort side by side, so it is RecordedDraws
+// less what merges: the pads are one batch per pad colour, and the three body
+// primitives the scene and body stations both draw untinted pair up. The truck's
+// wheels do not: the two wheel nodes ride different joints and alternate in the
+// sort, so no two equal wheels are neighbours.
+var Batches = RecordedDraws - (len(stations) - 2) - truckBodyPrimitives
+
+// truckBodyPrimitives is the body's share of TruckPrimitives: everything but the
+// two wheel draws.
+const truckBodyPrimitives = TruckPrimitives - 2
+
 // RecordedDraws is how many draw records the frame flushes to once every
 // station has settled: one per pad, plus each station's own primitive count.
 var RecordedDraws = func() int {

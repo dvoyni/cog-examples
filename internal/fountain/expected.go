@@ -34,8 +34,9 @@ var ReferencePasses = []ExpectedPass{
 }
 
 // ReferenceSceneDraws is how many draws each of ReferencePasses makes when
-// scene draws the frame: one for every call, since scene never merges separate
-// calls.
+// scene draws the frame: one for every call, since scene merges only equal
+// draws that sort side by side, and at the reference step no two motes share
+// a tint.
 //
 // Draws are not in ReferencePasses because they may differ between the
 // renderers. Two motes thrown on one step fade to the same tint, so ecsscene

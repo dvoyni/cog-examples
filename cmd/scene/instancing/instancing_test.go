@@ -171,10 +171,12 @@ func TestThePerInstanceCullAgreesWithThePublishedFrustum(t *testing.T) {
 			view.Culled, culled)
 	}
 
+	// The stack merges into the field's batch after its survivors, so the
+	// batch is the surviving crates and then the stack's three.
 	batch := largestBatch(t, view.Batches)
-	if batch.InstanceCount != len(expected) {
-		t.Fatalf("the field packed %d instances and %d crates pass the frustum test",
-			batch.InstanceCount, len(expected))
+	if batch.InstanceCount != len(expected)+stackCount {
+		t.Fatalf("the field packed %d instances and %d crates pass the frustum test, "+
+			"with the stack's %d after them", batch.InstanceCount, len(expected), stackCount)
 	}
 	instances := sceneInstances(t, engine)
 	for i, want := range expected {
@@ -261,8 +263,9 @@ func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheCall(t *testing.T) {
 //
 // It lands immediately after the field rather than merely before the bottles:
 // the two share a mesh and a material and therefore a sort key, and the sort's
-// final tiebreak is the recording ordinal, which the field wins. That they are
-// two batches at all is the other half - a batch is the call, not the key.
+// final tiebreak is the recording ordinal, which the field wins. Being equal
+// draws side by side, the two then merge into one batch, with the stack's
+// crates as the batch's last three instances.
 func TestTheOpaqueBatchesComeOutInSortKeyOrder(t *testing.T) {
 	engine, _ := run(t)
 	view := pass(t, engine)
@@ -289,24 +292,26 @@ func TestTheOpaqueBatchesComeOutInSortKeyOrder(t *testing.T) {
 	if at < 0 || at+1 >= len(opaque) {
 		t.Fatalf("the field is batch %d of %d opaque batches", at, len(opaque))
 	}
-	stack := batches[at+1]
-	if stack.MaterialID != field.MaterialID || stack.MeshID != field.MeshID {
-		t.Fatalf("the batch after the field is material %d mesh %d and the field is %d/%d; "+
-			"the stack is a second call of the same model and must sort straight after it",
-			stack.MaterialID, stack.MeshID, field.MaterialID, field.MeshID)
-	}
-	if stack.InstanceCount != stackCount {
-		t.Errorf("the stack packed %d instances, want %d", stack.InstanceCount, stackCount)
+	// The stack is the tail of the field's batch, in its own recording order.
+	instances := sceneInstances(t, engine)
+	tail := field.FirstInstance + field.InstanceCount - stackCount
+	for i := range stackTransforms {
+		want := stackTransforms[i].Mat4().Translation()
+		if got := instances[tail+i].translation(); got.Distance(want) > positionEpsilon {
+			t.Fatalf("instance %d of the field's batch stands at %v, want stacked crate %d at %v; "+
+				"the stack is a second call of the same model and must merge in straight after it",
+				tail+i-field.FirstInstance, got, i, want)
+		}
 	}
 	// It was recorded after two models that sort after it, which is the whole
 	// of what the sort had to do here.
-	for _, batch := range batches[at+2:] {
-		if batch.MaterialID <= stack.MaterialID {
+	for _, batch := range batches[at+1:] {
+		if batch.MaterialID <= field.MaterialID {
 			t.Errorf("batch material %d follows the stack's %d; the stack was recorded last "+
-				"and nothing after it should sort below it", batch.MaterialID, stack.MaterialID)
+				"and nothing after it should sort below it", batch.MaterialID, field.MaterialID)
 		}
 	}
-	if len(batches[at+2:]) < 2 {
+	if len(batches[at+1:]) < 2 {
 		t.Error("nothing sorts after the stack; it is meant to be recorded past two models")
 	}
 }
@@ -486,18 +491,18 @@ func TestOneInstanceArenaAndOneMaterialRecordPerBatch(t *testing.T) {
 	}
 }
 
-// One call per crate packs exactly the frame one instanced call packs, in one
-// batch per surviving crate instead of one batch.
+// One call per crate packs exactly the frame one instanced call packs, in the
+// same batches.
 //
-// This is the deferred automatic collapse of consecutive equal draws, asserted
-// from the other side: when it lands it has to be output-identical to the
-// instanced form, and identical means these bytes. The two orders coincide
+// This is the automatic collapse of consecutive equal draws, asserted from the
+// other side: it has to be output-identical to the instanced form, and
+// identical means these bytes and this batch count. The two orders coincide
 // because the crates share a mesh and a material and therefore a sort key, and
-// the sort's final tiebreak is the recording ordinal.
-func TestOneCallPerCrateIsTheSameFrameInMoreBatches(t *testing.T) {
+// the sort's final tiebreak is the recording ordinal; the batch counts coincide
+// because the per-crate calls are equal draws side by side, and merge.
+func TestOneCallPerCrateIsTheSameFrameInTheSameBatches(t *testing.T) {
 	engine, demo := run(t)
 	view := pass(t, engine)
-	survivors := largestBatch(t, view.Batches).InstanceCount
 	before := sceneInstances(t, engine)
 
 	demo.perCall = true
@@ -511,9 +516,10 @@ func TestOneCallPerCrateIsTheSameFrameInMoreBatches(t *testing.T) {
 		t.Errorf("per crate the pass packed %d instances, and instanced it packed %d",
 			after.Instances, view.Instances)
 	}
-	if want := InstancedBatches - 1 + survivors; len(after.Batches) != want {
-		t.Errorf("per crate the pass packed %d batches, want %d: one per surviving crate "+
-			"in place of the field's one", len(after.Batches), want)
+	if len(after.Batches) != len(view.Batches) {
+		t.Errorf("per crate the pass packed %d batches and instanced it packed %d; "+
+			"the per-crate calls are meant to merge back into the field's one",
+			len(after.Batches), len(view.Batches))
 	}
 	packed := sceneInstances(t, engine)
 	if len(packed) != len(before) {
@@ -529,8 +535,8 @@ func TestOneCallPerCrateIsTheSameFrameInMoreBatches(t *testing.T) {
 }
 
 // Orbiting changes which instances survive without changing what the frame is
-// made of. The batch is the call, so a field that loses half its crates to the
-// frustum is still one batch.
+// made of. A batch is a run of equal draws, so a field that loses half its
+// crates to the frustum is still one batch.
 func TestOrbitingChangesTheSurvivorsAndNotTheBatches(t *testing.T) {
 	engine, demo := run(t)
 	before := pass(t, engine)
@@ -549,8 +555,8 @@ func TestOrbitingChangesTheSurvivorsAndNotTheBatches(t *testing.T) {
 			"against this camera's frustum", beforeCulled)
 	}
 	if len(after.Batches) != beforeBatches {
-		t.Errorf("the frame packed %d batches from one pose and %d from the other; the batch "+
-			"is the call, not its survivors", beforeBatches, len(after.Batches))
+		t.Errorf("the frame packed %d batches from one pose and %d from the other; a batch "+
+			"is a run of equal draws, not its survivors", beforeBatches, len(after.Batches))
 	}
 	if after.Recorded != before.Recorded {
 		t.Errorf("the frame recorded %d draws from one pose and %d from the other",
