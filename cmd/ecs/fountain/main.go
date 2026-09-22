@@ -1,6 +1,7 @@
 // Command fountain is the ecsscene showcase: a nozzle throwing motes into a
 // basin while a fox circles it, every drawable an Entity and every Component of
-// cog's ecs-to-scene binding doing its one job.
+// ecsscene doing its one job. ecsscene is the renderer here: scene is not
+// composed, because an app runs one or the other.
 //
 //	go run ./cmd/ecs/fountain
 //
@@ -19,7 +20,8 @@
 // to the plugin list and docs/narrowing/capture.py; fountain_test.go asserts the
 // frame at that step, and that its HUD reads as the image's does.
 //
-// cmd/scene/fountain draws the same frame through scene.OpQueue. The two share
+// cmd/scene/fountain draws the same frame through scene.OpQueue, one call a
+// mote, where ecsscene batches the motes whose tints are equal. The two share
 // internal/fountain - the spray, the clock, the random stream, the layout, the
 // geometry and shaders, the HUD's text and the figures the reference step is
 // expected to have - and this program keeps only its recording: the Entities,
@@ -30,7 +32,7 @@
 // tick, so an agent asking for a snapshot of its own while this runs is refused
 // as busy.
 //
-// Why the binding is shaped the way it is lives in ecsscene's README:
+// Why ecsscene is shaped the way it is lives in its README:
 // https://github.com/dvoyni/cog/blob/main/bundles/ecsscene/docs/README.md
 package main
 
@@ -50,8 +52,6 @@ import (
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/model/modelplugin"
-	"github.com/dvoyni/cog/bundles/scene"
-	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
 	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
@@ -66,8 +66,8 @@ import (
 )
 
 const (
-	CameraMain scene.CameraID = -100
-	layerHUD   canvas.Layer   = 0
+	CameraMain ecsscene.CameraID = fountain.CameraID
+	layerHUD   canvas.Layer      = 0
 )
 
 // prewarmEntities is how many Entities the world reserves room for up front,
@@ -86,7 +86,7 @@ func main() {
 	permanentfs.Configure(config)
 
 	engine := kernel.New(config).WithPlugins(
-		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(), canvasplugin.New(), modelplugin.New(), sceneplugin.New(), gogpuplugin.New(),
+		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(), canvasplugin.New(), modelplugin.New(), gogpuplugin.New(),
 		ecsplugin.New(), ecssceneplugin.New(), New(),
 	)
 	// Ctrl+C asks the host to leave its loop, the same way closing the window
@@ -148,7 +148,7 @@ func New() *Demo { return &Demo{} }
 func (p *Demo) Name() kernel.PluginName { return Name }
 
 func (p *Demo) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, model.Name, scene.Name}
+	return []kernel.PluginName{canvas.Name, ecs.Name, ecsscene.Name, gfx.Name, model.Name}
 }
 
 type (
@@ -181,7 +181,7 @@ func (p *Demo) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
 	registrar.Subscribe[hatchSystem](ecs.ToHandler[app.UpdateEvent](registrar, hatch)).First()
 	registrar.Subscribe[accelerateSystem](ecs.ToHandler[app.UpdateEvent](registrar, accelerate))
-	// Every System that moves or retires an Entity runs Before the binding's
+	// Every System that moves or retires an Entity runs Before ecsscene's
 	// recording System, so a step draws the world as that step left it rather
 	// than whichever side of the tie the scheduler happened to break.
 	registrar.Subscribe[driftSystem](ecs.ToHandler[app.UpdateEvent](registrar, drift)).

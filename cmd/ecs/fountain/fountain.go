@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/dvoyni/cog-examples/internal/fountain"
 	"github.com/dvoyni/cog/bundles/ecsscene"
-	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -14,7 +14,7 @@ import (
 type Fountain struct {
 	spray fountain.Spray
 
-	cube, disc scene.MeshRef
+	cube, disc model.MeshRef
 
 	spawned, retired int
 
@@ -53,8 +53,8 @@ func camera() ecsscene.Camera {
 		AmbientSky:    fountain.SkyColor,
 		AmbientGround: fountain.EarthColor,
 		Passes: m.NewList(
-			scene.Pass{Tag: tagGround, ClearColor: m.Some(fountain.BackdropColor), ClearDepth: m.Some[float32](1)},
-			scene.Pass{Tag: scene.TagForward, ClearDepth: m.Some[float32](1), Order: 1},
+			ecsscene.Pass{Tag: tagGround, ClearColor: m.Some(fountain.BackdropColor), ClearDepth: m.Some[float32](1)},
+			ecsscene.Pass{Tag: ecsscene.TagForward, ClearDepth: m.Some[float32](1), Order: 1},
 		),
 	}
 }

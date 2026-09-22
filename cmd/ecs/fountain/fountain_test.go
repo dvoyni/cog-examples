@@ -5,9 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
-	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneplugin"
-	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/slots/gfx"
 
 	"github.com/dvoyni/cog-examples/internal/fountain"
@@ -20,12 +18,12 @@ import (
 // reaches at step n once its loads have long finished.
 func run(t *testing.T, n int) *headless.Engine {
 	t.Helper()
-	engine := headless.New(t, ecsplugin.New(), ecssceneplugin.New(), New())
+	engine := headless.NewECS(t, New())
 
 	// Preload loads: by the time it returns, the file has been read, parsed and
 	// uploaded. There is nothing to wait for, so what used to be a polling loop
 	// is one call and one assertion.
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		for _, path := range []string{fountain.NozzlePath, fountain.FoxPath} {
 			la.Preload(path)
 			if err := la.State(path); err != nil {
@@ -75,15 +73,16 @@ func TestTheHUDsArithmetic(t *testing.T) {
 				h.Step, h.Foxes, h.Lights, h.Cameras)
 		}
 		// Two passes: the ground pass draws the basin, and the forward pass
-		// draws every mote, the nozzle, the fox and the basin's ripples. Each
-		// Entity is its own scene call while ecsscene proxies into scene, so
-		// its own batch.
+		// draws every mote, the nozzle, the fox and the basin's ripples, one
+		// instance each. Motes whose tints are equal share a Batch, so there
+		// are at most as many batches as instances, and never fewer than the
+		// four draws that are not motes plus one for the motes.
 		if h.Passes != 2 {
 			t.Errorf("step %d: %d passes, want 2", h.Step, h.Passes)
 		}
-		if want := h.Motes + 4; h.Drawn != want || h.Batches != want {
-			t.Errorf("step %d: drawn %d in %d batches for %d motes; want %d of each",
-				h.Step, h.Drawn, h.Batches, h.Motes, want)
+		if want := h.Motes + 4; h.Drawn != want || h.Batches > want || h.Batches < 5 {
+			t.Errorf("step %d: drawn %d in %d batches for %d motes; want %d drawn in 5 to %d batches",
+				h.Step, h.Drawn, h.Batches, h.Motes, want, want)
 		}
 	}
 }
@@ -164,7 +163,7 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 	}
 
 	// What each pass drew, told apart by pipeline: the nozzle and the fox take
-	// scene's own shader, the fox's variant skinned; the stone, the ripples and
+	// model's bundled shader, the fox's variant skinned; the stone, the ripples and
 	// the motes take the fountain's WGSL, the ripples alone blended.
 	type tally struct{ nozzle, fox, stone, ripples, motes, other int }
 	var in [2]tally
@@ -217,20 +216,23 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 
 // The frame is the one internal/fountain says the reference step draws: the
 // same passes, the same labels and the same instances in each, as
-// cmd/scene/fountain's frame is held to, and no more draws in a pass than
-// instances, which is what scene's frame makes.
+// cmd/scene/fountain's frame is held to, and in no pass more draws than
+// cmd/scene/fountain makes there. ecsscene batches the motes whose tints are
+// equal, where scene draws every call alone.
 func TestTheReferenceStepMatchesTheExpectedFigures(t *testing.T) {
-	t.Skip("ecsscene still proxies into scene, one call per Entity; " +
-		"this comparison starts asserting with the redesign's integration, dvoyni/cog#538")
-
 	view := referenceFrame(t).snapshot.Frame
 	if got := fountain.PassesOf(view); !slices.Equal(got, fountain.ReferencePasses) {
 		t.Errorf("the camera's passes are %+v, want %+v", got, fountain.ReferencePasses)
 	}
-	for _, pass := range fountain.CameraPasses(view) {
-		if pass.Draws > pass.Instances {
-			t.Errorf("pass %q made %d draws of %d instances, more than scene's one a call",
-				pass.Label, pass.Draws, pass.Instances)
+	got := fountain.DrawsOf(view)
+	if len(got) != len(fountain.ReferenceSceneDraws) {
+		t.Fatalf("the camera's passes made %v draws, want one figure for each of %v",
+			got, fountain.ReferenceSceneDraws)
+	}
+	for i, draws := range got {
+		if ceiling := fountain.ReferenceSceneDraws[i]; draws > ceiling {
+			t.Errorf("pass %q made %d draws, more than the %d scene makes",
+				fountain.ReferencePasses[i].Label, draws, ceiling)
 		}
 	}
 }
@@ -249,10 +251,6 @@ func labels(passes []gfx.PassDesc) []string {
 // than the pixels: reference.png is a GPU run paused and stepped to
 // ReferenceStep, and every number in its HUD is a count of what that step drew,
 // so this step taken headless reading the same text is the same frame.
-//
-// The image's last line still ends "culled 0", a figure the HUD no longer
-// shows; reference.png is recaptured once, after the ecsscene redesign
-// (dvoyni/cog#538).
 var referenceHUD = []string{
 	"fountain  step 000600  time 10.00s",
 	"step 000599  motes 112 = spawned 831 - retired 719",

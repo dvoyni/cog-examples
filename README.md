@@ -95,7 +95,7 @@ The ecs demos:
 
 | demo | what it is for |
 | --- | --- |
-| `fountain` | the ecsscene showcase: every binding Component in one frame, spawned and retired by Systems |
+| `fountain` | the ecsscene showcase: every ecsscene Component in one frame, spawned and retired by Systems, drawn in Batches |
 | `physics2d` | the ecsphysics2d showcase: a stack, a ramp and a jointed figure in one scene, with the app's own gravity |
 | `physics2dtable` | the same engine with no gravity at all: a hundred balls breaking inside four cushions, and a crate per click |
 

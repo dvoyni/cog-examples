@@ -10,6 +10,10 @@
 // therefore beside the point: it exists so the frame reaches the end of the
 // pipe, and the numbers a test reads were already decided before it was called.
 //
+// ecsscene publishes nothing like Passes: it records to gfx itself. A demo on
+// it starts from NewECS and asserts what reached the Backend and gfx's frame
+// snapshot, both of which a scene demo can read as well.
+//
 // It lives here rather than beside one demo because seven demos would otherwise
 // carry seven copies of the same twenty-odd stub methods. Nothing in it decides
 // anything: a demo's own main.go stays self-contained.
@@ -23,6 +27,9 @@ import (
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
+	"github.com/dvoyni/cog/bundles/ecsscene"
+	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/model"
@@ -53,7 +60,11 @@ const Step = time.Second / 60
 
 // Engine is a running headless kernel with a demo plugin in it.
 type Engine struct {
-	kernel   kernel.Executioner
+	t      testing.TB
+	kernel kernel.Executioner
+	// scene says scene is the renderer composed, and so that its queue is
+	// there to inspect.
+	scene    bool
 	backend  *Backend
 	mainLoop *mainLoop
 	// reported is guarded because a model load reports from its own goroutine
@@ -83,7 +94,28 @@ func (e *Engine) report(err error) {
 // with Mounting.
 func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
-	engine := &Engine{backend: &Backend{}, mainLoop: &mainLoop{}}
+	return start(t, true, append([]kernel.Plugin{sceneplugin.New(), &probe{renderer: scene.Name}}, plugins...))
+}
+
+// NewECS starts an engine exactly as New does, but rendering through ecsscene
+// instead of scene: it composes ecs and ecsscene in scene's place, because an
+// app runs one renderer or the other and never both. The given plugins must
+// not compose ecs or ecsscene again.
+//
+// Lookup and LookupDevice work as under New, since the Lookup is model's.
+// Passes and Ops read scene's queue, which is not there, so they fail the
+// test; a test of an ecsscene demo reads what reached the Backend, or gfx's
+// frame snapshot.
+func NewECS(t testing.TB, plugins ...kernel.Plugin) *Engine {
+	t.Helper()
+	return start(t, false, append([]kernel.Plugin{
+		ecsplugin.New(), ecssceneplugin.New(), &probe{renderer: ecsscene.Name},
+	}, plugins...))
+}
+
+func start(t testing.TB, withScene bool, plugins []kernel.Plugin) *Engine {
+	t.Helper()
+	engine := &Engine{t: t, scene: withScene, backend: &Backend{}, mainLoop: &mainLoop{}}
 
 	config := map[kernel.PluginName]any{
 		app.Name: app.Config{Step: Step},
@@ -91,7 +123,7 @@ func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	permanentfs.Configure(config)
 	all := append([]kernel.Plugin{
 		storageplugin.New(), permanentfs.New(), inputplugin.New(), appplugin.New(), gfxplugin.New(),
-		adapter{backend: engine.backend, mainLoop: engine.mainLoop}, canvasplugin.New(), modelplugin.New(), sceneplugin.New(), &probe{},
+		adapter{backend: engine.backend, mainLoop: engine.mainLoop}, canvasplugin.New(), modelplugin.New(),
 	}, plugins...)
 
 	running := kernel.New(config).
@@ -153,14 +185,16 @@ func (e *Engine) Steps(n int) {
 	}
 }
 
-// Passes reads the last flush's pass results out of scene's queue.
+// Passes reads the last flush's pass results out of scene's queue. It fails
+// the test on an engine from NewECS, which has no scene.
 func (e *Engine) Passes() []scene.PassView {
 	var out []scene.PassView
 	e.inspect(func(q *scene.OpQueue) { out = q.Passes(nil) })
 	return out
 }
 
-// Ops reads the last flush's recorded operations out of scene's queue.
+// Ops reads the last flush's recorded operations out of scene's queue. It
+// fails the test on an engine from NewECS, which has no scene.
 func (e *Engine) Ops() []scene.Op {
 	var out []scene.Op
 	e.inspect(func(q *scene.OpQueue) { out = q.Ops(nil) })
@@ -206,7 +240,7 @@ func (e *Engine) Input(changes ...input.Change) {
 // Lookup runs fn with a scoped LookupAccess, which is the half of the facade
 // that bakes meshes, unloads a model and reads the memory totals - the same
 // facade a demo's own handler builds.
-func (e *Engine) Lookup(fn func(scene.LookupAccess)) {
+func (e *Engine) Lookup(fn func(model.LookupAccess)) {
 	e.kernel.ExecuteCommand[lookupCmd](lookupRequest{run: fn})
 }
 
@@ -214,41 +248,49 @@ func (e *Engine) Lookup(fn func(scene.LookupAccess)) {
 // preloads a model or asks what is in one. It is a second method rather than a
 // wider first one because the facade split is the thing being demonstrated: the
 // loading half costs three locks and the other half costs one.
-func (e *Engine) LookupDevice(fn func(scene.LookupDeviceAccess)) {
+func (e *Engine) LookupDevice(fn func(model.LookupDeviceAccess)) {
 	e.kernel.ExecuteCommand[lookupDeviceCmd](lookupDeviceRequest{run: fn})
 }
 
 // inspect runs fn inside a handler holding scene's OpQueue, so a test reads the
 // queue the way a recorder does rather than racing the update thread.
 func (e *Engine) inspect(fn func(*scene.OpQueue)) {
+	e.t.Helper()
+	if !e.scene {
+		e.t.Fatal("headless: this engine renders through ecsscene, so there is no scene queue to read")
+	}
 	e.kernel.ExecuteCommand[inspectCmd](inspectRequest{run: fn})
 }
 
-// probe is the plugin that lends a test scene's OpQueue lock.
-type probe struct{}
+// probe is the plugin that lends a test model's Lookup lock and, when scene is
+// the renderer, scene's OpQueue lock. It depends on the renderer composed, so
+// it registers after it.
+type probe struct{ renderer kernel.PluginName }
 
 type inspectCmd kernel.Command[inspectRequest, inspectResponse]
 type inspectRequest struct{ run func(*scene.OpQueue) }
 type inspectResponse struct{}
 
 type lookupCmd kernel.Command[lookupRequest, lookupResponse]
-type lookupRequest struct{ run func(scene.LookupAccess) }
+type lookupRequest struct{ run func(model.LookupAccess) }
 type lookupResponse struct{}
 
 type lookupDeviceCmd kernel.Command[lookupDeviceRequest, lookupDeviceResponse]
 type lookupDeviceRequest struct {
-	run func(scene.LookupDeviceAccess)
+	run func(model.LookupDeviceAccess)
 }
 type lookupDeviceResponse struct{}
 
 func (*probe) Name() kernel.PluginName { return "headless-probe" }
 
-func (*probe) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{model.Name, scene.Name, canvas.Name}
+func (p *probe) Dependencies() []kernel.PluginName {
+	return []kernel.PluginName{model.Name, p.renderer, canvas.Name}
 }
 
-func (*probe) Register(registrar *kernel.Registrar, _ any) error {
-	registrar.HandleCommand[inspectCmd](inspectCmdImpl)
+func (p *probe) Register(registrar *kernel.Registrar, _ any) error {
+	if p.renderer == scene.Name {
+		registrar.HandleCommand[inspectCmd](inspectCmdImpl)
+	}
 	registrar.HandleCommand[lookupCmd](lookupCmdImpl)
 	registrar.HandleCommand[lookupDeviceCmd](lookupDeviceCmdImpl)
 	return nil
@@ -265,25 +307,25 @@ func inspectCmdImpl() (kernel.Lock, kernel.Execute[inspectRequest, inspectRespon
 }
 
 func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]) {
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	return func(access kernel.ResourceAccess) {
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 		}, func(k kernel.Kernel, req lookupRequest) lookupResponse {
-			req.run(scene.NewLookupAccess(k, lookup.Get()))
+			req.run(model.NewLookupAccess(k, lookup.Get()))
 			return lookupResponse{}
 		}
 }
 
 func lookupDeviceCmdImpl() (kernel.Lock, kernel.Execute[lookupDeviceRequest, lookupDeviceResponse]) {
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var files kernel.Read[storage.FileSystem]
 	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, req lookupDeviceRequest) lookupDeviceResponse {
-			req.run(scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
+			req.run(model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
 			return lookupDeviceResponse{}
 		}
 }

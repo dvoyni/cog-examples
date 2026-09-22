@@ -54,7 +54,7 @@ import (
 )
 
 const (
-	CameraMain scene.CameraID = -100
+	CameraMain scene.CameraID = fountain.CameraID
 	layerHUD   canvas.Layer   = 0
 )
 

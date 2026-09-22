@@ -191,11 +191,15 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 
 // The frame is the one internal/fountain says the reference step draws: the
 // same passes, the same labels and the same instances in each, which is what
-// cmd/ecs/fountain's frame is held to as well.
+// cmd/ecs/fountain's frame is held to as well, and one draw a call, which is
+// the ceiling cmd/ecs/fountain's draws are held under.
 func TestTheReferenceStepMatchesTheExpectedFigures(t *testing.T) {
-	got := fountain.PassesOf(referenceFrame(t).snapshot.Frame)
-	if !slices.Equal(got, fountain.ReferencePasses) {
+	view := referenceFrame(t).snapshot.Frame
+	if got := fountain.PassesOf(view); !slices.Equal(got, fountain.ReferencePasses) {
 		t.Errorf("the camera's passes are %+v, want %+v", got, fountain.ReferencePasses)
+	}
+	if got := fountain.DrawsOf(view); !slices.Equal(got, fountain.ReferenceSceneDraws) {
+		t.Errorf("the camera's passes made %v draws, want %v", got, fountain.ReferenceSceneDraws)
 	}
 }
 
