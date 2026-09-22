@@ -53,8 +53,8 @@ func camera() ecsscene.Camera {
 		AmbientSky:    fountain.SkyColor,
 		AmbientGround: fountain.EarthColor,
 		Passes: m.NewList(
-			scene.Pass{Tag: tagGround, ClearColor: m.Some(fountain.BackdropColor), ClearDepth: m.Some[float32](1)},
-			scene.Pass{Tag: scene.TagForward, ClearDepth: m.Some[float32](1), Order: 1},
+			ecsscene.Pass{Tag: tagGround, ClearColor: m.Some(fountain.BackdropColor), ClearDepth: m.Some[float32](1)},
+			ecsscene.Pass{Tag: ecsscene.TagForward, ClearDepth: m.Some[float32](1), Order: 1},
 		),
 	}
 }

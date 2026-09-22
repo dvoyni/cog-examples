@@ -66,8 +66,8 @@ import (
 )
 
 const (
-	CameraMain scene.CameraID = -100
-	layerHUD   canvas.Layer   = 0
+	CameraMain ecsscene.CameraID = -100
+	layerHUD   canvas.Layer      = 0
 )
 
 // prewarmEntities is how many Entities the world reserves room for up front,

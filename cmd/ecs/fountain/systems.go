@@ -4,6 +4,7 @@ import (
 	"github.com/dvoyni/cog-examples/internal/fountain"
 	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/ecsscene"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -30,12 +31,12 @@ func setup(
 
 	nozzles.New(nozzle{
 		Place: fountain.NozzlePlace(),
-		Model: ecsscene.Model{Ref: scene.ModelRef{Path: fountain.NozzlePath}},
+		Model: ecsscene.Model{Ref: model.ModelRef{Path: fountain.NozzlePath}},
 	})
 	foxes.New(fox{
 		Place: fountain.FoxPlace(0),
-		Model: ecsscene.Model{Ref: scene.ModelRef{Path: fountain.FoxPath}},
-		Gait: ecsscene.Animation{Plays: [ecsscene.MaxPlays]scene.ClipPlay{
+		Model: ecsscene.Model{Ref: model.ModelRef{Path: fountain.FoxPath}},
+		Gait: ecsscene.Animation{Plays: [model.MaxClipPlays]model.ClipPlay{
 			{Clip: fountain.FoxWalk, Loop: true, Weight: 1},
 			{Clip: fountain.FoxRun, Loop: true},
 		}},
@@ -46,17 +47,17 @@ func setup(
 	})
 	lamps.New(lamp{
 		Place: m.Transform{Position: m.Vec3{Y: fountain.LampHeight}},
-		Light: ecsscene.Light{
-			Kind: scene.LightPoint, Color: fountain.LampColor,
+		Light: ecsscene.Light{Descr: model.LightDescr{
+			Kind: model.LightPoint, Color: fountain.LampColor,
 			Intensity: fountain.LampIntensity, Range: fountain.LampRange,
-		},
+		}},
 	})
 	lamps.New(lamp{
 		Place: fountain.SpotPlace(0),
-		Light: ecsscene.Light{
-			Kind: scene.LightSpot, Color: fountain.SpotColor, Intensity: fountain.SpotIntensity,
+		Light: ecsscene.Light{Descr: model.LightDescr{
+			Kind: model.LightSpot, Color: fountain.SpotColor, Intensity: fountain.SpotIntensity,
 			InnerCone: fountain.SpotInner, OuterCone: fountain.SpotOuter,
-		},
+		}},
 	})
 	eyes.New(eye{Place: fountain.CameraPlace(0), Camera: camera()})
 }
@@ -132,7 +133,7 @@ func prowl(foxes *ecs.Query[foxQuery], lights *ecs.Query[spotQuery], state *ecs.
 		plays[0].Weight, plays[1].Weight = fountain.FoxGait(t, &plays[0].Time, &plays[1].Time)
 	}
 	for _, it := range lights.All() {
-		if it.Light.Kind == scene.LightSpot {
+		if it.Light.Descr.Kind == model.LightSpot {
 			*it.Place = fountain.SpotPlace(t)
 		}
 	}
