@@ -19,12 +19,12 @@
 // of failure a desktop run provably cannot catch, because a native adapter
 // reports hardware limits far above the WebGPU floor.
 //
-// What it exercises: baked poses and the 60 Hz grid; ClipPlay crossfade; the
-// four-play cap and its report; the rest frame, which is a real pose rather
-// than a collapse; PoseBytes and MorphBytes; sparse morph weights; the
-// MorphWeights override winning over the animated result; the attribute mask
-// intersected with what the base primitive authored; degenerate single-joint
-// skins on a file with no skins key at all; and u8 index widening.
+// What it exercises: baked poses and the 60 Hz grid; a ClipMachine crossfading
+// on a timed trigger; the four-play cap and its report; the rest frame, which
+// is a real pose rather than a collapse; PoseBytes and MorphBytes; sparse morph
+// weights; the MorphWeights override winning over the animated result; the
+// attribute mask intersected with what the base primitive authored; degenerate
+// single-joint skins on a file with no skins key at all; and u8 index widening.
 //
 // # The four stations
 //
@@ -32,7 +32,7 @@
 // also rewinds the clock. The order is left to right, which is the order of
 // this list, of the stations table below, and of the HUD.
 //
-//	1 fox      Fox                     a real 24-joint rig: crossfade, and the rest frame beside it
+//	1 fox      Fox                     a real 24-joint rig: a gait machine's crossfade, and the rest frame beside it
 //	2 interp   InterpolationTest       the 3x3 interpolation grid, and the four-play cap beside it
 //	3 cube     AnimatedMorphCube x2    the attribute mask: the same cube at two strides
 //	4 stress   MorphStressTest         eight shapes, sparse weights, and the MorphWeights override
@@ -365,22 +365,53 @@ const (
 	FoxSurvey = "Survey"
 )
 
-// crossfadePeriod is how long the walk-to-run-and-back blend takes. It is long
-// against both clips - Walk runs 0.71s and Run 1.16s - so the gait cycles many
-// times inside one crossfade and the blend reads as a change of gait rather
-// than as a stutter.
-const crossfadePeriod = 4.0
-
-// crossfadePhase shifts the blend within its period, as a fraction of one.
+// The fox's gait machine: Walk and Run, each fading to the other on a trigger,
+// and a timed schedule firing the triggers. The first fires at gaitPhaseSteps
+// and one more every gaitDwellSteps after it, run and walk alternately.
 //
-// It exists because startTime is already spoken for. The reference time is
-// pinned by the two stations that read from a file's own clip lengths, and the
-// crossfade is the one curve in the demo that is not - it is this demo's own
-// function of the clock - so it is the one that can be moved to meet the
-// others. Without it, every time that suits the interpolation grid lands the
-// blend on one clip or the other exactly, because the grid's clips run two
-// seconds and the crossfade four.
-const crossfadePhase = 0.65
+// The schedule is in steps rather than seconds so that a trigger lands on
+// exactly one step. Its phase exists because startTime is already spoken for:
+// the reference time is pinned by the two stations that read from a file's own
+// clip lengths, and the schedule is this demo's own function of the clock, so
+// it is the one that can be moved to meet the others. Here it puts the trigger
+// at 25.5 seconds, and the reference frame catches the walk-to-run fade that
+// trigger started halfway through its 1.2 seconds.
+//
+// The fade is long against both clips - Walk runs 0.71s and Run 1.16s - so the
+// gait cycles inside it and it reads as a change of gait rather than as a
+// stutter. The dwell is long against the fade, so a run of the demo shows a
+// pure walk and a pure run between them.
+const (
+	gaitPhaseSteps = 90
+	gaitDwellSteps = 180
+	gaitFade       = 1.2
+	triggerRun     = "run"
+	triggerWalk    = "walk"
+)
+
+// newFoxGait builds the fox's gait machine over the clips Fox.glb declares.
+func newFoxGait(clips []model.ClipInfo) (model.ClipMachine, error) {
+	return model.NewClipMachine(clips,
+		[]model.ClipState{
+			{Name: foxWalk, Clip: foxWalk, Loop: true},
+			{Name: foxRun, Clip: foxRun, Loop: true},
+		},
+		[]model.ClipTransition{
+			{From: foxWalk, To: foxRun, On: triggerRun, Crossfade: gaitFade, Ease: model.EaseCubicInOut},
+			{From: foxRun, To: foxWalk, On: triggerWalk, Crossfade: gaitFade, Ease: model.EaseCubicInOut},
+		})
+}
+
+// gaitTrigger is what the schedule fires on step, or "" when it fires nothing.
+func gaitTrigger(step int) string {
+	if step < gaitPhaseSteps || (step-gaitPhaseSteps)%gaitDwellSteps != 0 {
+		return ""
+	}
+	if (step-gaitPhaseSteps)/gaitDwellSteps%2 == 0 {
+		return triggerRun
+	}
+	return triggerWalk
+}
 
 // interpNode is one cube of the interpolation grid: the clip that steers it and
 // the node that clip steers.
@@ -519,6 +550,16 @@ type Animated struct {
 	weights []float32
 	// clips is the scratch ClipInfo slice the residency read fills.
 	clips []model.ClipInfo
+	// gait is the fox's gait machine, standing at gaitStep, and gaitStart the
+	// same machine as it was built, which a rewind starts again from. Both are
+	// zero until the fox is resident, which is rigged. gaitEvents is the
+	// scratch slice a Step appends to, and lastGait the last event it
+	// reported, which the HUD prints.
+	gait, gaitStart model.ClipMachine
+	gaitStep        int
+	rigged          bool
+	gaitEvents      []model.ClipEvent
+	lastGait        string
 	// resident is which paths reported residency on the last frame, for the
 	// HUD. Clips' ok is the residency predicate the API has before the lookup
 	// facade lands, and it is false for a missing, loading and failed path
@@ -655,7 +696,7 @@ func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			a.readStats(q)
 			a.advance(inputState.Get())
 			a.record(q)
-			a.readLookup(
+			a.readLookup(k,
 				model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()),
 				model.NewLookupAccess(k, lookup.Get()))
 			a.hud(canvasQueue.Get())
@@ -782,8 +823,8 @@ func (a *Animated) record(q *scene.OpQueue) {
 	a.recordStress(q)
 }
 
-// recordFox draws the skinned station: a fox crossfading between two clips, and
-// a fox with no plays at all.
+// recordFox draws the skinned station: a fox whose gait machine crossfades
+// between two clips, and a fox with no plays at all.
 //
 // The still one is the point of the pair. An empty Plays draws row 0 of the
 // bake, which is the authored hierarchy resolved once - a real standing pose,
@@ -792,17 +833,54 @@ func (a *Animated) record(q *scene.OpQueue) {
 // beside it.
 func (a *Animated) recordFox(q *scene.OpQueue) {
 	station := &stations[stationFox]
-	walk, run := a.FoxBlend()
-	a.plays = append(a.plays[:0],
-		model.ClipPlay{Clip: foxWalk, Time: a.Time(), Loop: true, Weight: walk},
-		model.ClipPlay{Clip: foxRun, Time: a.Time(), Loop: true, Weight: run},
-	)
+	a.syncGait()
 	q.Model(0, foxPath, scene.ModelDraw{
 		Transform: foxTransform(station.x - foxSpread),
-		Plays:     a.plays,
+		Plays:     a.gait.Plays(a.plays[:0]),
 	})
 	// No Plays at all: the rest frame.
 	q.Model(0, foxPath, scene.ModelDraw{Transform: foxTransform(station.x + foxSpread)})
+}
+
+// syncGait steps the fox's gait machine to the demo's step, firing the
+// schedule's triggers on the way, and routes what it reports to the HUD. A
+// step behind the machine is a rewind, which starts again from gaitStart:
+// nothing runs a machine backwards, and the steps to catch up are cheap.
+func (a *Animated) syncGait() {
+	if !a.rigged {
+		return
+	}
+	if a.gaitStep > a.step {
+		a.gait, a.gaitStep = a.gaitStart, 0
+	}
+	for a.gaitStep < a.step {
+		a.gaitStep++
+		if trigger := gaitTrigger(a.gaitStep); trigger != "" {
+			a.gait.Fire(trigger)
+		}
+		a.gaitEvents = a.gait.Step(fixedStep, a.gaitEvents[:0])
+		for _, event := range a.gaitEvents {
+			if event.Kind == model.ClipEntered {
+				a.lastGait = fmt.Sprintf("%s entered at step %d", a.gait.StateName(event.State), a.gaitStep)
+			}
+		}
+	}
+}
+
+// GaitWeights is the weight the fox's gait machine gives each clip this step,
+// Walk first. They are the machine's own and not normalised here: scene
+// normalises a draw's plays before anything is packed, because the blend is a
+// weighted mean of TRS.
+func (a *Animated) GaitWeights() (walk, run float32) {
+	for _, play := range a.gait.Plays(a.plays[:0]) {
+		switch play.Clip {
+		case foxWalk:
+			walk += play.Weight
+		case foxRun:
+			run += play.Weight
+		}
+	}
+	return walk, run
 }
 
 // foxTransform stands one fox on the ground at x, turned to face the camera's
@@ -822,20 +900,6 @@ func foxTransform(x float32) m.Transform {
 // foxYaw turns the fox broadside to the overview camera, which stands on +Z.
 // A gait is read from the side; head-on, a walk and a run look the same.
 const foxYaw = math.Pi / 2
-
-// FoxBlend is the two crossfade weights at the current time, Walk first. They
-// slide between 1/0 and 0/1 over crossfadePeriod and back, so both are real for
-// most of the cycle and the reference frame catches the blend mid-slide rather
-// than at either end.
-//
-// They are not normalised here. Scene normalises a draw's plays before anything
-// is packed - the blend is a weighted mean of TRS, so it must - and a demo that
-// pre-normalised would be hiding the one property worth demonstrating.
-func (a *Animated) FoxBlend() (walk, run float32) {
-	phase := 2 * math.Pi * (float64(a.Time())/crossfadePeriod + crossfadePhase)
-	run = float32(0.5 - 0.5*math.Cos(phase))
-	return 1 - run, run
-}
 
 // recordInterp draws the interpolation station: the nine-cube grid, each cube a
 // Node draw with its own clip at full weight, and beside it the same file drawn
@@ -1023,14 +1087,32 @@ func (a *Animated) OverrideShape() int {
 //
 // Two facades, because the two totals need neither the filesystem nor the queue
 // and therefore sit on the half that costs a caller one resource.
-func (a *Animated) readLookup(la model.LookupDeviceAccess, totals model.LookupAccess) {
+func (a *Animated) readLookup(k kernel.Kernel, la model.LookupDeviceAccess, totals model.LookupAccess) {
 	for i, path := range ModelPaths {
 		a.clips, a.resident[i] = la.Clips(path, a.clips[:0])
+		if path == foxPath && a.resident[i] && !a.rigged {
+			if err := a.rig(a.clips); err != nil {
+				k.ReportError(err)
+			}
+		}
 		a.memory.pose[i], _ = la.PoseBytes(path)
 		a.memory.morph[i], _ = la.MorphBytes(path)
 	}
 	a.memory.totalPose = totals.TotalPoseBytes()
 	a.memory.totalMorph = totals.TotalMorphBytes()
+}
+
+// rig builds the fox's gait machine from Fox.glb's own clips, once, the first
+// frame the file is resident. The fox is drawn at its rest frame until then,
+// and the next record steps the machine up to wherever the clock stands.
+func (a *Animated) rig(clips []model.ClipInfo) error {
+	a.rigged = true
+	gait, err := newFoxGait(clips)
+	if err != nil {
+		return err
+	}
+	a.gait, a.gaitStart, a.gaitStep = gait, gait, 0
+	return nil
 }
 
 // ResidentCount is how many files reported residency on the last frame.

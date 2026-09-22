@@ -51,7 +51,7 @@ func (a *Animated) hud(q *canvas.OpQueue) {
 	if a.focus > 0 {
 		view = fmt.Sprintf("%d %s", a.focus, stations[a.focus-1].name)
 	}
-	walk, run := a.FoxBlend()
+	walk, run := a.GaitWeights()
 	override := "off, animated weights"
 	if a.override {
 		override = fmt.Sprintf("%s, 1 of %d nonzero",
@@ -63,8 +63,8 @@ func (a *Animated) hud(q *canvas.OpQueue) {
 			a.step, a.Time(), a.rate.perSecond, state),
 		fmt.Sprintf("models %d/%d resident   view %s",
 			a.ResidentCount(), len(ModelPaths), view),
-		fmt.Sprintf("fox crossfade  walk %.2f  run %.2f  (normalised by scene, not here)",
-			walk, run),
+		fmt.Sprintf("fox gait machine  walk %.2f  run %.2f  last: %s",
+			walk, run, a.lastGait),
 		fmt.Sprintf("interp cap  %d plays offered  %d blended  %d clips dropped, reported once",
 			InterpClips, CapPlays, InterpClips-CapPlays),
 		fmt.Sprintf("morph override  %s", override),

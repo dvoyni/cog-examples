@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -275,38 +276,59 @@ func TestPoseMemoryIsTheRigTimesTheGrid(t *testing.T) {
 	}
 }
 
-// The crossfade hands scene two plays with un-normalised weights that both
-// matter at the reference time. Pre-normalising here would hide the one
-// property worth demonstrating - that scene normalises across a draw's plays
-// because the blend is a weighted mean of TRS.
+// The fox's gait machine, rigged from Fox.glb's own clips, is caught
+// mid-crossfade at the reference time: two plays whose weights both matter.
+// They are handed to scene as the machine made them, and scene normalises
+// across a draw's plays because the blend is a weighted mean of TRS.
 func TestTheCrossfadeOffersTwoRealWeightsAtTheReferenceTime(t *testing.T) {
-	demo := New()
-	walk, run := demo.FoxBlend()
+	_, demo := run(t)
 	// Within one step, not exactly: the clock is a step count times 1/60, so
 	// the reference time is only representable to the step it lands on.
 	if drift := demo.Time() - startTime; drift < -fixedStep || drift > fixedStep {
 		t.Fatalf("the demo opens at %v, want the documented %v", demo.Time(), startTime)
 	}
-	if walk <= 0.05 || run <= 0.05 {
-		t.Errorf("crossfade at the reference time is walk %.3f run %.3f; "+
-			"the reference frame should catch the blend mid-slide, not at an end", walk, run)
+	if !demo.rigged {
+		t.Fatal("the fox was never rigged")
+	}
+	plays := demo.gait.Plays(nil)
+	if len(plays) != 2 {
+		t.Fatalf("at the reference time the fox plays %+v, want a crossfade of two", plays)
+	}
+	// Run is the state the last trigger entered, so it is the incoming play
+	// and comes first.
+	if plays[0].Clip != foxRun || plays[1].Clip != foxWalk {
+		t.Errorf("at the reference time the fox plays %s then %s, want Run fading in over Walk",
+			plays[0].Clip, plays[1].Clip)
+	}
+	for _, play := range plays {
+		if play.Weight <= 0.05 {
+			t.Errorf("at the reference time %s weighs %.3f; "+
+				"the reference frame should catch the fade mid-slide, not at an end", play.Clip, play.Weight)
+		}
 	}
 	// The two are a partition of one clip's worth of animation, which is what
 	// makes the pair a crossfade rather than two independent layers.
-	if total := walk + run; total < 0.999 || total > 1.001 {
+	if total := plays[0].Weight + plays[1].Weight; total < 0.999 || total > 1.001 {
 		t.Errorf("the crossfade weights total %v, want 1", total)
 	}
-	// Both ends of the slide are reachable, so a run of the demo shows a pure
-	// walk and a pure run rather than a permanent mixture.
-	pure := 0
-	for step := range int(crossfadePeriod * stepsPerSecond) {
-		demo.step = step
-		if w, r := demo.FoxBlend(); w > 0.999 || r > 0.999 {
-			pure++
+	// Both gaits are reached on their own between triggers, so a run of the
+	// demo shows a pure walk and a pure run rather than a permanent mixture.
+	pure := map[string]bool{}
+	for range 2 * gaitDwellSteps {
+		demo.step++
+		demo.syncGait()
+		if plays := demo.gait.Plays(nil); len(plays) == 1 {
+			pure[plays[0].Clip] = true
 		}
 	}
-	if pure == 0 {
-		t.Error("the crossfade never reaches either clip on its own over one period")
+	if !pure[foxWalk] || !pure[foxRun] {
+		t.Errorf("over two dwells the fox is alone in %v, want both Walk and Run", pure)
+	}
+	// A rewind starts the machine again and lands on the same plays.
+	demo.step = int(startTime * stepsPerSecond)
+	demo.syncGait()
+	if again := demo.gait.Plays(nil); !slices.Equal(again, plays) {
+		t.Errorf("after a rewind the fox plays %+v, want %+v", again, plays)
 	}
 }
 

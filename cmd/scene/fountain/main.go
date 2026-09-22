@@ -12,7 +12,7 @@
 //	the motes     a plain slice, each mote one Mesh call with its own tint in Params
 //	the basin     one Mesh call whose material serves two pass tags, ground and forward
 //	the nozzle    one Model call (WaterBottle)
-//	the fox       one Model call, its walk and run blended by its speed
+//	the fox       one Model call, its walk and run from a gait machine switched by its speed
 //	the lights    a point lamp over the nozzle, and a spot following the fox
 //	the camera    one camera orbiting on the demo clock, its two passes clearing via m.Maybe
 //
@@ -50,6 +50,7 @@ import (
 	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
 	"github.com/dvoyni/cog/slots/gfx/gfxplugin"
+	"github.com/dvoyni/cog/slots/storage"
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
@@ -89,6 +90,7 @@ const Name kernel.PluginName = "fountain"
 
 type (
 	setupHandler  kernel.Subscription[app.InitEvent]
+	rigHandler    kernel.Subscription[app.UpdateEvent]
 	stepHandler   kernel.Subscription[app.UpdateEvent]
 	rearmHandler  kernel.Subscription[app.UpdateEvent]
 	resizeHandler kernel.Subscription[app.WindowSizeChangeEvent]
@@ -97,7 +99,7 @@ type (
 func (p *Fountain) Name() kernel.PluginName { return Name }
 
 func (p *Fountain) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, model.Name, scene.Name}
+	return []kernel.PluginName{canvas.Name, gfx.Name, model.Name, scene.Name, storage.Name}
 }
 
 func (p *Fountain) Register(registrar *kernel.Registrar, _ any) error {
@@ -110,7 +112,8 @@ func (p *Fountain) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.ProvideAdapter[assets.StorageReadMount](mount)
 
 	registrar.Subscribe[setupHandler](p.setup)
-	registrar.Subscribe[stepHandler](p.step)
+	registrar.Subscribe[rigHandler](p.rig)
+	registrar.Subscribe[stepHandler](p.step).After[rigHandler]()
 	// The snapshot of a tick is taken inside gfx's present, so the handler
 	// that collects it and arms the next runs after present, at the very end
 	// of the tick: the arm lands between two ticks, and the next tick answers

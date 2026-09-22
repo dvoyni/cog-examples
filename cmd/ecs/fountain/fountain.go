@@ -14,6 +14,9 @@ import (
 type Fountain struct {
 	spray fountain.Spray
 
+	// rigged is whether rig has given the fox its gait machine.
+	rigged bool
+
 	cube, disc model.MeshRef
 
 	spawned, retired int

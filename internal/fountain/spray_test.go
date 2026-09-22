@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/libs/m"
 )
 
@@ -47,21 +48,50 @@ func TestATintFadesWithLife(t *testing.T) {
 	}
 }
 
-// The fox's blend reaches pure walk and pure run over its surge, so a run of the
-// demo shows both gaits.
-func TestTheFoxBlendReachesBothGaits(t *testing.T) {
-	pureWalk, pureRun := false, false
+// foxClips stands in for what the lookup's Clips reports of Fox.glb, which
+// this package's tests have no engine to ask.
+var foxClips = []model.ClipInfo{{Name: "Survey", Duration: 3.4}, {Name: FoxWalk, Duration: 0.7}, {Name: FoxRun, Duration: 1.16}}
+
+// Over one surge the fox's gait machine reaches a pure walk and a pure run,
+// crossfading between them, so a run of the demo shows both gaits; and a clip
+// alone advances by the ground covered over its gait's pace, which is what
+// keeps the feet planted.
+func TestTheFoxGaitReachesBothGaits(t *testing.T) {
+	gait, err := NewFoxGait(foxClips)
+	if err != nil {
+		t.Fatalf("NewFoxGait: %v", err)
+	}
+	pureWalk, pureRun, crossfades := false, false, 0
 	period := 2 * math.Pi / FoxSwell
 	for step := range int(period * StepsPerSecond) {
-		walk, run := FoxBlend(FoxSpeed(Clock(step)))
-		if walk+run != 1 {
-			t.Fatalf("weights %v and %v do not total 1", walk, run)
+		before := gait.Plays(nil)
+		FoxGait(&gait, Clock(step))
+		plays := gait.Plays(nil)
+		var total float32
+		for _, play := range plays {
+			total += play.Weight
 		}
-		pureWalk = pureWalk || walk == 1
-		pureRun = pureRun || run == 1
+		if math.Abs(float64(total-1)) > 1e-5 {
+			t.Fatalf("step %d: weights %+v do not total 1", step, plays)
+		}
+		if len(plays) > 1 {
+			crossfades++
+			continue
+		}
+		pace := map[string]float32{FoxWalk: WalkPace, FoxRun: RunPace}[plays[0].Clip]
+		pureWalk = pureWalk || plays[0].Clip == FoxWalk
+		pureRun = pureRun || plays[0].Clip == FoxRun
+		if len(before) != 1 || before[0].Clip != plays[0].Clip {
+			continue
+		}
+		want := before[0].Time + FixedStep*FoxSpeed(Clock(step))/pace
+		if math.Abs(float64(plays[0].Time-want)) > 1e-5 {
+			t.Fatalf("step %d: %s advanced to %v, want %v", step, plays[0].Clip, plays[0].Time, want)
+		}
 	}
-	if !pureWalk || !pureRun {
-		t.Errorf("over one surge the fox is pure walk %v and pure run %v; want both", pureWalk, pureRun)
+	if !pureWalk || !pureRun || crossfades == 0 {
+		t.Errorf("over one surge the fox is pure walk %v, pure run %v, and crossfades on %d steps; want all three",
+			pureWalk, pureRun, crossfades)
 	}
 }
 
