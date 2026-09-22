@@ -50,3 +50,9 @@ replace github.com/gogpu/gogpu => github.com/dvoyni/gogpu v0.54.1-0.202609101716
 replace github.com/jfreymuth/vorbis => github.com/dvoyni/vorbis v1.0.3-0.20260921150454-ab3e6ce988a8
 
 replace github.com/jfreymuth/oggvorbis => github.com/dvoyni/oggvorbis v1.0.6-0.20260921150857-546236badfd4
+
+// cog's wgpu pin, mirrored for the same reason: Go ignores a dependency's
+// replace, so without it the build resolves wgpu against upstream and loses the
+// vertex arrayStride validation (dvoyni/cog#47). Keep it on the version cog
+// pins; it comes out when cog's does.
+replace github.com/gogpu/wgpu => github.com/dvoyni/wgpu v0.34.6-0.20260922155231-6ce612817da4
