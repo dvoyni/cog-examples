@@ -111,6 +111,8 @@ import (
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
+	"github.com/dvoyni/cog/bundles/model"
+	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
@@ -169,7 +171,7 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		sceneplugin.New(),
+		modelplugin.New(), sceneplugin.New(),
 		gogpuplugin.New(),
 		mcpplugin.New(),
 		New(),
@@ -588,7 +590,7 @@ func New() *Animated {
 func (a *Animated) Name() kernel.PluginName { return Name }
 
 func (a *Animated) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, scene.Name, storage.Name}
+	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
 }
 
 func (a *Animated) Register(registrar *kernel.Registrar, _ any) error {
