@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 )
 
@@ -19,11 +20,11 @@ import (
 const foxAsset = "assets/Fox/Fox.glb"
 
 // clipsOf reads one resident model's clip table.
-func clipsOf(t *testing.T, e *headless.Engine, path string) []scene.ClipInfo {
+func clipsOf(t *testing.T, e *headless.Engine, path string) []model.ClipInfo {
 	t.Helper()
-	var clips []scene.ClipInfo
+	var clips []model.ClipInfo
 	var ok bool
-	e.LookupDevice(func(la scene.LookupDeviceAccess) { clips, ok = la.Clips(path, nil) })
+	e.LookupDevice(func(la model.LookupDeviceAccess) { clips, ok = la.Clips(path, nil) })
 	if !ok {
 		t.Fatalf("%s is not resident, so it has no clips to report", path)
 	}
@@ -35,7 +36,7 @@ func jointsOf(t *testing.T, e *headless.Engine, path string) []string {
 	t.Helper()
 	var joints []string
 	var ok bool
-	e.LookupDevice(func(la scene.LookupDeviceAccess) { joints, ok = la.Joints(path, nil) })
+	e.LookupDevice(func(la model.LookupDeviceAccess) { joints, ok = la.Joints(path, nil) })
 	if !ok {
 		t.Fatalf("%s is not resident, so it has no joints to report", path)
 	}
@@ -93,7 +94,7 @@ func TestFoxDeclaresItsThreeClipsAndItsRig(t *testing.T) {
 func TestFoxBakesTheExpectedPoseMemory(t *testing.T) {
 	e := drawing(t, foxAsset, scene.ModelDraw{})
 	var bytes int
-	e.LookupDevice(func(la scene.LookupDeviceAccess) { bytes, _ = la.PoseBytes(foxAsset) })
+	e.LookupDevice(func(la model.LookupDeviceAccess) { bytes, _ = la.PoseBytes(foxAsset) })
 	// 24 joints x 48 bytes is a row; the rest frame plus every clip's frames
 	// are the rows. A three-clip rig lands in the hundreds of kilobytes, which
 	// is the figure the spec quotes.
@@ -104,7 +105,7 @@ func TestFoxBakesTheExpectedPoseMemory(t *testing.T) {
 		t.Errorf("PoseBytes = %d; a 24-joint three-clip rig at 60 Hz should be a few hundred KiB", bytes)
 	}
 	var total int
-	e.Lookup(func(la scene.LookupAccess) { total = la.TotalPoseBytes() })
+	e.Lookup(func(la model.LookupAccess) { total = la.TotalPoseBytes() })
 	if total != bytes {
 		t.Errorf("TotalPoseBytes = %d with one model resident, want its %d", total, bytes)
 	}
@@ -114,7 +115,7 @@ func TestFoxBakesTheExpectedPoseMemory(t *testing.T) {
 // the frustum thinks of its bind-pose sphere.
 func TestFoxDrawsWithAClipPlaying(t *testing.T) {
 	e := drawing(t, foxAsset, scene.ModelDraw{
-		Plays: []scene.ClipPlay{{Clip: "Walk", Time: 0.4, Loop: true, Weight: 1}},
+		Plays: []model.ClipPlay{{Clip: "Walk", Time: 0.4, Loop: true, Weight: 1}},
 	})
 	passes := e.Passes()
 	if len(passes) != 1 {
@@ -136,10 +137,10 @@ func TestFoxDrawsWithAClipPlaying(t *testing.T) {
 // primitive rather than one per play.
 func TestFoxBlendsTwoClipsAsOneDraw(t *testing.T) {
 	single := drawing(t, foxAsset, scene.ModelDraw{
-		Plays: []scene.ClipPlay{{Clip: "Walk", Time: 0.4, Loop: true, Weight: 1}},
+		Plays: []model.ClipPlay{{Clip: "Walk", Time: 0.4, Loop: true, Weight: 1}},
 	})
 	blended := drawing(t, foxAsset, scene.ModelDraw{
-		Plays: []scene.ClipPlay{
+		Plays: []model.ClipPlay{
 			{Clip: "Walk", Time: 0.4, Loop: true, Weight: 0.5},
 			{Clip: "Run", Time: 0.2, Loop: true, Weight: 0.5},
 		},
@@ -157,11 +158,11 @@ func TestFoxBlendsTwoClipsAsOneDraw(t *testing.T) {
 // the authored hierarchy resolved once.
 func TestFoxReportsAClipNameItDoesNotCarry(t *testing.T) {
 	e := drawing(t, foxAsset, scene.ModelDraw{
-		Plays: []scene.ClipPlay{{Clip: "Gallop", Weight: 1}},
+		Plays: []model.ClipPlay{{Clip: "Gallop", Weight: 1}},
 	})
 	missing := 0
 	for _, err := range e.Errors() {
-		if _, ok := err.(scene.ErrModelClipMissing); ok {
+		if _, ok := err.(model.ErrModelClipMissing); ok {
 			missing++
 		}
 	}
@@ -196,7 +197,7 @@ func TestTheMilkTruckWheelsAreDegenerateJoints(t *testing.T) {
 	// against a node whose transform now lives in the pose buffer still works.
 	wheel := drawing(t, truckAsset, scene.ModelDraw{
 		Node:  "Wheels",
-		Plays: []scene.ClipPlay{{Clip: clips[0].Name, Time: 0.5, Loop: true, Weight: 1}},
+		Plays: []model.ClipPlay{{Clip: clips[0].Name, Time: 0.5, Loop: true, Weight: 1}},
 	})
 	if got := batches(t, wheel); got != 1 {
 		t.Errorf("the Wheels node drew %d batches while playing, want the one wheel", got)
@@ -212,8 +213,8 @@ func TestAStaticVendoredModelBakesNoPoses(t *testing.T) {
 	const bottle = "assets/WaterBottle/WaterBottle.glb"
 	e := drawing(t, bottle, scene.ModelDraw{})
 	var bytes int
-	var clips []scene.ClipInfo
-	e.LookupDevice(func(la scene.LookupDeviceAccess) {
+	var clips []model.ClipInfo
+	e.LookupDevice(func(la model.LookupDeviceAccess) {
 		bytes, _ = la.PoseBytes(bottle)
 		clips, _ = la.Clips(bottle, nil)
 	})
@@ -241,7 +242,7 @@ func TestALoopedPlayPastTheEndStillDraws(t *testing.T) {
 	}
 	for _, time := range []float32{walk * 37, -walk * 4.5, float32(math.Nextafter(float64(walk), 0))} {
 		e := drawing(t, foxAsset, scene.ModelDraw{
-			Plays: []scene.ClipPlay{{Clip: "Walk", Time: time, Loop: true, Weight: 1}},
+			Plays: []model.ClipPlay{{Clip: "Walk", Time: time, Loop: true, Weight: 1}},
 		})
 		if batches(t, e) == 0 {
 			t.Errorf("a looped play at t=%v drew nothing", time)

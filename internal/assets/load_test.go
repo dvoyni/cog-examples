@@ -7,7 +7,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/bundles/model"
 )
 
 // The vendored set, by the path a demo names. Every entry is expected to reach
@@ -70,7 +70,7 @@ func TestEveryVendoredAssetBecomesResident(t *testing.T) {
 func TestTheTruncatedAssetFailsWholesale(t *testing.T) {
 	e := engine(t)
 	preload(t, e, brokenAsset)
-	var unavailable scene.ErrModelUnavailable
+	var unavailable model.ErrModelUnavailable
 	deadline := time.Now().Add(10 * time.Second)
 	for !anyErrorAs(e.Errors(), &unavailable) {
 		if time.Now().After(deadline) {
@@ -99,7 +99,7 @@ func TestTheVendoredSetLoadsWithOnlyItsKnownReports(t *testing.T) {
 		}
 	}
 	for _, err := range e.Errors() {
-		var skipped scene.ErrModelPrimitiveSkipped
+		var skipped model.ErrModelPrimitiveSkipped
 		if errors.As(err, &skipped) {
 			// MeshPrimitiveModes is the only route to POINTS anywhere in the
 			// Khronos repository, and gfx carries no point topology: triangle
@@ -121,8 +121,8 @@ func TestPunctualLightsReachTheAppAsData(t *testing.T) {
 	if !resident(t, e, path) {
 		t.Fatalf("%s never became resident", path)
 	}
-	var lights []scene.ModelLight
-	e.LookupDevice(func(la scene.LookupDeviceAccess) { lights, _ = la.ModelLights(path, nil) })
+	var lights []model.ModelLight
+	e.LookupDevice(func(la model.LookupDeviceAccess) { lights, _ = la.ModelLights(path, nil) })
 	if len(lights) == 0 {
 		t.Fatal("the file declares punctual lights; none reached the app")
 	}
@@ -137,7 +137,7 @@ func TestPunctualLightsReachTheAppAsData(t *testing.T) {
 // flight before anything waits on it.
 func preload(t *testing.T, e *headless.Engine, paths ...string) {
 	t.Helper()
-	e.LookupDevice(func(la scene.LookupDeviceAccess) {
+	e.LookupDevice(func(la model.LookupDeviceAccess) {
 		for _, path := range paths {
 			la.Preload(path)
 		}
@@ -172,7 +172,7 @@ func resident(t *testing.T, e *headless.Engine, path string) bool {
 func residentNow(t *testing.T, e *headless.Engine, path string) bool {
 	t.Helper()
 	var ok bool
-	e.LookupDevice(func(la scene.LookupDeviceAccess) { _, ok = la.ModelLights(path, nil) })
+	e.LookupDevice(func(la model.LookupDeviceAccess) { _, ok = la.ModelLights(path, nil) })
 	return ok
 }
 

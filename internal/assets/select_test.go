@@ -6,6 +6,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -149,7 +150,7 @@ func TestATypoedNodeOnARealFileSkipsAndReports(t *testing.T) {
 	if got := batches(t, e); got != 0 {
 		t.Errorf("a typo'd node drew %d batches, want nothing at all", got)
 	}
-	var missing scene.ErrModelNodeMissing
+	var missing model.ErrModelNodeMissing
 	if !anyErrorAs(e.Errors(), &missing) {
 		t.Fatalf("errors = %v, want a missing-node report", e.Errors())
 	}
@@ -170,7 +171,7 @@ func TestMultipleScenesHasNoAddressableSceneButItsDefault(t *testing.T) {
 	if got := batches(t, e); got != 1 {
 		t.Errorf("drew %d batches, want the default scene's one and nothing for the named one", got)
 	}
-	var missing scene.ErrModelSceneMissing
+	var missing model.ErrModelSceneMissing
 	if !anyErrorAs(e.Errors(), &missing) {
 		t.Fatalf("errors = %v, want a missing-scene report", e.Errors())
 	}

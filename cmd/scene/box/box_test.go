@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
@@ -110,11 +111,11 @@ func TestBothLightsArePackedAtTheDocumentedPose(t *testing.T) {
 	for _, op := range engine.Ops() {
 		switch op.Kind {
 		case scene.OpPointLight:
-			if op.Light.Kind != scene.LightPoint {
+			if op.Light.Kind != model.LightPoint {
 				t.Errorf("the point light op carries kind %v", op.Light.Kind)
 			}
 		case scene.OpSpotLight:
-			if op.Light.Kind != scene.LightSpot || op.Light.Direction == (m.Vec3{}) {
+			if op.Light.Kind != model.LightSpot || op.Light.Direction == (m.Vec3{}) {
 				t.Errorf("the spot light op is %+v; want a spot with a direction", op.Light)
 			}
 		}

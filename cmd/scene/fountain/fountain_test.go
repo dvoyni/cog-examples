@@ -7,7 +7,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/fountain"
 	"github.com/dvoyni/cog-examples/internal/headless"
-	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/slots/gfx"
 )
 
@@ -19,7 +19,7 @@ func run(t *testing.T, n int) (*headless.Engine, *Fountain) {
 	t.Helper()
 	demo := New()
 	engine := headless.New(t, demo)
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		for _, path := range []string{fountain.NozzlePath, fountain.FoxPath} {
 			la.Preload(path)
 			if err := la.State(path); err != nil {

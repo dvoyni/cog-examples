@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -158,7 +159,7 @@ func TestTheDurableAndTemporaryMeshIDsCannotCollide(t *testing.T) {
 	if id := demo.ribbon.ID(); id&temporaryBit == 0 {
 		t.Errorf("the ribbon's id is %#x, which carries no temporary bit", id)
 	}
-	for name, ref := range map[string]scene.MeshRef{"ridge": demo.ridge, "beacon": demo.beacon} {
+	for name, ref := range map[string]model.MeshRef{"ridge": demo.ridge, "beacon": demo.beacon} {
 		if id := ref.ID(); id == 0 || id&temporaryBit != 0 {
 			t.Errorf("the %s's id is %#x, which is not a durable id", name, id)
 		}
@@ -209,9 +210,9 @@ func TestABeaconSwapSkipsADrawOfTheReleasedRef(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("the swap reported %d errors, want exactly one: %v", len(errs), errs)
 	}
-	var unavailable scene.ErrMeshUnavailable
+	var unavailable model.ErrMeshUnavailable
 	if !errors.As(errs[0], &unavailable) {
-		t.Fatalf("the swap reported %v, want a scene.ErrMeshUnavailable", errs[0])
+		t.Fatalf("the swap reported %v, want a model.ErrMeshUnavailable", errs[0])
 	}
 	if unavailable.Mesh != before.ID() {
 		t.Errorf("the report names mesh %d, want the released %d", unavailable.Mesh, before.ID())

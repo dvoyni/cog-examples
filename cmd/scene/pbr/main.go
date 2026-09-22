@@ -278,7 +278,7 @@ type Pbr struct {
 	rate  rate
 	// modelLights is the scratch ModelLights reads into, kept so a frame that
 	// re-declares a file's eight lights allocates nothing.
-	modelLights []scene.ModelLight
+	modelLights []model.ModelLight
 	// resident is which stations reported residency on the last frame, for the
 	// HUD. ModelLights' ok is the only residency predicate the API has before
 	// the lookup facade lands, and it is false for a missing, loading and
@@ -672,14 +672,14 @@ func (p *Pbr) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var files kernel.Read[storage.FileSystem]
 	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) {
@@ -687,7 +687,7 @@ func (p *Pbr) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			p.rate.measure(time.Now())
 			p.readStats(q)
 			p.advance(inputState.Get())
-			p.record(q, scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
+			p.record(q, model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
 			p.hud(canvasQueue.Get())
 		}
 }
@@ -773,7 +773,7 @@ func (p *Pbr) eye() m.Vec3 {
 
 // record records the frame: one camera, the ground, six plinths, seven model
 // draws and twenty-one lights.
-func (p *Pbr) record(q *scene.OpQueue, la scene.LookupDeviceAccess) {
+func (p *Pbr) record(q *scene.OpQueue, la model.LookupDeviceAccess) {
 	q.Camera(CameraMain, scene.CameraDescr{
 		Transform: m.LookAt(p.eye(), p.target(), m.Vec3{Y: 1}),
 		FovY:      fieldOfViewY,
@@ -819,20 +819,20 @@ func (p *Pbr) record(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 // the station's own eight and the five rim lamps are offered first and are the
 // sixteen the reference pose keeps; the five deep lamps are offered last and are
 // the five it drops.
-func (p *Pbr) recordLights(q *scene.OpQueue, la scene.LookupDeviceAccess) {
+func (p *Pbr) recordLights(q *scene.OpQueue, la model.LookupDeviceAccess) {
 	declared := 0
 
 	// The fill light. Range is left at zero, which means infinite: it is not
 	// culled by any frustum and its falloff window is open everywhere, so it is
 	// the one light in the frame with a real score at the reference pose.
-	q.PointLight(0, scene.LightDescr{
+	q.PointLight(0, model.LightDescr{
 		Position:  m.Vec3{X: 0, Y: fillHeight, Z: fillDepth},
 		Color:     fillColor,
 		Intensity: fillIntensity,
 	})
 	declared++
 
-	q.SpotLight(0, scene.LightDescr{
+	q.SpotLight(0, model.LightDescr{
 		Position:  placements[stationBottle].center.Add(m.Vec3{Y: spotHeight}),
 		Direction: m.Vec3{Y: -1},
 		Color:     bottleSpot,
@@ -843,7 +843,7 @@ func (p *Pbr) recordLights(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	})
 	declared++
 
-	q.SpotLight(0, scene.LightDescr{
+	q.SpotLight(0, model.LightDescr{
 		Position:  placements[stationAlpha].center.Add(m.Vec3{Y: spotHeight, Z: -1}),
 		Direction: m.Vec3{Y: -1, Z: 0.25},
 		Color:     alphaSpot,
@@ -857,7 +857,7 @@ func (p *Pbr) recordLights(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	declared += p.recordModelLights(q, la)
 
 	for i := range rimColors {
-		q.PointLight(0, scene.LightDescr{
+		q.PointLight(0, model.LightDescr{
 			Position:  m.Vec3{X: spread(i, rimCount, rimSpacing), Y: rimY, Z: rimZ},
 			Color:     rimColors[i],
 			Intensity: rimIntensity,
@@ -867,7 +867,7 @@ func (p *Pbr) recordLights(q *scene.OpQueue, la scene.LookupDeviceAccess) {
 	}
 
 	for i := range deepColors {
-		q.PointLight(0, scene.LightDescr{
+		q.PointLight(0, model.LightDescr{
 			Position:  m.Vec3{X: spread(i, deepCount, deepSpacing), Y: deepY, Z: deepZ},
 			Color:     deepColors[i],
 			Intensity: deepIntensity,
@@ -900,7 +900,7 @@ func spread(i, n int, spacing float32) float32 {
 // This file declares none, and the branch is here because a demo reading a
 // file's lights as data has to decide what to do with the kind it cannot
 // declare.
-func (p *Pbr) recordModelLights(q *scene.OpQueue, la scene.LookupDeviceAccess) int {
+func (p *Pbr) recordModelLights(q *scene.OpQueue, la model.LookupDeviceAccess) int {
 	station := &placements[stationLights]
 	lights, ok := la.ModelLights(stations[stationLights].path, p.modelLights[:0])
 	if !ok {
@@ -917,7 +917,7 @@ func (p *Pbr) recordModelLights(q *scene.OpQueue, la scene.LookupDeviceAccess) i
 		descr.Position = world.TransformPoint(descr.Position)
 		descr.Direction = world.TransformDirection(descr.Direction)
 		descr.Range *= station.scale
-		if descr.Kind == scene.LightSpot {
+		if descr.Kind == model.LightSpot {
 			q.SpotLight(0, descr)
 		} else {
 			q.PointLight(0, descr)
@@ -930,7 +930,7 @@ func (p *Pbr) recordModelLights(q *scene.OpQueue, la scene.LookupDeviceAccess) i
 // readResidency asks each station whether its model is drawable, for the HUD
 // alone. ModelLights' ok is the drawable predicate: it is false for a file that
 // could not be read and for one that failed to parse alike.
-func (p *Pbr) readResidency(la scene.LookupDeviceAccess) {
+func (p *Pbr) readResidency(la model.LookupDeviceAccess) {
 	for i := range stations {
 		_, ok := la.ModelLights(stations[i].path, nil)
 		p.resident[i] = ok

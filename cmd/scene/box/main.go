@@ -56,6 +56,7 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
@@ -422,13 +423,13 @@ func (p *Box) record(q *scene.OpQueue) {
 	// A warm lamp rides above the orbiting sphere, so its pool on the ground
 	// moves, and a cool spot hangs over the resting box pointing straight
 	// down. Neither writes Kind: PointLight and SpotLight set it.
-	q.PointLight(0, scene.LightDescr{
+	q.PointLight(0, model.LightDescr{
 		Position:  p.spinCenter().Add(m.Vec3{Y: lampHeight}),
 		Color:     lampColor,
 		Intensity: lampIntensity,
 		Range:     lampRange,
 	})
-	q.SpotLight(0, scene.LightDescr{
+	q.SpotLight(0, model.LightDescr{
 		Position:  restPosition.Add(m.Vec3{Y: coneHeight}),
 		Direction: m.Vec3{Y: -1},
 		Color:     coneColor,

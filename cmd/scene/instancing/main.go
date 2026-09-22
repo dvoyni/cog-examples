@@ -613,14 +613,14 @@ func (p *Instancing) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var files kernel.Read[storage.FileSystem]
 	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) {
@@ -635,7 +635,7 @@ func (p *Instancing) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// is asked at all because Ops(nil) would copy six hundred ops a
 			// frame to count them.
 			p.stats.ops = q.OpCount()
-			p.readResidency(scene.NewLookupDeviceAccess(
+			p.readResidency(model.NewLookupDeviceAccess(
 				k, lookup.Get(), files.Get(), resources.Get()))
 			p.hud(canvasQueue.Get())
 		}
@@ -746,7 +746,7 @@ func (p *Instancing) record(q *scene.OpQueue) {
 	// the ground plane; both are recorded before the models but reach the flush
 	// ahead of them anyway, since a model call expands into the draw list at
 	// flush time rather than at record time.
-	q.PointLight(0, scene.LightDescr{
+	q.PointLight(0, model.LightDescr{
 		Position:  lampPosition,
 		Color:     lampColor,
 		Intensity: lampIntensity,
@@ -798,7 +798,7 @@ const InstancedBatches = debugShapes + 1 + 1 + 1 +
 // readResidency asks each file whether it is drawable, for the HUD. State is
 // the predicate rather than an ok from some other query, because it is the only
 // one that says why a file is not there rather than only that it is not.
-func (p *Instancing) readResidency(la scene.LookupDeviceAccess) {
+func (p *Instancing) readResidency(la model.LookupDeviceAccess) {
 	for i, path := range modelPaths {
 		p.resident[i] = la.State(path) == nil
 	}

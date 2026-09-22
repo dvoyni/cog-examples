@@ -515,10 +515,10 @@ type Animated struct {
 	rate  rate
 	// plays and weights are the scratch slices the record path builds into, so
 	// a frame that offers nine plays and eight morph weights allocates nothing.
-	plays   []scene.ClipPlay
+	plays   []model.ClipPlay
 	weights []float32
 	// clips is the scratch ClipInfo slice the residency read fills.
-	clips []scene.ClipInfo
+	clips []model.ClipInfo
 	// resident is which paths reported residency on the last frame, for the
 	// HUD. Clips' ok is the residency predicate the API has before the lookup
 	// facade lands, and it is false for a missing, loading and failed path
@@ -639,14 +639,14 @@ func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
 	var inputState kernel.Read[*input.State]
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var files kernel.Read[storage.FileSystem]
 	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
 			inputState = access.GetRead[*input.State]()
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) {
@@ -656,8 +656,8 @@ func (a *Animated) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			a.advance(inputState.Get())
 			a.record(q)
 			a.readLookup(
-				scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()),
-				scene.NewLookupAccess(k, lookup.Get()))
+				model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()),
+				model.NewLookupAccess(k, lookup.Get()))
 			a.hud(canvasQueue.Get())
 		}
 }
@@ -794,8 +794,8 @@ func (a *Animated) recordFox(q *scene.OpQueue) {
 	station := &stations[stationFox]
 	walk, run := a.FoxBlend()
 	a.plays = append(a.plays[:0],
-		scene.ClipPlay{Clip: foxWalk, Time: a.Time(), Loop: true, Weight: walk},
-		scene.ClipPlay{Clip: foxRun, Time: a.Time(), Loop: true, Weight: run},
+		model.ClipPlay{Clip: foxWalk, Time: a.Time(), Loop: true, Weight: walk},
+		model.ClipPlay{Clip: foxRun, Time: a.Time(), Loop: true, Weight: run},
 	)
 	q.Model(0, foxPath, scene.ModelDraw{
 		Transform: foxTransform(station.x - foxSpread),
@@ -852,7 +852,7 @@ func (a *Animated) recordInterp(q *scene.OpQueue) {
 		for column := range interpGrid[row] {
 			cell := interpGrid[row][column]
 			a.plays = append(a.plays[:0],
-				scene.ClipPlay{Clip: cell.clip, Time: a.Time(), Loop: true, Weight: 1})
+				model.ClipPlay{Clip: cell.clip, Time: a.Time(), Loop: true, Weight: 1})
 			q.Model(0, interpPath, scene.ModelDraw{
 				// A Node draw re-roots: the cube's authored place in the
 				// file's own grid is discarded and this transform replaces it,
@@ -891,7 +891,7 @@ func (a *Animated) recordInterpCap(q *scene.OpQueue, x float32) {
 	a.plays = a.plays[:0]
 	for row := range interpGrid {
 		for column := range interpGrid[row] {
-			a.plays = append(a.plays, scene.ClipPlay{
+			a.plays = append(a.plays, model.ClipPlay{
 				Clip:   interpGrid[row][column].clip,
 				Time:   a.Time(),
 				Loop:   true,
@@ -925,7 +925,7 @@ func (a *Animated) recordInterpCap(q *scene.OpQueue, x float32) {
 func (a *Animated) recordCube(q *scene.OpQueue) {
 	station := &stations[stationCube]
 	a.plays = append(a.plays[:0],
-		scene.ClipPlay{Clip: cubeClip, Time: a.Time(), Loop: true, Weight: 1})
+		model.ClipPlay{Clip: cubeClip, Time: a.Time(), Loop: true, Weight: 1})
 	q.Model(0, cubePath, scene.ModelDraw{
 		Transform: cubeTransform(station.x - cubeSpread),
 		Plays:     a.plays,
@@ -973,7 +973,7 @@ func cubeTransform(x float32) m.Transform {
 func (a *Animated) recordStress(q *scene.OpQueue) {
 	station := &stations[stationStress]
 	a.plays = append(a.plays[:0],
-		scene.ClipPlay{Clip: stressClip, Time: a.Time(), Loop: true, Weight: 1})
+		model.ClipPlay{Clip: stressClip, Time: a.Time(), Loop: true, Weight: 1})
 	q.Model(0, stressPath, scene.ModelDraw{
 		Transform: stressTransform(station.x - stressSpread),
 		Plays:     a.plays,
@@ -1023,7 +1023,7 @@ func (a *Animated) OverrideShape() int {
 //
 // Two facades, because the two totals need neither the filesystem nor the queue
 // and therefore sit on the half that costs a caller one resource.
-func (a *Animated) readLookup(la scene.LookupDeviceAccess, totals scene.LookupAccess) {
+func (a *Animated) readLookup(la model.LookupDeviceAccess, totals model.LookupAccess) {
 	for i, path := range ModelPaths {
 		a.clips, a.resident[i] = la.Clips(path, a.clips[:0])
 		a.memory.pose[i], _ = la.PoseBytes(path)

@@ -218,31 +218,31 @@ func (p *Loading) expectedReport(err error) (bool, string) {
 			}
 		}
 	}
-	var unavailable scene.ErrModelUnavailable
+	var unavailable model.ErrModelUnavailable
 	if errors.As(err, &unavailable) {
 		if station, ok := stationForPath(unavailable.Model); ok && !station.loads {
 			return true, station.name + " names a file that cannot be loaded, on purpose"
 		}
 	}
-	var invalid scene.ErrModelPathInvalid
+	var invalid model.ErrModelPathInvalid
 	if errors.As(err, &invalid) {
 		if station, ok := stationForPath(invalid.Model); ok && !station.loads {
 			return true, station.name + " names a path that is not a resource path at all"
 		}
 	}
-	var sceneMissing scene.ErrModelSceneMissing
+	var sceneMissing model.ErrModelSceneMissing
 	if errors.As(err, &sceneMissing) {
 		if stationForSelector(sceneMissing.Model, sceneMissing.Scene, "") {
 			return true, "the unmatched Scene selector reports once and draws nothing"
 		}
 	}
-	var nodeMissing scene.ErrModelNodeMissing
+	var nodeMissing model.ErrModelNodeMissing
 	if errors.As(err, &nodeMissing) {
 		if stationForSelector(nodeMissing.Model, nodeMissing.Scene, nodeMissing.Node) {
 			return true, "the unmatched Node selector reports once and draws nothing"
 		}
 	}
-	var skipped scene.ErrModelPrimitiveSkipped
+	var skipped model.ErrModelPrimitiveSkipped
 	if errors.As(err, &skipped) && skipped.Model == pathPrimitiveModes {
 		return true, "MeshPrimitiveModes carries a POINTS primitive, which has no gfx topology"
 	}
@@ -335,8 +335,8 @@ type station struct {
 }
 
 // ref is the station's selectors as the lookup facade takes them.
-func (s *station) ref() scene.ModelRef {
-	return scene.ModelRef{Path: s.path, Scene: s.scene, Node: s.node}
+func (s *station) ref() model.ModelRef {
+	return model.ModelRef{Path: s.path, Scene: s.scene, Node: s.node}
 }
 
 // The station table. Each row's size and minY are the file's own AABB through
@@ -685,21 +685,21 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 func (p *Loading) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var inputState kernel.Read[*input.State]
 	var files kernel.Read[storage.FileSystem]
 	var resources kernel.Write[*gfx.ResourceQueue]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			inputState = access.GetRead[*input.State]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
-			la := scene.NewLookupAccess(k, lookup.Get())
-			device := scene.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+			la := model.NewLookupAccess(k, lookup.Get())
+			device := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
 			p.rate.measure(time.Now())
 			p.readStats(q, device)
 			p.advance(inputState.Get())
@@ -749,7 +749,7 @@ func (p *Loading) Retry()         { p.pending.retry = true }
 // applyUnloads gives up whatever the last key press asked for. Every one of
 // these frees at the call, and the frame this update is about to record loads
 // back whatever it still draws: a free followed by a get is a reload.
-func (p *Loading) applyUnloads(la scene.LookupAccess, device scene.LookupDeviceAccess) {
+func (p *Loading) applyUnloads(la model.LookupAccess, device model.LookupDeviceAccess) {
 	pending := p.pending
 	p.pending = pendingUnload{}
 	if pending.all {
@@ -791,7 +791,7 @@ func (p *Loading) applyUnloads(la scene.LookupAccess, device scene.LookupDeviceA
 // waits for it - the stations are recorded on the very next line whatever their
 // state, because a draw of a model that is not resident is skipped, never
 // substituted, and that is what the bare pads show.
-func (p *Loading) preload(la scene.LookupDeviceAccess) {
+func (p *Loading) preload(la model.LookupDeviceAccess) {
 	if p.preloaded {
 		return
 	}
@@ -917,7 +917,7 @@ func stationPlacement(s *station) m.Transform {
 // The first update has no flush behind it, so it takes no snapshot at all -
 // which also keeps Preload the first thing in the demo that names a path,
 // rather than a query fired to fill a table for a frame that does not exist.
-func (p *Loading) readStats(q *scene.OpQueue, la scene.LookupDeviceAccess) {
+func (p *Loading) readStats(q *scene.OpQueue, la model.LookupDeviceAccess) {
 	if p.step == 0 {
 		return
 	}
@@ -954,7 +954,7 @@ func (p *Loading) LastFlush() (recorded int, resident [len(stations)]bool, ok bo
 //
 // Two facades: the two totals need neither the filesystem nor the queue, so
 // they sit on the half a caller builds from the Lookup alone.
-func (p *Loading) readLookup(totals scene.LookupAccess, la scene.LookupDeviceAccess) {
+func (p *Loading) readLookup(totals model.LookupAccess, la model.LookupDeviceAccess) {
 	for i := range stations {
 		state := la.State(stations[i].path)
 		if !p.known[i] || (p.states[i] == nil) != (state == nil) {

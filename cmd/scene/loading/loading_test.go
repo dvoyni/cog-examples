@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/kernel"
 	"github.com/dvoyni/cog/libs/m"
@@ -253,7 +254,7 @@ func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
 	// No demo plugin: nothing in this engine records a single op, so the
 	// asset set is mounted on its own.
 	engine := headless.New(t, headless.Mounting(mount))
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		la.Preload(pathQuantized)
 		if err := la.State(pathQuantized); err != nil {
 			t.Fatalf("Preload left %q unloaded: %v", pathQuantized, err)
@@ -277,7 +278,7 @@ func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
 func loadNow(t *testing.T, engine *headless.Engine, path string) {
 	t.Helper()
 	var err error
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		la.Preload(path)
 		err = la.State(path)
 	})
@@ -291,7 +292,7 @@ func loadNow(t *testing.T, engine *headless.Engine, path string) {
 func failNow(t *testing.T, engine *headless.Engine, path string) {
 	t.Helper()
 	var err error
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		la.Preload(path)
 		err = la.State(path)
 	})
@@ -314,12 +315,12 @@ func failNow(t *testing.T, engine *headless.Engine, path string) {
 func TestEveryFailureHappensInTheCallThatAsked(t *testing.T) {
 	engine, demo := start(t)
 	var invalid, truncated, absent error
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		invalid = la.State(pathInvalid)
 		truncated = la.State(pathTruncated)
 		absent = la.State(pathMissing)
 	})
-	if _, ok := invalid.(scene.ErrModelPathInvalid); !ok {
+	if _, ok := invalid.(model.ErrModelPathInvalid); !ok {
 		t.Errorf("the first State of an invalid path is %v, want it refused before the cache", invalid)
 	}
 	for name, err := range map[string]error{"truncated": truncated, "absent": absent} {
@@ -337,7 +338,7 @@ func TestEveryFailureHappensInTheCallThatAsked(t *testing.T) {
 		if strings.Contains(err.Error(), pathMissing) && errors.Is(err, fs.ErrNotExist) {
 			notExist = true
 		}
-		var unavailable scene.ErrModelUnavailable
+		var unavailable model.ErrModelUnavailable
 		if errors.As(err, &unavailable) && unavailable.Model == pathTruncated {
 			unexpectedEOF = !errors.Is(err, fs.ErrNotExist)
 		}
@@ -356,7 +357,7 @@ func TestEveryFailureHappensInTheCallThatAsked(t *testing.T) {
 func reportsFor(engine *headless.Engine, path string) int {
 	count := 0
 	for _, err := range engine.Errors() {
-		var unavailable scene.ErrModelUnavailable
+		var unavailable model.ErrModelUnavailable
 		if errors.As(err, &unavailable) && unavailable.Model == path {
 			count++
 			continue
@@ -401,7 +402,7 @@ func TestAFailedPathNeverRetriesAndUnloadIsTheOnlyLever(t *testing.T) {
 		}
 		for _, path := range []string{pathTruncated, pathMissing, pathInvalid} {
 			var err error
-			engine.LookupDevice(func(la scene.LookupDeviceAccess) { err = la.State(path) })
+			engine.LookupDevice(func(la model.LookupDeviceAccess) { err = la.State(path) })
 			if err == nil {
 				t.Fatalf("on frame %d %s loaded, want it still failed", frame, path)
 			}
@@ -435,7 +436,7 @@ func TestAFailedPathNeverRetriesAndUnloadIsTheOnlyLever(t *testing.T) {
 func TestNodesListsTheSubtreeDepthFirst(t *testing.T) {
 	engine, _ := run(t)
 	for _, c := range []struct {
-		ref  scene.ModelRef
+		ref  model.ModelRef
 		want []string
 	}{
 		{stations[stationScene].ref(),
@@ -448,7 +449,7 @@ func TestNodesListsTheSubtreeDepthFirst(t *testing.T) {
 	} {
 		var got []string
 		var ok bool
-		engine.LookupDevice(func(la scene.LookupDeviceAccess) { got, ok = la.Nodes(c.ref, nil) })
+		engine.LookupDevice(func(la model.LookupDeviceAccess) { got, ok = la.Nodes(c.ref, nil) })
 		if !ok {
 			t.Errorf("Nodes(%+v) answered false", c.ref)
 			continue
@@ -472,14 +473,14 @@ func TestNodesListsTheSubtreeDepthFirst(t *testing.T) {
 // one that separates those from a path that is still loading.
 func TestEveryQueryAnswersFalseForAnUnresolvedRef(t *testing.T) {
 	engine, _ := run(t)
-	for _, ref := range []scene.ModelRef{
+	for _, ref := range []model.ModelRef{
 		{Path: pathTruncated},
 		{Path: pathMissing},
 		{Path: pathInvalid},
 		stations[stationNoSuchScene].ref(),
 		stations[stationNoSuchNode].ref(),
 	} {
-		engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+		engine.LookupDevice(func(la model.LookupDeviceAccess) {
 			if _, ok := la.Nodes(ref, nil); ok {
 				t.Errorf("Nodes(%+v) answered true", ref)
 			}
@@ -509,7 +510,7 @@ func TestTheStationTableMeasuresTheVendoredBytes(t *testing.T) {
 		}
 		var min, max m.Vec3
 		var ok bool
-		engine.LookupDevice(func(la scene.LookupDeviceAccess) { min, max, ok = la.AABB(station.ref()) })
+		engine.LookupDevice(func(la model.LookupDeviceAccess) { min, max, ok = la.AABB(station.ref()) })
 		if !ok {
 			t.Errorf("station %q: AABB answered false", station.name)
 			continue
@@ -558,7 +559,7 @@ func TestReRootingDiscardsEveryAncestorTransform(t *testing.T) {
 	for at, index := range [2]int{stationWheel, stationWheelOther} {
 		var min, max m.Vec3
 		var ok bool
-		engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+		engine.LookupDevice(func(la model.LookupDeviceAccess) {
 			min, max, ok = la.AABB(stations[index].ref())
 		})
 		if !ok {
@@ -584,7 +585,7 @@ func TestReRootingDiscardsEveryAncestorTransform(t *testing.T) {
 func TestAWholeSceneDrawKeepsTheRootTransformAndANodeDrawDiscardsIt(t *testing.T) {
 	engine, _ := run(t)
 	var whole, body m.Box3
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
 		min, max, _ := la.AABB(stations[stationScene].ref())
 		whole = m.Box3{Min: min, Max: max}
 		min, max, _ = la.AABB(stations[stationBody].ref())
@@ -621,10 +622,10 @@ func TestAMatchedSceneSelectorResolvesToTheSameDrawAsTheDefault(t *testing.T) {
 	engine, _ := run(t)
 	var named, byDefault m.Box3
 	var namedOK, defaultOK bool
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
-		min, max, ok := la.AABB(scene.ModelRef{Path: pathTruck, Scene: "Scene"})
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
+		min, max, ok := la.AABB(model.ModelRef{Path: pathTruck, Scene: "Scene"})
 		named, namedOK = m.Box3{Min: min, Max: max}, ok
-		min, max, ok = la.AABB(scene.ModelRef{Path: pathTruck})
+		min, max, ok = la.AABB(model.ModelRef{Path: pathTruck})
 		byDefault, defaultOK = m.Box3{Min: min, Max: max}, ok
 	})
 	if !namedOK {
@@ -647,11 +648,11 @@ func TestAnUnmatchedSelectorReportsOnceHoweverManyFramesDrawIt(t *testing.T) {
 	engine.Steps(60)
 	var sceneReports, nodeReports int
 	for _, err := range engine.Errors() {
-		var missingScene scene.ErrModelSceneMissing
+		var missingScene model.ErrModelSceneMissing
 		if errors.As(err, &missingScene) && missingScene.Scene == stations[stationNoSuchScene].scene {
 			sceneReports++
 		}
-		var missingNode scene.ErrModelNodeMissing
+		var missingNode model.ErrModelNodeMissing
 		if errors.As(err, &missingNode) && missingNode.Node == stations[stationNoSuchNode].node {
 			nodeReports++
 		}
@@ -687,7 +688,7 @@ func TestTheTextureCacheBakesOneTexturePerImageNotPerGlTFTexture(t *testing.T) {
 		t.Fatalf("locate assets: %v", err)
 	}
 	engine := headless.New(t, headless.Mounting(mount))
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) { la.Preload(pathSamplers) })
+	engine.LookupDevice(func(la model.LookupDeviceAccess) { la.Preload(pathSamplers) })
 	loadNow(t, engine, pathSamplers)
 	backend := engine.Backend()
 	// Every model texture is baked with a mip chain and scene's own two 1x1
@@ -926,7 +927,7 @@ func TestEveryPrimitiveModeBecomesAListAndPointsIsSkipped(t *testing.T) {
 	// The POINTS primitive is skipped and the rest of the model still draws.
 	var skipped int
 	for _, err := range engine.Errors() {
-		var primitive scene.ErrModelPrimitiveSkipped
+		var primitive model.ErrModelPrimitiveSkipped
 		if errors.As(err, &primitive) && primitive.Model == pathPrimitiveModes {
 			skipped++
 		}
@@ -965,7 +966,7 @@ func TestTheConvertedLinePrimitivesReachALinePipeline(t *testing.T) {
 func TestTheQuantisedCubeDequantisesToItsPlainTwinsBounds(t *testing.T) {
 	engine, _ := run(t)
 	const plain = "assets/AnimatedMorphCube/AnimatedMorphCube.glb"
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) { la.Preload(plain) })
+	engine.LookupDevice(func(la model.LookupDeviceAccess) { la.Preload(plain) })
 	loadNow(t, engine, plain)
 
 	doc := parse(t, pathQuantized)
@@ -973,10 +974,10 @@ func TestTheQuantisedCubeDequantisesToItsPlainTwinsBounds(t *testing.T) {
 		t.Fatalf("%s no longer requires KHR_mesh_quantization", pathQuantized)
 	}
 	var quantised, twin m.Box3
-	engine.LookupDevice(func(la scene.LookupDeviceAccess) {
-		min, max, _ := la.AABB(scene.ModelRef{Path: pathQuantized})
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
+		min, max, _ := la.AABB(model.ModelRef{Path: pathQuantized})
 		quantised = m.Box3{Min: min, Max: max}
-		min, max, _ = la.AABB(scene.ModelRef{Path: plain})
+		min, max, _ = la.AABB(model.ModelRef{Path: plain})
 		twin = m.Box3{Min: min, Max: max}
 	})
 	// A tolerance, not equality: the quantised file stores the same cube in

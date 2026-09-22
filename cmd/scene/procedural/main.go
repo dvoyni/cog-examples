@@ -172,7 +172,7 @@ func main() {
 // swallowed the whole class would be a demo that cannot tell you its material
 // stopped binding.
 func (p *Procedural) report(err error) error {
-	var unavailable scene.ErrMeshUnavailable
+	var unavailable model.ErrMeshUnavailable
 	if errors.As(err, &unavailable) && unavailable.Mesh == p.staleID.Load() {
 		log.Printf("procedural: %v (expected: the released ref is drawn once on purpose)", err)
 		return nil
@@ -314,9 +314,9 @@ type Procedural struct {
 	// ridge is the durable mesh rebuilt every frame, and ridgeCellCount the
 	// resolution it currently carries. ribbon is the frame-local one, valid
 	// only in the frame that minted it.
-	ridge          scene.MeshRef
+	ridge          model.MeshRef
 	ridgeCellCount int
-	ribbon         scene.MeshRef
+	ribbon         model.MeshRef
 	ribbonVertices int
 
 	// beacon is the durable mesh released and re-baked every beaconPeriod
@@ -324,9 +324,9 @@ type Procedural struct {
 	// the ref the last release invalidated, drawn for exactly one frame to show
 	// that a released ref is skipped rather than drawing whatever now occupies
 	// its slot; staleDraws counts how many times the demo has done that.
-	beacon     scene.MeshRef
+	beacon     model.MeshRef
 	generation int
-	stale      scene.MeshRef
+	stale      model.MeshRef
 	staleDrawn bool
 	staleDraws int
 	// staleID is the id of the ref this frame's ghost draw names, or zero on
@@ -428,7 +428,7 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 
 // draw records the whole frame, and is also where the demo's meshes are minted.
 //
-// It holds the *scene.Lookup write lock and the filesystem read lock so it can
+// It holds the *model.Lookup write lock and the filesystem read lock so it can
 // build a LookupAccess, which is the only way to bake, update or release a
 // durable mesh. Taking them in the same handler that records is deliberate:
 // BakeMesh mints its ref immediately and queues the upload onto the Lookup for
@@ -437,19 +437,19 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 func (p *Procedural) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 	var sceneQueue kernel.Write[*scene.OpQueue]
 	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var lookup kernel.Write[*scene.Lookup]
+	var lookup kernel.Write[*model.Lookup]
 	var inputState kernel.Read[*input.State]
 	return func(access kernel.ResourceAccess) {
 			sceneQueue = access.GetWrite[*scene.OpQueue]()
 			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			lookup = access.GetWrite[*scene.Lookup]()
+			lookup = access.GetWrite[*model.Lookup]()
 			inputState = access.GetRead[*input.State]()
 		}, func(k kernel.Kernel, _ app.UpdateEvent) {
 			q := sceneQueue.Get()
 			p.rate.measure(time.Now())
 			p.readStats(q)
 			p.advance(inputState.Get())
-			p.mint(q, scene.NewLookupAccess(k, lookup.Get()))
+			p.mint(q, model.NewLookupAccess(k, lookup.Get()))
 			p.record(q)
 			p.hud(canvasQueue.Get())
 		}
@@ -507,8 +507,8 @@ func (p *Procedural) eye() m.Vec3 {
 // ribbon is minted fresh every frame and is invalid the moment the frame ends.
 // The beacon is released and re-baked on the beat, and the ref the release
 // invalidated is kept for exactly one frame so record can prove it is skipped.
-func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
-	p.stale, p.staleDrawn = scene.MeshRef{}, false
+func (p *Procedural) mint(q *scene.OpQueue, la model.LookupAccess) {
+	p.stale, p.staleDrawn = model.MeshRef{}, false
 	p.staleID.Store(0)
 
 	// The ridge. UpdateMesh replaces the geometry wholesale at any size while
@@ -522,7 +522,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 		p.ridgeCellCount = ridgeCells
 	}
 	vertices, indices := ridgeGeometry(p.ridgeCellCount, p.time()*ridgeSpeed)
-	if p.ridge == (scene.MeshRef{}) {
+	if p.ridge == (model.MeshRef{}) {
 		p.ridge = la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
 	} else {
 		la.UpdateMesh(p.ridge, vertices, indices)
@@ -541,7 +541,7 @@ func (p *Procedural) mint(q *scene.OpQueue, la scene.LookupAccess) {
 	// freed at the frame boundary, so nothing the frame already recorded draws
 	// from a dead buffer.
 	switch {
-	case p.beacon == (scene.MeshRef{}):
+	case p.beacon == (model.MeshRef{}):
 		p.beacon = bakeBeacon(la, p.generation)
 	case p.step > 0 && p.step%beaconPeriod == 0:
 		p.stale, p.staleDrawn = p.beacon, true
@@ -677,7 +677,7 @@ func (p *Procedural) readStats(q *scene.OpQueue) {
 // bakeBeacon bakes one generation of the beacon. It exists because BakeMesh
 // takes a topology alongside the geometry, so a builder returning vertices and
 // indices cannot be spread into the call.
-func bakeBeacon(la scene.LookupAccess, generation int) scene.MeshRef {
+func bakeBeacon(la model.LookupAccess, generation int) model.MeshRef {
 	vertices, indices := beaconGeometry(beaconTint(generation))
 	return la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
 }

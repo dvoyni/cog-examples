@@ -3,6 +3,7 @@ package assets_test
 import (
 	"testing"
 
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 )
 
@@ -27,7 +28,7 @@ func morphTargetsOf(t *testing.T, path string, draw scene.ModelDraw) ([]string, 
 	var names []string
 	var bytes int
 	var ok bool
-	e.LookupDevice(func(la scene.LookupDeviceAccess) {
+	e.LookupDevice(func(la model.LookupDeviceAccess) {
 		names, ok = la.MorphTargets(path, nil)
 		bytes, _ = la.MorphBytes(path)
 	})
@@ -141,14 +142,14 @@ func TestMorphStressTestPlaysItsWeightsOnlyClips(t *testing.T) {
 		t.Error("a weights-only file baked joints; morph weights reshape a mesh and leave the node")
 	}
 	var poses int
-	e.LookupDevice(func(la scene.LookupDeviceAccess) { poses, _ = la.PoseBytes(morphStressAsset) })
+	e.LookupDevice(func(la model.LookupDeviceAccess) { poses, _ = la.PoseBytes(morphStressAsset) })
 	if poses != 0 {
 		t.Errorf("PoseBytes = %d, want none for a file with no rig", poses)
 	}
 	// Playing one still draws both primitives as one batch each: a clip changes
 	// the weights an instance carries, not how many draws there are.
 	playing := drawing(t, morphStressAsset, scene.ModelDraw{
-		Plays: []scene.ClipPlay{{Clip: "TheWave", Time: 0.9, Loop: true, Weight: 1}},
+		Plays: []model.ClipPlay{{Clip: "TheWave", Time: 0.9, Loop: true, Weight: 1}},
 	})
 	if got, want := batches(t, playing), batches(t, e); got != want {
 		t.Errorf("a playing file drew %d batches and a still one %d; a clip is not a draw",
@@ -169,7 +170,7 @@ func TestAnOverLongMorphWeightsReportsOnceAndStillDraws(t *testing.T) {
 	e.Steps(3)
 	over := 0
 	for _, err := range e.Errors() {
-		if _, ok := err.(scene.ErrModelMorphWeightsOverLength); ok {
+		if _, ok := err.(model.ErrModelMorphWeightsOverLength); ok {
 			over++
 		}
 	}
