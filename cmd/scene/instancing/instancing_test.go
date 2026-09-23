@@ -439,10 +439,10 @@ func TestEveryBatchReachesTheBackendAsOneInstancedDraw(t *testing.T) {
 //
 // The two are the same discipline and differ in what a range means. Every draw
 // of a pass binds the same slice of the instance arena - the pass's own - and
-// finds its instances inside it through firstInstance; every draw binds its own
-// 160-byte material record at its own 256-aligned offset, because a storage
-// binding's offset must be aligned and there is deliberately no dedupe.
-func TestOneInstanceArenaAndOneMaterialRecordPerBatch(t *testing.T) {
+// finds its instances inside it through firstInstance. A batch binds no
+// material record of scene's: its material's numbers are params gfx packs into
+// the shader's uniform block by name.
+func TestOneInstanceArenaPerPass(t *testing.T) {
 	engine, _ := run(t)
 	view := pass(t, engine)
 	backend := engine.Backend()
@@ -462,30 +462,6 @@ func TestOneInstanceArenaAndOneMaterialRecordPerBatch(t *testing.T) {
 			instances[0].Size, view.Instances, want)
 	}
 
-	materials := lastBindings(t, engine, 1, 0, len(view.Batches))
-	seen := map[int]bool{}
-	for i, bound := range materials {
-		if bound.Buffer != materials[0].Buffer {
-			t.Errorf("batch %d took its material record from buffer %d, not the frame's %d",
-				i, bound.Buffer, materials[0].Buffer)
-		}
-		if bound.Size != materialRecordSize {
-			t.Errorf("batch %d bound %d bytes of material record, want %d",
-				i, bound.Size, materialRecordSize)
-		}
-		if bound.Offset%storageAlignment != 0 {
-			t.Errorf("batch %d bound its material record at offset %d, which is not %d-aligned",
-				i, bound.Offset, storageAlignment)
-		}
-		if seen[bound.Offset] {
-			t.Errorf("two batches share the material record at offset %d; there is no dedupe",
-				bound.Offset)
-		}
-		seen[bound.Offset] = true
-	}
-	if len(seen) != len(view.Batches) {
-		t.Errorf("%d distinct material records for %d batches", len(seen), len(view.Batches))
-	}
 	if backend.Presents == 0 {
 		t.Error("the backend was never asked to present")
 	}
@@ -600,11 +576,6 @@ func TestTheReferencePoseIsTheSameFrameAtEveryStep(t *testing.T) {
 //	                        offset and the flags
 const (
 	instanceRecordSize = 64
-	// materialRecordSize is scenePbrRecord's size, and storageAlignment is the
-	// offset alignment a storage binding must take, which is why 160-byte
-	// records land 256 bytes apart.
-	materialRecordSize = 160
-	storageAlignment   = 256
 	// sceneNonUniform marks an instance whose world matrix does not scale
 	// uniformly, and is the shader's signal to take an inverse-transpose for
 	// its normals.

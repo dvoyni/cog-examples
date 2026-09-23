@@ -108,10 +108,11 @@ type DrawCall struct {
 const sceneShaderPath = "builtin/scene/scene.wgsl"
 
 // sceneShaderLayout mirrors bundles/scene/builtin/scene/scene.wgsl's declared bindings
-// with both defines supplied, all seventeen of them. sceneVariantLayout cuts it
-// down to what a variant actually declares.
+// with both defines supplied, all sixteen of them, and its one uniform block,
+// the material's numbers. sceneVariantLayout cuts it down to what a variant
+// actually declares.
 //
-// It has to be all seventeen rather than the ones a given assertion cares
+// It has to be all sixteen rather than the ones a given assertion cares
 // about, because gfx resolves a recorder's parameters by name against the
 // reflected layout: a binding this list omits is silently dropped on the way to
 // the backend, which is indistinguishable here from a flush that never packed
@@ -119,28 +120,45 @@ const sceneShaderPath = "builtin/scene/scene.wgsl"
 // assert that a skinned draw binds its poses, and the omission read as scene
 // not binding them at all.
 //
-// The seven storage buffers are also the whole of scene's budget against the
-// browser floor of eight, so a mirror that has drifted short of the real
-// shader would let a demo pass a limit check the browser will fail.
-var sceneShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
-	{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
-	{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
-	{Name: "sceneAnim", StorageBuffer: true, Group: 0, Binding: 2},
-	{Name: "scenePbrMaterial", StorageBuffer: true, Group: 1, Binding: 0},
-	{Name: "baseColorTexture", Group: 1, Binding: 1},
-	{Name: "baseColorSampler", Sampler: true, Group: 1, Binding: 2},
-	{Name: "metallicRoughnessTexture", Group: 1, Binding: 3},
-	{Name: "metallicRoughnessSampler", Sampler: true, Group: 1, Binding: 4},
-	{Name: "normalTexture", Group: 1, Binding: 5},
-	{Name: "normalSampler", Sampler: true, Group: 1, Binding: 6},
-	{Name: "occlusionTexture", Group: 1, Binding: 7},
-	{Name: "occlusionSampler", Sampler: true, Group: 1, Binding: 8},
-	{Name: "emissiveTexture", Group: 1, Binding: 9},
-	{Name: "emissiveSampler", Sampler: true, Group: 1, Binding: 10},
-	{Name: "scenePoses", StorageBuffer: true, Group: 2, Binding: 0},
-	{Name: "sceneSkinJoints", StorageBuffer: true, Group: 2, Binding: 1},
-	{Name: "sceneMorphDeltas", StorageBuffer: true, Group: 2, Binding: 2},
-}}
+// The six storage buffers are also scene's budget against the browser floor of
+// eight, so a mirror that has drifted short of the real shader would let a demo
+// pass a limit check the browser will fail.
+//
+// The uniform block is scenePbrMaterial, which gfx packs per draw from the
+// draw's params by member name; the offsets are the ones gogpu reflects.
+var sceneShaderLayout = gfx.ShaderLayout{
+	UniformSize: 160, UniformGroup: 1, UniformBinding: 0,
+	Uniforms: []gfx.UniformMember{
+		{Name: "baseColorFactor", Offset: 0}, {Name: "emissiveFactor", Offset: 16},
+		{Name: "baseColorTransform", Offset: 32}, {Name: "metallicRoughnessTransform", Offset: 48},
+		{Name: "normalTransform", Offset: 64}, {Name: "occlusionTransform", Offset: 80},
+		{Name: "emissiveTransform", Offset: 96},
+		{Name: "baseColorRotation", Offset: 112}, {Name: "metallicRoughnessRotation", Offset: 116},
+		{Name: "normalRotation", Offset: 120}, {Name: "occlusionRotation", Offset: 124},
+		{Name: "emissiveRotation", Offset: 128},
+		{Name: "metallicFactor", Offset: 132}, {Name: "roughnessFactor", Offset: 136},
+		{Name: "normalScale", Offset: 140}, {Name: "occlusionStrength", Offset: 144},
+		{Name: "alphaCutoff", Offset: 148}, {Name: "uvSets", Offset: 152},
+	},
+	Resources: []gfx.ShaderResource{
+		{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
+		{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
+		{Name: "sceneAnim", StorageBuffer: true, Group: 0, Binding: 2},
+		{Name: "baseColorTexture", Group: 1, Binding: 1},
+		{Name: "baseColorSampler", Sampler: true, Group: 1, Binding: 2},
+		{Name: "metallicRoughnessTexture", Group: 1, Binding: 3},
+		{Name: "metallicRoughnessSampler", Sampler: true, Group: 1, Binding: 4},
+		{Name: "normalTexture", Group: 1, Binding: 5},
+		{Name: "normalSampler", Sampler: true, Group: 1, Binding: 6},
+		{Name: "occlusionTexture", Group: 1, Binding: 7},
+		{Name: "occlusionSampler", Sampler: true, Group: 1, Binding: 8},
+		{Name: "emissiveTexture", Group: 1, Binding: 9},
+		{Name: "emissiveSampler", Sampler: true, Group: 1, Binding: 10},
+		{Name: "scenePoses", StorageBuffer: true, Group: 2, Binding: 0},
+		{Name: "sceneSkinJoints", StorageBuffer: true, Group: 2, Binding: 1},
+		{Name: "sceneMorphDeltas", StorageBuffer: true, Group: 2, Binding: 2},
+	},
+}
 
 // Ready is true from the start: the fake has no device to wait for.
 func (b *Backend) Ready() bool { return true }
@@ -198,7 +216,10 @@ func sceneVariantLayout(label string) (gfx.ShaderLayout, bool) {
 		}
 		return true
 	}
-	layout := gfx.ShaderLayout{Resources: make([]gfx.ShaderResource, 0, len(sceneShaderLayout.Resources))}
+	// Every variant declares the material's uniform block; only group 2 and
+	// sceneAnim vary.
+	layout := sceneShaderLayout
+	layout.Resources = make([]gfx.ShaderResource, 0, len(sceneShaderLayout.Resources))
 	for _, resource := range sceneShaderLayout.Resources {
 		if declared(resource) {
 			layout.Resources = append(layout.Resources, resource)

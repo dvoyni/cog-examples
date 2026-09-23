@@ -235,8 +235,9 @@ func TestABeaconSwapSkipsADrawOfTheReleasedRef(t *testing.T) {
 // does not declare costs nothing, while a binding it declares and nobody binds
 // costs the draw, reported as gfx.ErrStorageBufferUnsupplied.
 //
-// Every draw in the frame binds sceneFrame and sceneInstances. Only the ground
-// plane, which takes the bundled PBR, binds scenePbrMaterial as well.
+// Every draw in the frame binds sceneFrame and sceneInstances, bundled or
+// custom alike: scene binds only what describes the scene, never a material's
+// numbers, so the two kinds of draw differ only in the pipeline they draw with.
 func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 	_, engine := run(t, referenceStep)
 	backend := engine.Backend()
@@ -246,7 +247,6 @@ func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 	}
 	frames := counts[headless.BufferBinding{Group: 0, Binding: 0}]
 	instances := counts[headless.BufferBinding{Group: 0, Binding: 1}]
-	material := counts[headless.BufferBinding{Group: 1, Binding: 0}]
 	// The counts are of scene's draws only. The backend's own Draws list is
 	// longer, because canvas's HUD is in it too and binds nothing scene named.
 	if frames == 0 {
@@ -256,14 +256,20 @@ func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 		t.Errorf("%d draws bound sceneFrame and %d bound sceneInstances; every scene draw "+
 			"binds both", frames, instances)
 	}
-	if material == 0 {
-		t.Fatal("no draw bound scenePbrMaterial; the two bundled draws should")
+	if stray := len(counts) - 2; stray != 0 {
+		t.Errorf("scene bound %d storage slots beyond sceneFrame and sceneInstances: %v", stray, counts)
 	}
 	// Every frame packs BundledDraws bundled draws and CustomDraws custom ones,
 	// so the two counts hold that ratio however many frames were driven.
-	if custom := frames - material; custom*BundledDraws != material*CustomDraws {
-		t.Errorf("%d draws bound scenePbrMaterial and %d did not; want %d custom-material "+
-			"draws for every %d bundled ones", material, custom, CustomDraws, BundledDraws)
+	bundled := 0
+	for _, draw := range backend.Draws {
+		if backend.IsScenePipeline(draw.Pipeline) {
+			bundled++
+		}
+	}
+	if custom := frames - bundled; custom*BundledDraws != bundled*CustomDraws {
+		t.Errorf("%d draws went through the bundled shader and %d did not; want %d custom-material "+
+			"draws for every %d bundled ones", bundled, custom, CustomDraws, BundledDraws)
 	}
 }
 
