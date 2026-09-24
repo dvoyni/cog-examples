@@ -9,10 +9,10 @@ examples are collected here for later publication alongside the engine.
 
 - `cmd/<plugin>/<demo>/main.go` — one `main.go` per demo, grouped by the plugin
   it exercises: `cmd/scene/` for the scene plugin, `cmd/canvas/` for canvas,
-  `cmd/ecs/` for the entity-component plugin and its scene binding, `cmd/sound/`
+  `cmd/ecs/` for the entity-component plugin's 2D physics binding, `cmd/sound/`
   for audio.
   Each demo is self-contained: it wires its own plugin list and holds its own
-  gameplay plugin in the same file. Everything two levels under `cmd/` is a
+  gameplay plugin in its own directory. Everything two levels under `cmd/` is a
   demo, which is what the browser build and its guard walk; the tools beside
   them - `cmd/prepare-assets/`, `cmd/looptag/`, `cmd/web/` - are one level and
   are not.
@@ -70,20 +70,23 @@ and runs against the sibling `cog`; every other demo starts from its wiring.
 Each demo owns one part of a plugin's contract, and each carries its own
 `main.go` doc comment saying what it exercises and what only eyes can judge.
 
-The scene demos:
+The scene demos. scene draws Entities, so every one of them but `hello` is an
+ecs app: its Systems spawn and move Entities carrying scene's Components, and
+scene's own Systems turn them into draws. Each keeps the Components it declares
+in `components.go` and each System in a file named for it.
 
 | demo | what it is for |
 | --- | --- |
 | `hello` | the smallest cog app, and the wiring every scene demo starts from |
 | `tracer` | the narrowest complete path through every layer, made to be looked at |
 | `box` | the whole debug vocabulary, with no file on disk anywhere in the frame |
-| `procedural` | caller-owned geometry, and a material this program wrote itself, lit through the engine's published `sceneShadeSurface` under scene and ecsscene |
+| `procedural` | caller-owned geometry, and a material this program wrote itself, lit through the engine's published `sceneShadeSurface` |
 | `pbr` | the material and lighting contract, over six Khronos models |
 | `animated` | skinning, morph targets, and the browser canary |
 | `instancing` | one call for five hundred crates, per-instance culling, and the sort key |
 | `cameras` | two cameras, a texture target, layers, and the coordinate helpers |
 | `loading` | residency, model addressing, and the lookup facade |
-| `api-sketch` | a paper prototype of the recording API; it draws nothing |
+| `fountain` | the scene showcase: every scene Component in one frame, spawned and retired by Systems, the motes drawn in batches |
 
 The canvas demos:
 
@@ -91,11 +94,10 @@ The canvas demos:
 | --- | --- |
 | `rendertexture` | a layer rendered into a texture, drawn back as a sprite and as a shape |
 
-The ecs demos:
+The ecs physics demos:
 
 | demo | what it is for |
 | --- | --- |
-| `fountain` | the ecsscene showcase: every ecsscene Component in one frame, spawned and retired by Systems, drawn in Batches |
 | `physics2d` | the ecsphysics2d showcase: a stack, a ramp and a jointed figure in one scene, with the app's own gravity |
 | `physics2dtable` | the same engine with no gravity at all: a hundred balls breaking inside four cushions, and a crate per click |
 
@@ -125,7 +127,7 @@ python -m http.server 8731 --bind 127.0.0.1 --directory cmd/web
 ```
 
 `build.sh` takes any demo's name - it is looked up across every family under
-`cmd/`, so `cameras`, `rendertexture` and `fountain` all work - and defaults to
+`cmd/`, so `cameras`, `rendertexture` and `physics2d` all work - and defaults to
 `pbr`. It writes four generated files into `cmd/web/`, all gitignored:
 `main.wasm`, the `assets.tar.gz` bundle, `demo.js` (the demo's name, for the
 page title) and a copy of the Go runtime's `wasm_exec.js`. Serve the directory
@@ -210,7 +212,7 @@ if err != nil {
 registrar.ProvideAdapter[assets.StorageReadMount](mount)
 ```
 
-A test whose plugins provide no mount - a stand-in recorder, or no demo at all -
+A test whose plugins provide no mount - a stand-in plugin, or no demo at all -
 adds one with `headless.Mounting(mount)`.
 
 storage also requires a `PermanentFS` Adapter. Every demo composes

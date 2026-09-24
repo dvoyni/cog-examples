@@ -4,73 +4,93 @@ import (
 	"errors"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/model"
-	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/slots/gfx"
 )
 
-// run starts the demo headless over the vendored asset set and steps until
-// every file is resident, which is when the frame it records is the frame the
+// run starts the demo headless over the vendored asset set with every file
+// preloaded, and steps it twice: the first step spawns the row and keys it,
+// and the second draws it with every file resident, which is the frame the
 // reference screenshot was taken of.
 //
-// The loop settles on its first pass: a load runs inside the flush that named
-// the file. What that frame costs is the hitch this design accepts -
-// MorphStressTest reads half a megabyte of float deltas to pack its 18 KiB of
-// them - and Preload is the lever a game pulls to move it.
+// Preload is the lever a game pulls to move a load's hitch - MorphStressTest
+// reads half a megabyte of float deltas to pack its 18 KiB of them - and here
+// it is what makes the second step the steady frame rather than a frame that
+// happens to land after the loads.
 //
-// Unlike pbr's, this harness does not fail on a reported error, because this
-// demo reports one on purpose: the interpolation station offers nine plays
-// against a cap of four. TestTheCapReportsOnceAndDropsTheLightestPlays is where
-// that report is asserted, and TestTheDemoReportsNothingButTheCap is where
-// everything else is.
-func run(t *testing.T) (*headless.Engine, *Animated) {
+// The demo provokes no report, so the harness fails on any: a test that
+// tolerated errors would stop noticing the ones nobody meant to provoke - a
+// missing clip name, a typo'd node, a texture that failed to decode.
+func run(t *testing.T) (*headless.Engine, *Demo) {
 	t.Helper()
 	demo := New()
 	engine := headless.New(t, demo)
-	deadline := time.Now().Add(60 * time.Second)
-	for demo.ResidentCount() < len(ModelPaths) {
-		if time.Now().After(deadline) {
-			t.Fatalf("only %d of %d models became resident; engine reported %v",
-				demo.ResidentCount(), len(ModelPaths), engine.Errors())
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
+		for _, path := range ModelPaths {
+			la.Preload(path)
+			if err := la.State(path); err != nil {
+				t.Fatalf("Preload left %q unloaded: %v", path, err)
+			}
 		}
-		engine.Steps(1)
-		time.Sleep(time.Millisecond)
-	}
-	// One more pair of steps: the frame that first sees every model resident is
-	// also the first to record its draws, and Passes publishes the frame the
-	// last flush consumed.
+	})
 	engine.Steps(2)
-	return engine, demo
-}
-
-// pass is the frame's one pass. The camera declares no passes at all, so this
-// is the implicit forward pass at the camera's own id.
-func pass(t *testing.T, engine *headless.Engine) scene.PassView {
-	t.Helper()
-	passes := engine.Passes()
-	if len(passes) != 1 {
-		t.Fatalf("published %d passes, want the one implicit pass", len(passes))
+	if errs := engine.Errors(); len(errs) > 0 {
+		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
 	}
-	if passes[0].CameraID != CameraMain {
-		t.Fatalf("pass camera %d, want %d", passes[0].CameraID, CameraMain)
+	if demo.demo.ResidentCount() != len(ModelPaths) {
+		t.Fatalf("%d of %d models resident", demo.demo.ResidentCount(), len(ModelPaths))
 	}
-	return passes[0]
+	return engine, demo.demo
 }
 
-// lookupOf runs one read against the half of the demo's facade that needs no
-// device, which is where the two memory totals live.
-func lookupOf[T any](t *testing.T, engine *headless.Engine, read func(model.LookupAccess) T) T {
+// frame is what one step sent the backend: the bundled scene shader's draws,
+// and the storage buffers the frame bound through it.
+type frame struct {
+	draws    []headless.DrawCall
+	bindings []headless.BufferBinding
+}
+
+// instances is how many instances the frame's scene draws drew in total.
+func (f frame) instances() int {
+	n := 0
+	for _, draw := range f.draws {
+		n += draw.Instances
+	}
+	return n
+}
+
+// step takes one more step and keeps what it sent the backend through the
+// bundled scene shader. The backend accumulates every frame since the engine
+// started, so the step's own are what is past the lengths before it; canvas's
+// HUD draws are filtered out by pipeline.
+func step(t *testing.T, engine *headless.Engine) frame {
 	t.Helper()
-	var out T
-	engine.Lookup(func(la model.LookupAccess) { out = read(la) })
-	return out
+	backend := engine.Backend()
+	draws, bindings := len(backend.Draws), len(backend.Buffers)
+	engine.Steps(1)
+	if errs := engine.Errors(); len(errs) > 0 {
+		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
+	}
+	var f frame
+	for _, draw := range backend.Draws[draws:] {
+		if backend.IsScenePipeline(draw.Pipeline) {
+			f.draws = append(f.draws, draw)
+		}
+	}
+	for _, binding := range backend.Buffers[bindings:] {
+		if backend.IsScenePipeline(binding.Pipeline) {
+			f.bindings = append(f.bindings, binding)
+		}
+	}
+	return f
 }
 
-// deviceOf runs one read against the loading half, which is where every
-// per-model query lives because every one of them loads the file it names.
+// deviceOf runs one read against the loading half of the facade, which is
+// where every per-model query lives because every one of them loads the file
+// it names.
 func deviceOf[T any](t *testing.T, engine *headless.Engine, read func(model.LookupDeviceAccess) T) T {
 	t.Helper()
 	var out T
@@ -78,27 +98,36 @@ func deviceOf[T any](t *testing.T, engine *headless.Engine, read func(model.Look
 	return out
 }
 
-// Every file becomes resident and every primitive of every draw becomes a
-// draw. This is the number the whole demo rests on: a model that silently
+// press holds a key down for one step and lets it go, which is one JustPressed
+// edge.
+func press(engine *headless.Engine, key input.Key) {
+	engine.Input(input.KeyChange(key, 0, true))
+	engine.Steps(1)
+	engine.Input(input.KeyChange(key, 0, false))
+}
+
+// Every file becomes resident and every primitive of every Entity becomes an
+// instance. This is the number the whole demo rests on: a model that silently
 // loaded half of itself would still render a picture, and only a spelled-out
 // count catches it.
-func TestEveryModelBecomesResidentAndEveryPrimitiveBecomesADraw(t *testing.T) {
-	engine, demo := run(t)
-	if demo.ResidentCount() != len(ModelPaths) {
-		t.Fatalf("%d of %d models resident", demo.ResidentCount(), len(ModelPaths))
+//
+// Instances rather than draws, because scene batches Entities that share a
+// mesh and a material into one instanced draw, so the instance count is the
+// one that does not depend on how they batch. The draw count is asserted
+// beside it, spelled out the same way: the two foxes are one draw; the nine
+// grid cubes and the cap copy's nine are one mesh, so eighteen instances in
+// one draw, and the label board another; each morph cube is its own file; the
+// two stress copies batch per primitive, which is two draws; and the ground is
+// one.
+func TestEveryModelBecomesResidentAndEveryPrimitiveIsDrawn(t *testing.T) {
+	engine, _ := run(t)
+	f := step(t, engine)
+	if got := f.instances(); got != DrawnInstances {
+		t.Errorf("drew %d instances of the scene shader, want %d", got, DrawnInstances)
 	}
-	view := pass(t, engine)
-	if view.Recorded != RecordedDraws {
-		t.Errorf("recorded %d draws, want %d", view.Recorded, RecordedDraws)
-	}
-	if view.Instances != RecordedDraws {
-		t.Errorf("packed %d instances, want %d", view.Instances, RecordedDraws)
-	}
-	// Nothing here is an instanced draw and no two draws are equal neighbours in
-	// the sort, so a batch is a draw.
-	if len(view.Batches) != RecordedDraws {
-		t.Errorf("emitted %d batches for %d draws, want one each",
-			len(view.Batches), RecordedDraws)
+	const draws = 1 + 2 + 2 + stressPrimitives + 1
+	if len(f.draws) != draws {
+		t.Errorf("%d draws for %d instances, want %d batched draws", len(f.draws), DrawnInstances, draws)
 	}
 }
 
@@ -113,28 +142,24 @@ func TestEveryModelBecomesResidentAndEveryPrimitiveBecomesADraw(t *testing.T) {
 // It is asserted per variant rather than per frame because the failure is per
 // draw, and a variant is what a draw declares: a skinned model declares its
 // poses and a morph-only one its deltas, and a static prop declares neither. A
-// frame-wide "were all seventeen seen" would pass while a single skinned draw
+// frame-wide "were all seven seen" would pass while a single skinned draw
 // left scenePoses unbound.
 func TestEveryDrawBindsExactlyWhatItsVariantDeclares(t *testing.T) {
 	engine, _ := run(t)
+	f := step(t, engine)
 	backend := engine.Backend()
 
-	// The frame's own bindings, not every frame's since the engine started:
-	// Buffers accumulates, and the frames before residency bound less.
 	seen := map[string]map[[2]int]int{}
-	for _, binding := range backend.Buffers {
-		if !backend.IsScenePipeline(binding.Pipeline) {
-			continue
-		}
+	for _, binding := range f.bindings {
 		supply := backend.PipelineSupply(binding.Pipeline)
 		if seen[supply] == nil {
 			seen[supply] = map[[2]int]int{}
 		}
 		seen[supply][[2]int{binding.Group, binding.Binding}]++
 	}
-	// The demo draws a skinned walk cycle, a morphing face and static props, so
-	// it is also where the variants themselves are exercised rather than only
-	// described: three distinct modules, each declaring its own group 2.
+	// The demo draws a skinned walk cycle, morphing cubes and a static ground,
+	// so it is also where the variants themselves are exercised rather than
+	// only described: three distinct modules, each declaring its own group 2.
 	if len(seen) < 3 {
 		t.Fatalf("the frame drew %d variants of the bundled shader, want the skinned, the morphed and the static: %v",
 			len(seen), seen)
@@ -176,6 +201,7 @@ func TestEveryDrawBindsExactlyWhatItsVariantDeclares(t *testing.T) {
 // reason it is worth having a desktop test of a browser property at all.
 func TestNoShaderExceedsTheWebLimits(t *testing.T) {
 	engine, _ := run(t)
+	step(t, engine)
 	var exceeded gfx.ErrShaderExceedsWebLimits
 	for _, err := range engine.Errors() {
 		if errors.As(err, &exceeded) {
@@ -185,18 +211,19 @@ func TestNoShaderExceedsTheWebLimits(t *testing.T) {
 	}
 }
 
-// Nothing is reported but the cap. The demo provokes exactly one report on
-// purpose, and a test that tolerated any error would stop noticing the ones it
-// did not mean to provoke - a missing clip name, a typo'd node, a texture that
-// failed to decode.
-func TestTheDemoReportsNothingButTheCap(t *testing.T) {
-	engine, _ := run(t)
-	for _, err := range engine.Errors() {
-		var over model.ErrModelPlaysOverLimit
-		if errors.As(err, &over) {
-			continue
-		}
-		t.Errorf("unexpected report: %v", err)
+// The HUD's census is what setup spawned: every Entity it made is counted by
+// the Component it draws with, so a spawn that silently failed shows on screen.
+func TestTheHUDCountsWhatSetupSpawned(t *testing.T) {
+	_, demo := run(t)
+	// Two foxes, nine grid cubes, the cap copy, two cubes and two stress
+	// copies are Models; all but the still fox animate.
+	const models = 2 + InterpClips + 1 + 2 + 2
+	want := census{models: models, animations: models - 1, meshes: 1, cameras: 1}
+	if demo.census != want {
+		t.Errorf("the HUD counts %+v, want %+v", demo.census, want)
+	}
+	if demo.spawned != models+2 {
+		t.Errorf("the HUD says %d Entities were spawned, want %d", demo.spawned, models+2)
 	}
 }
 
@@ -279,19 +306,17 @@ func TestPoseMemoryIsTheRigTimesTheGrid(t *testing.T) {
 
 // The fox's gait machine, rigged from Fox.glb's own clips, is caught
 // mid-crossfade at the reference time: two plays whose weights both matter.
-// They are handed to scene as the machine made them, and scene normalises
-// across a draw's plays because the blend is a weighted mean of TRS.
+// They reach the fox's Animation as the machine made them, and scene
+// normalises across an Entity's plays because the blend is a weighted mean of
+// TRS.
 func TestTheCrossfadeOffersTwoRealWeightsAtTheReferenceTime(t *testing.T) {
-	_, demo := run(t)
+	engine, demo := run(t)
 	// Within one step, not exactly: the clock is a step count times 1/60, so
 	// the reference time is only representable to the step it lands on.
 	if drift := demo.Time() - startTime; drift < -fixedStep || drift > fixedStep {
 		t.Fatalf("the demo opens at %v, want the documented %v", demo.Time(), startTime)
 	}
-	if !demo.rigged {
-		t.Fatal("the fox was never rigged")
-	}
-	plays := demo.gait.Plays(nil)
+	plays := demo.FoxPlays()
 	if len(plays) != 2 {
 		t.Fatalf("at the reference time the fox plays %+v, want a crossfade of two", plays)
 	}
@@ -314,11 +339,11 @@ func TestTheCrossfadeOffersTwoRealWeightsAtTheReferenceTime(t *testing.T) {
 	}
 	// Both gaits are reached on their own between triggers, so a run of the
 	// demo shows a pure walk and a pure run rather than a permanent mixture.
+	press(engine, input.KeySpace)
 	pure := map[string]bool{}
 	for range 2 * gaitDwellSteps {
-		demo.step++
-		demo.syncGait()
-		if plays := demo.gait.Plays(nil); len(plays) == 1 {
+		engine.Steps(1)
+		if plays := demo.FoxPlays(); len(plays) == 1 {
 			pure[plays[0].Clip] = true
 		}
 	}
@@ -326,9 +351,8 @@ func TestTheCrossfadeOffersTwoRealWeightsAtTheReferenceTime(t *testing.T) {
 		t.Errorf("over two dwells the fox is alone in %v, want both Walk and Run", pure)
 	}
 	// A rewind starts the machine again and lands on the same plays.
-	demo.step = int(startTime * stepsPerSecond)
-	demo.syncGait()
-	if again := demo.gait.Plays(nil); !slices.Equal(again, plays) {
+	press(engine, input.KeyR)
+	if again := demo.FoxPlays(); !slices.Equal(again, plays) {
 		t.Errorf("after a rewind the fox plays %+v, want %+v", again, plays)
 	}
 }
@@ -337,7 +361,7 @@ func TestTheCrossfadeOffersTwoRealWeightsAtTheReferenceTime(t *testing.T) {
 // reproducible: motion is the subject here, so a capture of a running demo
 // would land on whatever step the screenshotter reached.
 func TestTheDemoOpensPausedAtTheReferenceTime(t *testing.T) {
-	demo := New()
+	demo := newDemo()
 	if !demo.paused {
 		t.Error("the demo opens running; reference.png would not be reproducible")
 	}
@@ -434,105 +458,59 @@ func TestTheGridCoversEveryClipTheFileDeclares(t *testing.T) {
 // no draw, and the browser is where that would otherwise be found.
 func TestTheU8IndexedFileDrawsEveryPrimitive(t *testing.T) {
 	engine, _ := run(t)
-	drawn := 0
-	for _, draw := range engine.Backend().Draws {
+	f := step(t, engine)
+	indexed := 0
+	for _, draw := range f.draws {
 		if draw.Indexed {
-			drawn++
+			indexed++
 		}
 	}
-	if drawn == 0 {
+	if indexed == 0 {
 		t.Fatal("the frame made no indexed draw at all")
 	}
-	// The cap copy is the whole file in one draw, so its ten primitives are ten
-	// batches of the frame's total.
-	if view := pass(t, engine); view.Recorded != RecordedDraws {
-		t.Errorf("recorded %d draws, want %d; the u8-indexed file is %d of them",
-			view.Recorded, RecordedDraws, 9+interpPrimitives)
+	// The cap copy is the whole file in one Entity, so its ten primitives are
+	// ten instances of the frame's total.
+	if got := f.instances(); got != DrawnInstances {
+		t.Errorf("drew %d instances, want %d; the u8-indexed file is %d of them",
+			got, DrawnInstances, 9+interpPrimitives)
 	}
 }
 
-// The cap copy offers every clip the file has and keeps the four heaviest. The
-// report is the contract: a fifth play degrades the draw rather than failing
-// it, so the copy still renders and the drop is a report rather than a hole.
-func TestTheCapReportsOnceAndDropsTheLightestPlays(t *testing.T) {
-	engine, _ := run(t)
-	var over model.ErrModelPlaysOverLimit
-	found := 0
-	for _, err := range engine.Errors() {
-		if errors.As(err, &over) {
-			found++
-		}
-	}
-	if found == 0 {
-		t.Fatalf("the cap never reported; errors were %v", engine.Errors())
-	}
-	// Once per model, not once per frame and not once per dropped play: the
-	// demo runs for many frames before this test reads the list.
-	if found != 1 {
-		t.Errorf("the cap reported %d times, want once per model", found)
-	}
-	if over.Plays != InterpClips || over.Limit != CapPlays {
-		t.Errorf("report says %d plays against a limit of %d, want %d and %d",
-			over.Plays, over.Limit, InterpClips, CapPlays)
-	}
-	if over.Model != interpPath {
-		t.Errorf("report names %q, want the interpolation file", over.Model)
-	}
-}
-
-// Which four survive is not rigged, it falls out of the rule: the cap keeps the
-// heaviest, so the translation row takes three places and the first rotation
-// clip offered takes the last. The weights are the demo's own, so this asserts
-// the picture the station makes rather than scene's arithmetic.
+// The cap copy is offered every clip the file has and keeps the four heaviest.
+// Which four survive is not rigged, it falls out of the rule: the translation
+// row takes three places and the first rotation clip offered takes the last.
+// The weights are the demo's own, so this asserts the picture the station
+// makes rather than model's arithmetic.
+//
+// It is the demo that cuts nine to four, because an Animation holds four plays
+// by type; run fails on any report, so the cap copy reaching model with no
+// ErrModelPlaysOverLimit is asserted by every test here.
 func TestTheCapKeepsTheTranslationRowAndOneRotation(t *testing.T) {
-	type offered struct {
-		clip   string
-		weight float32
-	}
-	var plays []offered
-	for row := range interpGrid {
-		for column := range interpGrid[row] {
-			plays = append(plays, offered{interpGrid[row][column].clip, interpRowWeights[row]})
-		}
-	}
-	// The same rule scene applies: fill four, then displace the lightest only
-	// when the newcomer beats it, so ties go to whoever was offered first.
-	var kept [CapPlays]offered
-	count := 0
-	for _, play := range plays {
-		if count < CapPlays {
-			kept[count] = play
-			count++
-			continue
-		}
-		lightest := 0
-		for i := 1; i < count; i++ {
-			if kept[i].weight < kept[lightest].weight {
-				lightest = i
-			}
-		}
-		if play.weight > kept[lightest].weight {
-			kept[lightest] = play
-		}
-	}
+	kept := capPlaylist()
 	translations, rotations := 0, 0
-	for _, play := range kept {
-		switch {
-		case play.weight == interpRowWeights[2]:
+	for i, clip := range kept.Clips {
+		switch weight := kept.Weights[i]; {
+		case clip == "":
+			t.Errorf("the cap left slot %d empty; nine offers fill all four", i)
+		case weight == interpRowWeights[2]:
 			translations++
-		case play.weight == interpRowWeights[1]:
+		case weight == interpRowWeights[1]:
 			rotations++
 		default:
-			t.Errorf("the cap kept %q at weight %v, which is the scale row", play.clip, play.weight)
+			t.Errorf("the cap kept %q at weight %v, which is the scale row", clip, weight)
 		}
 	}
 	if translations != 3 || rotations != 1 {
 		t.Errorf("the cap kept %d translation and %d rotation clips, want 3 and 1",
 			translations, rotations)
 	}
+	if kept.Clips[slices.Index(kept.Weights[:], interpRowWeights[1])] != interpGrid[1][0].clip {
+		t.Errorf("the cap kept %v; the rotation that survives is the first offered, %q",
+			kept.Clips, interpGrid[1][0].clip)
+	}
 }
 
-// # The morph stations: the attribute mask, sparse weights and the override
+// # The morph stations: the attribute mask, sparse weights and the contrast
 //
 // The two cubes are the same cube. The mask a delta record is packed against is
 // intersected with what the base primitive authored, so the file that authors a
@@ -565,75 +543,55 @@ func TestTheTwoMorphCubesDifferByTheirAuthoredTangent(t *testing.T) {
 	if plain == quantized {
 		t.Error("both cubes report the same delta bytes; the mask was taken from the targets")
 	}
-	total := lookupOf(t, engine, func(la model.LookupAccess) int { return la.TotalMorphBytes() })
+	var total int
+	engine.Lookup(func(la model.LookupAccess) { total = la.TotalMorphBytes() })
 	if want := plain + quantized + demo.memory.morph[4]; total != want {
 		t.Errorf("TotalMorphBytes = %d, want the three morphed models' %d", total, want)
 	}
 }
 
-// The demo's tabulated shape names are the file's own. They are tabulated so
-// the HUD can name the held shape without a per-frame lookup, and a table that
-// drifted would print a confident wrong name.
-func TestTheTabulatedShapeNamesAreTheFilesOwn(t *testing.T) {
+// The stress file carries the eight shapes the station and the HUD say it does,
+// and the two clips the station plays. A file swapped underneath would
+// otherwise draw a still model that reads as the contrast failing.
+func TestTheStressFileHasEightShapesAndBothClips(t *testing.T) {
 	engine, _ := run(t)
 	names := deviceOf(t, engine, func(la model.LookupDeviceAccess) []string {
 		out, _ := la.MorphTargets(stressPath, nil)
 		return out
 	})
 	if len(names) != StressTargets {
-		t.Fatalf("MorphTargets = %v, want the file's %d shapes", names, StressTargets)
+		t.Errorf("MorphTargets = %v, want the file's %d shapes", names, StressTargets)
 	}
-	for i, name := range names {
-		if StressShapeNames[i] != name {
-			t.Errorf("shape %d is %q in the file and %q in the demo", i, name, StressShapeNames[i])
+	clips := deviceOf(t, engine, func(la model.LookupDeviceAccess) []model.ClipInfo {
+		infos, _ := la.Clips(stressPath, nil)
+		return infos
+	})
+	declared := map[string]bool{}
+	for _, clip := range clips {
+		declared[clip.Name] = true
+	}
+	for _, want := range []string{stressClip, stressContrastClip} {
+		if !declared[want] {
+			t.Errorf("the stress file declares no clip %q; it has %v", want, clips)
 		}
 	}
 }
 
-// The override is sparse by construction: one shape of eight, so only one
-// weight is nonzero and only one target reaches the frame's anim block. That is
-// the whole reason the morph blend is CPU-side - a dense array of eight would
-// upload eight records to say seven zeroes.
-func TestTheOverrideIsOneShapeOfEight(t *testing.T) {
-	demo := New()
-	seen := map[int]bool{}
-	for step := range int(shapeDwell*StressTargets*stepsPerSecond) + 1 {
-		demo.step = step
-		weights := demo.OverrideWeights()
-		if len(weights) != StressTargets {
-			t.Fatalf("the override is %d weights, want the file's %d", len(weights), StressTargets)
-		}
-		nonzero := 0
-		for _, weight := range weights {
-			if weight != 0 {
-				nonzero++
-			}
-		}
-		if nonzero != 1 {
-			t.Fatalf("at step %d the override has %d nonzero weights, want one", step, nonzero)
-		}
-		seen[demo.OverrideShape()] = true
-	}
-	// Every shape is reached, so the station shows all eight rather than
-	// cycling through a subset.
-	if len(seen) != StressTargets {
-		t.Errorf("the override reaches %d of the file's %d shapes", len(seen), StressTargets)
-	}
-}
-
-// Turning the override off is the direct A/B the station exists for: with it on
-// the two copies disagree, with it off they move together. The draw count does
-// not change either way, because a weight array is not a draw.
-func TestTheOverrideDoesNotChangeTheDrawCount(t *testing.T) {
+// Turning the contrast off is the direct A/B the station exists for: with it on
+// the two copies disagree, with it off they move together. The instance count
+// does not change either way, because which clip an Entity plays is not a draw.
+func TestTheContrastDoesNotChangeTheInstanceCount(t *testing.T) {
 	engine, demo := run(t)
-	before := pass(t, engine).Recorded
-	demo.override = false
-	engine.Steps(2)
-	after := pass(t, engine).Recorded
-	if before != after {
-		t.Errorf("toggling the override changed the draw count from %d to %d", before, after)
+	before := step(t, engine).instances()
+	press(engine, input.KeyO)
+	if demo.contrast {
+		t.Fatal("key o left the contrast on")
 	}
-	if before != RecordedDraws {
-		t.Errorf("recorded %d draws, want %d", before, RecordedDraws)
+	after := step(t, engine).instances()
+	if before != after {
+		t.Errorf("toggling the contrast changed the instance count from %d to %d", before, after)
+	}
+	if before != DrawnInstances {
+		t.Errorf("drew %d instances, want %d", before, DrawnInstances)
 	}
 }

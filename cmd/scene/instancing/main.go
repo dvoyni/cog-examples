@@ -1,49 +1,48 @@
-// Command instancing is the scene plugin's instanced-draw demo: one call that
-// places a field of crates, per-instance culling, and the sort key made
-// visible.
+// Command instancing is scene's instanced-draw demo: a field of crates that is
+// one draw however many of them stand, per-instance culling, and what splits a
+// Batch made visible.
 //
 //	go run ./cmd/scene/instancing
 //
 // It adds no assets. The crates, the bottles and the two glass screens are
-// three of pbr's six files, and the ground is box's debug vocabulary, because
-// what this demo is about is not what a model looks like but how many draw
-// calls a thousand of them cost.
+// three of pbr's six files, and the ground is a debug shape, because what this
+// demo is about is not what a model looks like but how many draw calls a
+// thousand of them cost.
 //
-// It is the demo where Passes(dst) earns its retained-by-default design. Most
-// of what it proves is a number: how many instances a call recorded, how many
-// the frustum kept, how many batches they packed into, and in what order those
-// batches came out. The HUD reads all of it out of the published PassView every
-// frame, into a slice it keeps, so a human running the demo sees the numbers
-// without a second command and without the frame allocating for them.
+// Every crate is an Entity of its own, carrying an m.Transform and a Model that
+// names the crate file. Nothing groups them: scene keys every drawable Entity
+// into a Batch as it changes - the file's primitive, its material and the
+// Entity's Params - and draws each Batch as one instanced draw. What the demo
+// proves is a number: how many Entities it spawned, how many Batch keys they
+// share, and so how many draws that is. The HUD prints the numbers the demo
+// decided itself; the draws are the test's to count, at the backend.
 //
-// What it exercises: explicit Transforms on ModelDraw; per-instance culling and
-// the contiguous packing of the survivors; the materialID/meshID sort key;
-// SCENE_NONUNIFORM under a per-axis Transform.Scale; firstInstance, the per-batch material record and the one instance
-// arena every batch binds a range of; the split a blend-class instanced call
-// takes; and Passes(dst) itself.
+// What it exercises: explicit per-axis Transform.Scale on Model Entities;
+// per-instance culling and the contiguous packing of the survivors;
+// SCENE_NONUNIFORM set per instance rather than per Batch; firstInstance and
+// the one instance range every draw of a pass binds; the split a blended
+// Batch takes; and Params as part of the Batch key.
 //
 // # The courtyard
 //
 // A 25 by 25 lattice of crates on 1.8-unit centres, with a 7 by 7 square left
-// out of the middle. That is 576 crates from one Model call - the tile floor
-// the API doc names, at the size where the difference between one draw call and
-// five hundred is the whole point.
+// out of the middle. That is 576 crate Entities - the tile floor the API doc
+// names, at the size where the difference between one draw call and five
+// hundred is the whole point.
 //
 // A colonnade stands on the sub-lattice where both indices are 2 mod 6. Those
 // crates are stretched into pillars by a per-axis Transform.Scale. They are
-// entries in
-// the same Transforms slice as the cubes around them, so one call carries both
-// - which is what makes SCENE_NONUNIFORM per instance rather than per draw.
-// The courtyard takes the one pillar site that falls inside it; the lattice is
-// the rule and the courtyard is the hole, and the hole wins.
+// crates like the cubes around them, the same file under the same key, so one
+// draw carries both - which is what makes SCENE_NONUNIFORM per instance rather
+// than per draw. The courtyard takes the one pillar site that falls inside it;
+// the lattice is the rule and the courtyard is the hole, and the hole wins.
 //
 // Five water bottles stand in the courtyard, every other one squashed into a
 // wide low one by the same kind of per-axis Scale, and two glass screens stand in
 // front of them at two different depths. The screens are the exception to
 // batching: their two BLEND primitives split back into one single-instance
-// batch each, because sorting an instanced set by its nearest instance would
-// composite visibly wrong, while their seven opaque primitives stay seven
-// batches of two.
+// draw each, because sorting a Batch by its nearest instance would composite
+// visibly wrong, while their seven opaque primitives stay seven draws of two.
 //
 // The squat bottles rather than the pillars are what makes SCENE_NONUNIFORM
 // visible, and the reason is worth stating because it is easy to get backwards.
@@ -54,26 +53,23 @@
 // bottle's shoulder is curved, so its normals are not eigenvectors of anything,
 // and there the flag decides where the highlight lands.
 //
-// A stack of three crates stands in one corner of the courtyard, and it is a
-// second call of the same model. It is the one draw in the frame the sort has
-// to move: recorded after the bottles and the screens, it carries a material
-// interned before either of theirs, so a material-keyed sort lifts it back
-// beside the field. Once there it merges into the field's batch, because scene
-// collapses equal draws that sort side by side whichever call recorded them:
-// the stack shares the field's mesh, material and (absent) per-draw data, so
-// its three crates pack straight after the field's survivors in one batch.
+// A stack of three crates stands in one corner of the courtyard, spawned apart
+// from the field and at its own scale. It shares the field's file, material and
+// (empty) Params, so it shares the field's Batch key, and its three crates pack
+// into the field's one draw beside the field's survivors: a Batch is every
+// Entity whose key is equal, not everything one spawn placed.
 //
-// # One call or five hundred
+// # One draw or five hundred
 //
-// Key 1 draws the field as one instanced call and key 2 draws it as one call
-// per crate. The picture does not change and neither does the packed instance
-// array: the crates share a mesh and a material, so they share a sort key, the
-// sort's final tiebreak is the recording ordinal, and the two orders coincide.
-// Nor does the batch count on the HUD: scene collapses consecutive equal draws,
-// so the per-crate calls merge back into the one batch the instanced call packs.
+// Key 1 lets every crate share one Batch key and key 2 gives each crate a key
+// of its own, by writing into its Params a value naming its serial. No shader
+// declares that parameter, so gfx binds it nowhere and the picture does not
+// change, nor does the packed instance array. What changes is the key: the
+// field goes from one instanced draw to one draw per surviving crate.
 //
-// That pair of frames is what output-identical means for the collapse: the same
-// instance array, byte for byte, in the same batches.
+// That pair of frames is what batching costs and buys: the same instances,
+// byte for byte, in one draw or in five hundred. Equal Params batch, and
+// different ones split, whatever the difference is.
 //
 // # The reference pose
 //
@@ -81,13 +77,13 @@
 // radius overviewRadius, azimuth startAzimuth and elevation startElevation -
 // and reference.png beside this file is the frame at that pose.
 //
-// Nothing in the recorded frame moves on its own. The clock is accumulated
-// fixed steps and the HUD prints it, but it drives only the orbit rate, so
-// every frame at the reference pose is the same frame and the reference
-// screenshot is retaken by launching the demo and capturing it, with no step
-// number to hit. A demo whose acceptance is a picture is better off recording
-// nothing that moves, and per-instance culling is a still subject: what makes
-// it visible is the camera turning, which is input.
+// Nothing in the frame moves on its own. The clock is accumulated fixed steps
+// and the HUD prints it, but it drives only the orbit rate, so every frame at
+// the reference pose is the same frame and the reference screenshot is retaken
+// by launching the demo and capturing it, with no step number to hit. A demo
+// whose acceptance is a picture is better off drawing nothing that moves, and
+// per-instance culling is a still subject: what makes it visible is the camera
+// turning, which is input.
 //
 // Input may orbit, pause and switch modes freely, and touching it voids
 // nothing: the assertions live in instancing_test.go rather than in the running
@@ -100,8 +96,8 @@
 // bright roll of metal highlight round their shoulders as the tall bottles
 // standing beside them.
 //
-// One sentence, two failures. A batch that does not read its own slice of the
-// instance arena - a firstInstance that is not pass-relative, a bound range
+// One sentence, two failures. A draw that does not read its own slice of the
+// instance range - a firstInstance that is not pass-relative, a bound range
 // that starts in the wrong place - piles the field onto one square or shears
 // the lattice into a fan, and a grid is the one arrangement where that is
 // unmissable. And a squat bottle whose SCENE_NONUNIFORM never reached the
@@ -113,15 +109,15 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/model"
@@ -156,23 +152,29 @@ const (
 const CameraMain scene.CameraID = -100
 
 // The canvas layers, which are gfx orders directly. The camera declares no
-// passes, and the implicit forward pass preserves colour rather than clearing
-// it, so the frame's one colour clear is canvas's on a layer below the camera.
+// passes, and the default pass clears depth but keeps colour, so the frame's
+// one colour clear is canvas's on a layer below the camera.
 const (
 	layerBackdrop canvas.Layer = -200
 	layerHUD      canvas.Layer = 0
 )
+
+// prewarmEntities is how many Entities the world reserves room for up front,
+// which is a hint and not a limit: 579 crates, the courtyard's seven models,
+// the ground, the lamp, its marker and the camera.
+const prewarmEntities = 1024
 
 func main() {
 	config := map[kernel.PluginName]any{
 		gogpu.Name: gogpu.Config{}.
 			WithTitle("cog examples: scene instancing").
 			WithSize(windowWidth, windowHeight),
+		ecs.Name: ecs.Config{PrewarmEntities: prewarmEntities},
 	}
 	permanentfs.Configure(config)
 
-	// The demo plugin is last because it records into the queues the plugins
-	// before it declare.
+	// The demo plugin is last because its Systems order themselves against
+	// scene's, which has to be registered before them.
 	plugins := []kernel.Plugin{
 		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
@@ -180,8 +182,9 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		modelplugin.New(), sceneplugin.New(),
+		modelplugin.New(),
 		gogpuplugin.New(),
+		ecsplugin.New(), sceneplugin.New(),
 		New(),
 	}
 
@@ -204,9 +207,6 @@ func main() {
 
 // Name is the demo plugin's name.
 const Name kernel.PluginName = "instancing"
-
-type windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
-type updateEventHandler kernel.Subscription[app.UpdateEvent]
 
 // The demo's fixed timestep. Demo time is accumulated fixed steps, never wall
 // clock: the update event's Dt is deliberately ignored.
@@ -237,202 +237,33 @@ const (
 // courtyard floor so the ground fills the lower part of the frame.
 var orbitTarget = m.Vec3{Y: 1.2}
 
-// The three files, all of them pbr's.
-const (
-	cratePath  = "assets/BoxVertexColors/BoxVertexColors.glb"
-	bottlePath = "assets/WaterBottle/WaterBottle.glb"
-	panePath   = "assets/AlphaBlendModeTest/AlphaBlendModeTest.glb"
-)
-
-// modelPaths is what the residency counter watches, in the order the HUD names
-// them.
-var modelPaths = [...]string{cratePath, bottlePath, panePath}
-
-// The files' own measurements, in model units, taken from the same POSITION
-// accessors pbr's station table reads. They are constants here for the same
-// reason they are there: a placement computed from LookupAccess.Bounds would
-// have to wait for residency and rebuild the whole lattice when it arrived,
-// where the lattice is this demo's fixed subject. A file swapped underneath the
-// demo moves its models off the floor rather than failing anything.
-const (
-	// BoxVertexColors is a unit cube authored from a corner, so it spans 0..1
-	// on every axis and a crate standing at (x, z) has its transform at
-	// (x - width/2, 0, z - depth/2).
-	crateMinY = 0
-	// WaterBottle is 0.109 x 0.260 x 0.109 about its own middle, minY -0.130.
-	bottleMinY = -0.130
-	// AlphaBlendModeTest is 8.600 x 2.400 x 1.300 about its own middle,
-	// minY -0.100.
-	paneMinY = -0.100
-)
-
-// The crate lattice. The side is odd so the courtyard has a centre index, and
-// the courtyard is the square of lattice sites left out of the middle for the
-// bottles and the screens to stand in.
-const (
-	gridSide      = 25
-	gridSpacing   = 1.8
-	courtyardHalf = 3 // in lattice steps, so the hole is 7 by 7
-	crateSize     = 0.8
-)
-
-// The colonnade: the sub-lattice both of whose indices are pillarOffset mod
-// pillarStride carries a pillar instead of a crate. A pillar is the same cube
-// under a non-uniform Transform.Scale.
-const (
-	pillarStride = 6
-	pillarOffset = 2
-	pillarWidth  = 0.5
-	pillarHeight = 3.4
-)
-
-// The five bottles, in a row across the courtyard.
-const (
-	bottleCount   = 5
-	bottleScale   = 10.0
-	bottleSpacing = 2.6
-	bottleZ       = -2.4
-
-	// Every other bottle is squashed by a per-axis Scale into a wide, low one,
-	// and yawed while it is at it. That is the frame's one non-uniform
-	// basis on a curved surface, and it is here because a box cannot show what
-	// SCENE_NONUNIFORM is for: every face normal of an axis-aligned box is an
-	// eigenvector of an axis-aligned scale, so the world matrix and its
-	// inverse-transpose point it the same way and only its length differs. A
-	// bottle's shoulder is curved, so its normals are not, and the flag decides
-	// where the highlight lands.
-	squatWiden   = 2.1
-	squatFlatten = 0.55
-	squatYaw     = 0.7
-)
-
-// The stack: a second instanced call of the same crate model, standing in a
-// corner of the courtyard where the reference pose keeps all of it. It is
-// recorded after the other two models and drawn at its own scale, so it is
-// unmistakable in the picture and out of key order in the recording.
-const (
-	stackCount = 3
-	stackScale = 1.2
-)
-
-// stackCorner is where the stack stands, on the courtyard floor.
-var stackCorner = m.Vec2{X: 5.4, Y: -5.4}
-
-// The two glass screens, at two depths so the four blended primitives they
-// contribute have four distinct distances from the eye. One depth could not
-// tell a back-to-front sort from a mesh-id sort.
-const paneScale = 0.7
-
-// paneStands is where each screen stands, in world units on the courtyard
-// floor. They overlap across x as seen from the reference eye, so the near one
-// tints the far one rather than standing beside it.
-var paneStands = [...]m.Vec2{{X: -2.2, Y: 2.0}, {X: 2.2, Y: 4.4}}
-
-// The ground the whole courtyard stands on. It is wider than the lattice so the
-// field ends on ground rather than on the edge of the world.
-const groundSide = 96
-
-// The frame's own colours, written in sRGB and converted on the way in: Color
-// holds linear components, and a demo that typed linear literals would be
-// picking its palette in a space no colour picker shows.
-var (
-	backdropColor = m.NewColorSrgb(0.05, 0.06, 0.09, 1)
-	groundColor   = m.NewColorSrgb(0.30, 0.31, 0.34, 1)
-	sunColor      = m.NewColorSrgb(1, 0.97, 0.92, 1)
-	ambientSky    = m.NewColorSrgb(0.19, 0.23, 0.31, 1)
-	ambientGround = m.NewColorSrgb(0.11, 0.10, 0.09, 1)
-	lampColor     = m.NewColorSrgb(1.00, 0.84, 0.62, 1)
-	hudColor      = m.NewColorSrgb(0.88, 0.90, 0.94, 1)
-	hudDimColor   = m.NewColorSrgb(0.45, 0.48, 0.55, 1)
-)
-
-// The one punctual light: a warm lamp over the courtyard, so the bottles and
-// the screens read against a field lit only by the sun. Lighting is pbr's
-// subject and this demo declares the least of it that keeps the picture legible.
-const (
-	lampHeight       = 4.5
-	lampIntensity    = 26
-	lampRange        = 16
-	lampMarkerRadius = 0.25
-)
-
-// lampPosition is where the lamp hangs, and where its marker sphere stands.
-var lampPosition = m.Vec3{Y: lampHeight, Z: bottleZ}
-
-// Instancing is the demo's gameplay plugin: it records the whole frame and owns
-// the step counter, the orbit, the draw mode and the numbers the HUD prints.
+// Instancing is the demo's gameplay plugin. It registers the demo's Component
+// and Systems, and keeps the Demo resource it registers, so a test can read the
+// pose and the counts it steps.
 type Instancing struct {
-	step      int
-	paused    bool
-	azimuth   float32
-	elevation float32
-	// perCall draws the field as one Model call per crate instead of one
-	// instanced call. The picture is the same and the batch count is not.
-	perCall bool
-	rate    rate
-	// views is the scratch Passes(dst) appends into, kept across frames so
-	// reading the published frame allocates nothing. It is the whole reason
-	// Passes takes a destination.
-	views []scene.PassView
-	stats stats
-	// resident is which of the three files reported residency on the last
-	// frame, for the HUD.
-	resident [len(modelPaths)]bool
-}
-
-// rate is the HUD's frames-per-second meter, and the demo's only wall clock. It
-// cannot come from the update event's Dt, which is app's fixed timestep,
-// nor from the step counter, which is the same number however long a frame
-// took. It counts frames over a window rather than averaging 1/interval per
-// frame, so a startup spike is one frame in the count instead of a reading that
-// never happened decaying for a hundred frames afterwards.
-type rate struct {
-	window    time.Time
-	frames    int
-	perSecond float32
-}
-
-// ratePeriod is how long the meter counts before republishing.
-const ratePeriod = 250 * time.Millisecond
-
-func (r *rate) measure(now time.Time) {
-	if r.window.IsZero() {
-		r.window = now
-		return
-	}
-	r.frames++
-	if elapsed := now.Sub(r.window); elapsed >= ratePeriod {
-		r.perSecond = float32(float64(r.frames) / elapsed.Seconds())
-		r.frames, r.window = 0, now
-	}
-}
-
-// stats is what the previous frame's flush decided, read back out of the scene
-// queue at the top of each update and printed by the HUD. It is the previous
-// frame's because Passes publishes the frame the last flush consumed.
-type stats struct {
-	passes    int
-	ops       int
-	recorded  int
-	culled    int
-	instances int
-	batches   int
-	// biggest is the instance count of the largest batch, which is the crate
-	// field's when the field is one instanced call. It is the number that says
-	// the batching happened at all.
-	biggest int
+	demo *Demo
 }
 
 // New builds the demo plugin at its documented starting pose.
-func New() *Instancing {
-	return &Instancing{azimuth: startAzimuth, elevation: startElevation}
-}
+func New() *Instancing { return &Instancing{demo: newDemo()} }
 
 func (p *Instancing) Name() kernel.PluginName { return Name }
 
 func (p *Instancing) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
+	return []kernel.PluginName{
+		canvas.Name, ecs.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name,
+	}
 }
+
+type (
+	setupSystem   kernel.Subscription[app.InitEvent]
+	controlSystem kernel.Subscription[app.UpdateEvent]
+	splitSystem   kernel.Subscription[app.UpdateEvent]
+	orbitSystem   kernel.Subscription[app.UpdateEvent]
+	hudSystem     kernel.Subscription[app.UpdateEvent]
+
+	windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
+)
 
 func (p *Instancing) Register(registrar *kernel.Registrar, _ any) error {
 	// storage mounts nothing by default, and the vendored asset set lives in
@@ -445,8 +276,25 @@ func (p *Instancing) Register(registrar *kernel.Registrar, _ any) error {
 	}
 	registrar.ProvideAdapter[assets.StorageReadMount](mount)
 
+	ecs.RegisterComponent[Crate](registrar, prewarmEntities)
+	registrar.InitResource(p.demo)
+
+	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
+	// Input rolls its per-step edges first, and a key's JustPressed is only
+	// this step's once it has.
+	registrar.Subscribe[controlSystem](ecs.ToHandler[app.UpdateEvent](registrar, control)).
+		After[input.AdvanceOnUpdate]()
+	// A mode switch rewrites the crates' Params, and the load System keys what
+	// changed, so the split runs before it and the new keys draw in the step
+	// whose key press asked for them.
+	registrar.Subscribe[splitSystem](ecs.ToHandler[app.UpdateEvent](registrar, split)).
+		After[controlSystem]().Before[scene.LoadOnUpdate]()
+	registrar.Subscribe[orbitSystem](ecs.ToHandler[app.UpdateEvent](registrar, orbit)).
+		After[controlSystem]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
+		After[splitSystem]()
+
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
-	registrar.Subscribe[updateEventHandler](p.draw)
 	return nil
 }
 
@@ -467,380 +315,4 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
 		}
-}
-
-// The transform lists, built once at package init. They are package-level
-// because they never change: the field is the demo's fixed subject.
-var (
-	crateTransforms, pillarCount = buildField()
-	bottleTransforms, squatCount = buildBottles()
-	paneTransforms               = buildPanes()
-	stackTransforms              = buildStack()
-)
-
-// buildField lays out the crate lattice, leaving the courtyard out of the
-// middle and stretching the colonnade's sites into pillars.
-//
-// The pillar count is returned alongside, and it is what the HUD and the
-// assertions call the colonnade rather than a number anyone worked out by hand.
-func buildField() ([]m.Transform, int) {
-	center := gridSide / 2
-	transforms := make([]m.Transform, 0, gridSide*gridSide)
-	pillars := 0
-	for i := range gridSide {
-		for j := range gridSide {
-			if inCourtyard(i, j, center) {
-				continue
-			}
-			if isPillar(i, j) {
-				transforms = append(transforms, m.Transform{
-					Position: m.Vec3{X: latticeAt(i, center) - pillarWidth/2, Z: latticeAt(j, center) - pillarWidth/2},
-					Rotation: m.Quat{W: 1},
-					Scale:    m.Vec3{X: pillarWidth, Y: pillarHeight, Z: pillarWidth},
-				})
-				pillars++
-				continue
-			}
-			transforms = append(transforms, m.Transform{
-				Position: m.Vec3{
-					X: latticeAt(i, center) - crateSize/2,
-					Y: -crateMinY * crateSize,
-					Z: latticeAt(j, center) - crateSize/2,
-				},
-				Scale: m.NewVec3(crateSize),
-			})
-		}
-	}
-	return transforms, pillars
-}
-
-// latticeAt is the world coordinate of lattice index i.
-func latticeAt(i, center int) float32 { return float32(i-center) * gridSpacing }
-
-// inCourtyard reports whether a lattice site falls in the square left out of
-// the middle.
-func inCourtyard(i, j, center int) bool {
-	return abs(i-center) <= courtyardHalf && abs(j-center) <= courtyardHalf
-}
-
-// isPillar reports whether a lattice site carries a pillar rather than a crate.
-// A site inside the courtyard is neither: the lattice is the rule and the
-// courtyard is the hole, so the colonnade loses the one site that falls in it.
-func isPillar(i, j int) bool {
-	return i%pillarStride == pillarOffset && j%pillarStride == pillarOffset
-}
-
-func abs(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
-// buildBottles stands the bottles in a row across the courtyard, each lifted by
-// its own minY so it rests on the floor rather than sinking into it.
-func buildBottles() ([]m.Transform, int) {
-	out := make([]m.Transform, bottleCount)
-	squats := 0
-	for i := range out {
-		if isSquat(i) {
-			out[i] = m.Transform{
-				Position: m.Vec3{X: spread(i, bottleCount, bottleSpacing), Z: bottleZ},
-				Rotation: m.QuatAxisAngle(m.Vec3{Y: 1}, squatYaw),
-				Scale:    m.Vec3{X: bottleScale * squatWiden, Y: bottleScale * squatFlatten, Z: bottleScale * squatWiden},
-			}
-			squats++
-			continue
-		}
-		out[i] = m.Transform{
-			Position: m.Vec3{
-				X: spread(i, bottleCount, bottleSpacing),
-				Y: -bottleMinY * bottleScale,
-				Z: bottleZ,
-			},
-			Scale: m.NewVec3(bottleScale),
-		}
-	}
-	return out, squats
-}
-
-// isSquat reports whether the i-th bottle in the row is one of the squashed
-// ones. Every other bottle is, so a squat one always stands beside a tall one
-// and the pair can be compared without moving the eye.
-func isSquat(i int) bool { return i%2 == 1 }
-
-// buildPanes stands the two screens at their own depths.
-func buildPanes() []m.Transform {
-	out := make([]m.Transform, len(paneStands))
-	for i, stand := range paneStands {
-		out[i] = m.Transform{
-			Position: m.Vec3{X: stand.X, Y: -paneMinY * paneScale, Z: stand.Y},
-			Scale:    m.NewVec3(paneScale),
-		}
-	}
-	return out
-}
-
-// buildStack piles the stack's crates on one another in the courtyard's corner.
-func buildStack() []m.Transform {
-	out := make([]m.Transform, stackCount)
-	for i := range out {
-		out[i] = m.Transform{
-			Position: m.Vec3{
-				X: stackCorner.X - stackScale/2,
-				Y: float32(i) * stackScale,
-				Z: stackCorner.Y - stackScale/2,
-			},
-			Scale: m.NewVec3(stackScale),
-		}
-	}
-	return out
-}
-
-// spread is the coordinate of the i-th of n things in a row centred on zero.
-func spread(i, n int, spacing float32) float32 {
-	return (float32(i) - float32(n-1)/2) * spacing
-}
-
-// draw records the whole frame: the camera, the field, the courtyard, one lamp
-// and the HUD.
-//
-// It holds the Lookup because the HUD's residency line needs a LookupAccess,
-// which is the facade a demo builds from the kernel and the resource. The read
-// is a map hit; nothing here parses or uploads.
-func (p *Instancing) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var sceneQueue kernel.Write[*scene.OpQueue]
-	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var inputState kernel.Read[*input.State]
-	var lookup kernel.Write[*model.Lookup]
-	var files kernel.Read[storage.FileSystem]
-	var resources kernel.Write[*gfx.ResourceQueue]
-	return func(access kernel.ResourceAccess) {
-			sceneQueue = access.GetWrite[*scene.OpQueue]()
-			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			inputState = access.GetRead[*input.State]()
-			lookup = access.GetWrite[*model.Lookup]()
-			files = access.GetRead[storage.FileSystem]()
-			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) {
-			q := sceneQueue.Get()
-			p.rate.measure(time.Now())
-			p.readStats(q)
-			p.advance(inputState.Get())
-			p.record(q)
-			// OpCount reads the recording in progress rather than the
-			// published frame, so it is asked after the frame is recorded and
-			// not beside the pass numbers, which are the previous frame's. It
-			// is asked at all because Ops(nil) would copy six hundred ops a
-			// frame to count them.
-			p.stats.ops = q.OpCount()
-			p.readResidency(model.NewLookupDeviceAccess(
-				k, lookup.Get(), files.Get(), resources.Get()))
-			p.hud(canvasQueue.Get())
-		}
-}
-
-// advance steps the demo's own clock and applies the input. Input is read
-// before the step so a held arrow moves the camera on the very frame it is
-// pressed.
-func (p *Instancing) advance(state *input.State) {
-	if state != nil {
-		if state.JustPressed(input.KeySpace) {
-			p.paused = !p.paused
-		}
-		step := orbitSpeed * fixedStep
-		if state.Pressed(input.KeyLeft) {
-			p.azimuth -= step
-		}
-		if state.Pressed(input.KeyRight) {
-			p.azimuth += step
-		}
-		if state.Pressed(input.KeyUp) {
-			p.elevation = m.Clamp(p.elevation+step, 0.05, 1.4)
-		}
-		if state.Pressed(input.KeyDown) {
-			p.elevation = m.Clamp(p.elevation-step, 0.05, 1.4)
-		}
-		if state.JustPressed(input.Key1) {
-			p.perCall = false
-		}
-		if state.JustPressed(input.Key2) {
-			p.perCall = true
-		}
-		if state.JustPressed(input.KeyR) {
-			p.azimuth, p.elevation, p.step, p.perCall = startAzimuth, startElevation, 0, false
-		}
-	}
-	if !p.paused {
-		p.step++
-	}
-}
-
-// time is the demo's clock: accumulated fixed steps. Nothing in the recorded
-// frame reads it - the courtyard is deliberately still - so it is the HUD's
-// number and the orbit's rate, and every frame at a given pose is the same
-// frame.
-func (p *Instancing) time() float32 { return float32(p.step) * fixedStep }
-
-// eye is the camera's position on its orbit.
-func (p *Instancing) eye() m.Vec3 {
-	cosElevation := float32(math.Cos(float64(p.elevation)))
-	return orbitTarget.Add(m.Vec3{
-		X: overviewRadius * cosElevation * float32(math.Sin(float64(p.azimuth))),
-		Y: overviewRadius * float32(math.Sin(float64(p.elevation))),
-		Z: overviewRadius * cosElevation * float32(math.Cos(float64(p.azimuth))),
-	})
-}
-
-// record records the frame: one camera, the ground, the field, the courtyard
-// and one lamp.
-func (p *Instancing) record(q *scene.OpQueue) {
-	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: m.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
-		FovY:      fieldOfViewY,
-		Near:      nearPlane,
-		Far:       farPlane,
-		// Everything else is left at its zero value, and every zero is the
-		// default: Projection is Perspective, CullMask is LayersAll,
-		// SunIntensity and AmbientIntensity are 1, and Passes is empty, which
-		// emits one implicit forward pass at the camera's own id.
-		SunDirection:  m.Vec3{X: -0.4, Y: -1, Z: -0.45},
-		SunColor:      sunColor,
-		AmbientSky:    ambientSky,
-		AmbientGround: ambientGround,
-	})
-
-	q.Plane(0, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
-
-	// The field, either way round. One call with a Transforms slice and N calls
-	// with a Transform each pack the same instances in the same order and in
-	// the same one batch: the second is merged back into it because the calls
-	// are equal and sort side by side.
-	if p.perCall {
-		for i := range crateTransforms {
-			q.Model(0, cratePath, scene.ModelDraw{Transform: crateTransforms[i]})
-		}
-	} else {
-		q.Model(0, cratePath, scene.ModelDraw{Transforms: crateTransforms})
-	}
-
-	q.Model(0, bottlePath, scene.ModelDraw{Transforms: bottleTransforms})
-	q.Model(0, panePath, scene.ModelDraw{Transforms: paneTransforms})
-
-	// A second call of the crate model, recorded last, and the one draw in this
-	// frame the sort has to move. It carries the crates' own material, which
-	// was interned before the bottles' and the screens', so a material-keyed
-	// sort lifts it back beside the field over two models recorded ahead of it
-	// - and everything else here is already in key order as it is recorded.
-	//
-	// Once beside the field it merges into the field's batch, which is the
-	// other half of what it is here for: two separate calls of one mesh and one
-	// material with nothing else to tell them apart are one batch.
-	q.Model(0, cratePath, scene.ModelDraw{Transforms: stackTransforms})
-
-	// The lamp, and a marker on it so the light has somewhere visible to come
-	// from. The marker is a debug shape, so it shares the bundled material with
-	// the ground plane; both are recorded before the models but reach the flush
-	// ahead of them anyway, since a model call expands into the draw list at
-	// flush time rather than at record time.
-	q.PointLight(0, model.LightDescr{
-		Position:  lampPosition,
-		Color:     lampColor,
-		Intensity: lampIntensity,
-		Range:     lampRange,
-	})
-	q.Sphere(0, lampPosition, lampMarkerRadius, lampColor)
-}
-
-// The primitive counts of the three files, which are what a model draw expands
-// to per instance. They are spelled out rather than counted at runtime so that
-// an asset swapped underneath the demo fails an assertion instead of quietly
-// changing the numbers.
-const (
-	cratePrimitives  = 1
-	bottlePrimitives = 1
-	panePrimitives   = 9
-	// PaneBlendPrimitives is how many of the screen's primitives are alphaMode
-	// BLEND: TestBlendMesh and DecalBlendMesh. They are the ones that split.
-	PaneBlendPrimitives = 2
-)
-
-// CrateCount is how many crates the lattice holds once the courtyard is taken
-// out of it, and PillarCount how many of those are stretched into pillars.
-// Both are counted from the layout rather than written down, so the rule and
-// the number cannot drift apart.
-var (
-	CrateCount  = len(crateTransforms)
-	PillarCount = pillarCount
-)
-
-// debugShapes is how many draws the frame takes from box's vocabulary: the
-// ground plane and the marker on the lamp. They share one material, the bundled
-// PBR that every debug shape takes.
-const debugShapes = 2
-
-// RecordedDraws is how many draws the frame flushes to once every file is
-// resident: one per primitive per instance, plus the debug shapes.
-var RecordedDraws = (CrateCount+stackCount)*cratePrimitives +
-	bottleCount*bottlePrimitives + len(paneTransforms)*panePrimitives + debugShapes
-
-// InstancedBatches is how many batches the frame packs, the field drawn either
-// way round: the two debug shapes, the field with the stack merged into it, the
-// bottles, the screens' opaque primitives, and one per blended primitive per
-// screen. Culling does not change it - a batch is a run of equal draws, not its
-// survivors - until a whole run is culled away, which the reference pose does
-// not do.
-const InstancedBatches = debugShapes + 1 + 1 +
-	(panePrimitives - PaneBlendPrimitives) + len(paneStands)*PaneBlendPrimitives
-
-// readResidency asks each file whether it is drawable, for the HUD. State is
-// the predicate rather than an ok from some other query, because it is the only
-// one that says why a file is not there rather than only that it is not.
-func (p *Instancing) readResidency(la model.LookupDeviceAccess) {
-	for i, path := range modelPaths {
-		p.resident[i] = la.State(path) == nil
-	}
-}
-
-// ResidentCount is how many files reported residency on the last frame.
-func (p *Instancing) ResidentCount() int {
-	n := 0
-	for _, ok := range p.resident {
-		if ok {
-			n++
-		}
-	}
-	return n
-}
-
-// readStats reads the previous frame's flush result back out of the queue,
-// through Passes(dst) into the slice the demo keeps.
-//
-// This is the call the demo is built around. The lists it returns are built
-// during the flush regardless and retaining them costs a slice header, so there
-// is no knob gating them and no second command to run: the batch table on
-// screen is this slice, printed.
-func (p *Instancing) readStats(q *scene.OpQueue) {
-	p.views = q.Passes(p.views[:0])
-	p.stats = stats{passes: len(p.views)}
-	for i := range p.views {
-		view := &p.views[i]
-		p.stats.recorded += view.Recorded
-		p.stats.culled += view.Culled
-		p.stats.instances += view.Instances
-		p.stats.batches += len(view.Batches)
-		for _, batch := range view.Batches {
-			p.stats.biggest = max(p.stats.biggest, batch.InstanceCount)
-		}
-	}
-}
-
-// Batches is the published frame's batches, in emission order, for the HUD and
-// for an assertion that wants the list rather than the counts. It aliases the
-// queue's flush storage and stays valid until the next flush.
-func (p *Instancing) Batches() []scene.BatchView {
-	if len(p.views) == 0 {
-		return nil
-	}
-	return p.views[0].Batches
 }

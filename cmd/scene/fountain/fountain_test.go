@@ -1,45 +1,61 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/dvoyni/cog-examples/internal/fountain"
-	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/model"
+	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/slots/gfx"
+
+	"github.com/dvoyni/cog-examples/internal/headless"
 )
 
 // run composes the demo exactly as main does, waits for both models to be
 // resident without stepping, and drives n steps. A load runs off the frame, so
 // waiting before the first step is what makes step n the frame a real run
 // reaches at step n once its loads have long finished.
-func run(t *testing.T, n int) (*headless.Engine, *Fountain) {
+func run(t *testing.T, n int) *headless.Engine {
 	t.Helper()
-	demo := New()
-	engine := headless.New(t, demo)
+	engine := headless.New(t, New())
+
+	// Preload loads: by the time it returns, the file has been read, parsed and
+	// uploaded. There is nothing to wait for, so what used to be a polling loop
+	// is one call and one assertion.
 	engine.LookupDevice(func(la model.LookupDeviceAccess) {
-		for _, path := range []string{fountain.NozzlePath, fountain.FoxPath} {
+		for _, path := range []string{NozzlePath, FoxPath} {
 			la.Preload(path)
 			if err := la.State(path); err != nil {
 				t.Fatalf("Preload left %q unloaded: %v", path, err)
 			}
 		}
 	})
+
 	engine.Steps(n)
 	if errs := engine.Errors(); len(errs) > 0 {
 		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
 	}
-	return engine, demo
+	return engine
 }
 
-// The HUD's arithmetic: the census is the tally, every kind of thing is
+func ask(t *testing.T, engine *headless.Engine) Shown {
+	t.Helper()
+	reply := engine.Executioner().ExecuteCommand[HUDCmd](HUDRequest{})
+	// A dispatch the kernel could not perform is reported rather than returned,
+	// and the zero response comes back, so the report is what says so.
+	if errs := engine.Errors(); len(errs) > 0 {
+		t.Fatalf("hud: the engine reported %d errors, first: %v", len(errs), errs[0])
+	}
+	return reply
+}
+
+// The HUD's arithmetic: the census is the tally, every kind of Entity is
 // counted, and the frame it sits beside has the camera's two passes.
 func TestTheHUDsArithmetic(t *testing.T) {
-	for _, steps := range []int{3, 180, fountain.ReferenceStep} {
-		_, demo := run(t, steps)
-		h := demo.shown
+	for _, steps := range []int{3, 180, ReferenceStep} {
+		h := ask(t, run(t, steps)).HUD
 		if h.Step != steps-1 {
 			t.Errorf("after %d steps the HUD shows step %d, want the step before", steps, h.Step)
 		}
@@ -58,16 +74,16 @@ func TestTheHUDsArithmetic(t *testing.T) {
 				h.Step, h.Foxes, h.Lights, h.Cameras)
 		}
 		// Two passes: the ground pass draws the basin, and the forward pass
-		// draws every mote, the nozzle, the fox and the basin's ripples. Each
-		// is its own scene call, and scene merges only equal draws that sort
-		// side by side, and no two motes side by side in the sort share a
-		// tint. So each is its own draw.
+		// draws every mote, the nozzle, the fox and the basin's ripples, one
+		// instance each. Motes whose tints are equal share a Batch, so there
+		// are at most as many batches as instances, and never fewer than the
+		// four draws that are not motes plus one for the motes.
 		if h.Passes != 2 {
 			t.Errorf("step %d: %d passes, want 2", h.Step, h.Passes)
 		}
-		if want := h.Motes + 4; h.Drawn != want || h.Batches != want {
-			t.Errorf("step %d: drawn %d in %d batches for %d motes; want %d of each",
-				h.Step, h.Drawn, h.Batches, h.Motes, want)
+		if want := h.Motes + 4; h.Drawn != want || h.Batches > want || h.Batches < 5 {
+			t.Errorf("step %d: drawn %d in %d batches for %d motes; want %d drawn in 5 to %d batches",
+				h.Step, h.Drawn, h.Batches, h.Motes, want, want)
 		}
 	}
 }
@@ -85,17 +101,17 @@ type frame struct {
 // one more and keeps what that step sent the backend and the snapshot of it.
 func referenceFrame(t *testing.T) frame {
 	t.Helper()
-	engine, demo := run(t, fountain.ReferenceStep-1)
+	engine := run(t, ReferenceStep-1)
 	backend := engine.Backend()
 	passes, draws := len(backend.Passes), len(backend.Draws)
 	engine.Steps(1)
 	if errs := engine.Errors(); len(errs) > 0 {
 		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
 	}
-	snapshot := demo.snapshots.Latest()
-	if snapshot.Err != nil || snapshot.Tick != fountain.ReferenceStep {
+	snapshot := ask(t, engine).Snapshot
+	if snapshot.Err != nil || snapshot.Tick != ReferenceStep {
 		t.Fatalf("the HUD's snapshot is of tick %d with error %v, want tick %d",
-			snapshot.Tick, snapshot.Err, fountain.ReferenceStep)
+			snapshot.Tick, snapshot.Err, ReferenceStep)
 	}
 	f := frame{snapshot: snapshot, backend: backend, draws: slices.Clone(backend.Draws[draws:])}
 	f.passes = backend.Passes[passes:]
@@ -106,15 +122,17 @@ func referenceFrame(t *testing.T) frame {
 	return f
 }
 
-// At the reference step every part of the frame is drawn, and drawn in the
-// pass it belongs to.
+// At the reference step every Component is doing its job in the frame: the
+// Camera's two passes each clear what it says, the Model and Animation draw
+// the nozzle and the skinned fox, the Mesh and Material draw the basin in both
+// passes and every mote in forward, one pipeline for all of them.
 func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 	f := referenceFrame(t)
 
-	views := fountain.CameraPasses(f.snapshot.Frame)
+	views := CameraPasses(f.snapshot.Frame)
 	if len(views) != 2 ||
-		fountain.PassTag(views[0].Label) != fountain.TagGround ||
-		fountain.PassTag(views[1].Label) != fountain.TagForward {
+		PassTag(views[0].Label) != tagGround ||
+		PassTag(views[1].Label) != scene.TagForward {
 		t.Fatalf("the snapshot's camera passes are %+v, want ground then forward", views)
 	}
 	if views[0].Load != "clear" || views[0].DepthLoad != "clear" {
@@ -128,13 +146,13 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 	// The same two passes reached the backend, each with its clear.
 	ground, forward := -1, -1
 	for i, pass := range f.passes {
-		switch fountain.PassTag(pass.Label) {
-		case fountain.TagGround:
+		switch PassTag(pass.Label) {
+		case tagGround:
 			ground = i
 			if pass.Load != gfx.LoadClear || pass.DepthLoad != gfx.LoadClear {
 				t.Errorf("the backend's ground pass loads %v and depth %v, want both cleared", pass.Load, pass.DepthLoad)
 			}
-		case fountain.TagForward:
+		case scene.TagForward:
 			forward = i
 			if pass.Load == gfx.LoadClear || pass.DepthLoad != gfx.LoadClear {
 				t.Errorf("the backend's forward pass loads %v and depth %v", pass.Load, pass.DepthLoad)
@@ -146,10 +164,11 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 	}
 
 	// What each pass drew, told apart by pipeline: the nozzle and the fox take
-	// scene's own shader, the fox's variant skinned; the stone, the ripples and
+	// model's bundled shader, the fox's variant skinned; the stone, the ripples and
 	// the motes take the fountain's WGSL, the ripples alone blended.
 	type tally struct{ nozzle, fox, stone, ripples, motes, other int }
 	var in [2]tally
+	motePipelines := map[gfx.PipelineID]bool{}
 	for _, draw := range f.draws {
 		var at *tally
 		switch draw.Pass {
@@ -172,6 +191,7 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 			at.stone++
 		default:
 			at.motes += draw.Instances
+			motePipelines[draw.Pipeline] = true
 		}
 	}
 	if got := in[0]; got != (tally{stone: 1}) {
@@ -184,23 +204,57 @@ func TestTheReferenceStepShowsEveryComponent(t *testing.T) {
 	if got.ripples != 1 {
 		t.Errorf("the forward pass drew the basin's ripples %d times, want once", got.ripples)
 	}
-	if got.motes != fountain.ReferenceMotes || got.stone != 0 {
+	if got.motes != ReferenceMotes || got.stone != 0 {
 		t.Errorf("the forward pass drew %d motes and %d stone, want %d and none",
-			got.motes, got.stone, fountain.ReferenceMotes)
+			got.motes, got.stone, ReferenceMotes)
+	}
+	// Every mote's Material Component holds the one shared value, and its
+	// colour rides in Params, so every mote draws with the one pipeline.
+	if len(motePipelines) != 1 {
+		t.Errorf("the motes drew with %d pipelines, want the one shared material's", len(motePipelines))
 	}
 }
 
-// The frame is the one internal/fountain says the reference step draws: the
-// same passes, the same labels and the same instances in each, which is what
-// cmd/ecs/fountain's frame is held to as well, and one draw a call, which is
-// the ceiling cmd/ecs/fountain's draws are held under.
+// ReferenceStep is the step reference.png was captured at.
+const ReferenceStep = 600
+
+// ReferenceMotes is how many motes the frame at ReferenceStep draws. The HUD in
+// that frame shows the step before it, whose census is two motes fewer.
+const ReferenceMotes = 114
+
+// ExpectedPass is one of the camera's passes as the frame at ReferenceStep has
+// it.
+type ExpectedPass struct {
+	// Label is the pass's whole label: scene spells a camera's pass
+	// scene.camera<ID>.<tag>.
+	Label string
+	// Instances is how many instances the pass drew.
+	Instances int
+	// Draws is how many draws the pass made. scene batches the motes whose
+	// tints are equal, and at the reference step no two motes share a tint, so
+	// every instance is a draw of its own.
+	Draws int
+}
+
+// ReferencePasses is the camera's passes at ReferenceStep, in run order: the
+// ground pass draws the basin alone, and the forward pass every mote, the
+// nozzle, the fox and the basin's ripples.
+var ReferencePasses = []ExpectedPass{
+	{Label: passLabel(tagGround), Instances: 1, Draws: 1},
+	{Label: passLabel(scene.TagForward), Instances: ReferenceMotes + 3, Draws: ReferenceMotes + 3},
+}
+
+func passLabel(tag scene.PassTag) string { return fmt.Sprintf("scene.camera%d.%s", CameraMain, tag) }
+
+// The frame's snapshot is the one the reference step is expected to draw: the
+// same passes, the same labels, and the same instances and draws in each.
 func TestTheReferenceStepMatchesTheExpectedFigures(t *testing.T) {
-	view := referenceFrame(t).snapshot.Frame
-	if got := fountain.PassesOf(view); !slices.Equal(got, fountain.ReferencePasses) {
-		t.Errorf("the camera's passes are %+v, want %+v", got, fountain.ReferencePasses)
+	var got []ExpectedPass
+	for _, pass := range CameraPasses(referenceFrame(t).snapshot.Frame) {
+		got = append(got, ExpectedPass{Label: pass.Label, Instances: pass.Instances, Draws: pass.Draws})
 	}
-	if got := fountain.DrawsOf(view); !slices.Equal(got, fountain.ReferenceSceneDraws) {
-		t.Errorf("the camera's passes made %v draws, want %v", got, fountain.ReferenceSceneDraws)
+	if !slices.Equal(got, ReferencePasses) {
+		t.Errorf("the camera's passes are %+v, want %+v", got, ReferencePasses)
 	}
 }
 
@@ -226,8 +280,7 @@ var referenceHUD = []string{
 }
 
 func TestTheHUDReadsAsInReferencePNG(t *testing.T) {
-	_, demo := run(t, fountain.ReferenceStep)
-	got := demo.shown.Lines(fountain.ReferenceStep)
+	got := ask(t, run(t, ReferenceStep)).HUD.Lines(ReferenceStep)
 	if len(got) != len(referenceHUD) {
 		t.Fatalf("the HUD reads\n%q\nwant\n%q", got, referenceHUD)
 	}
@@ -235,27 +288,5 @@ func TestTheHUDReadsAsInReferencePNG(t *testing.T) {
 		if got[i] != referenceHUD[i] {
 			t.Errorf("line %d reads %q, want %q", i, got[i], referenceHUD[i])
 		}
-	}
-}
-
-// The fox is rigged from Fox.glb's own clips, and its gait at the reference
-// step is the gait a machine stepped from step 1 has there, whenever the rig
-// happened.
-func TestTheFoxGaitAtTheReferenceStepIsCaughtUp(t *testing.T) {
-	engine, demo := run(t, fountain.ReferenceStep)
-	if !demo.rigged {
-		t.Fatal("the fox was never rigged")
-	}
-	var clips []model.ClipInfo
-	engine.LookupDevice(func(la model.LookupDeviceAccess) {
-		clips, _ = la.Clips(fountain.FoxPath, nil)
-	})
-	want, err := fountain.FoxGaitAt(clips, fountain.ReferenceStep)
-	if err != nil {
-		t.Fatalf("FoxGaitAt: %v", err)
-	}
-	got, expected := demo.gait.Plays(nil), want.Plays(nil)
-	if !slices.Equal(got, expected) {
-		t.Errorf("at the reference step the fox plays %+v, want %+v", got, expected)
 	}
 }

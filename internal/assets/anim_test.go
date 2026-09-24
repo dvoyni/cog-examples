@@ -6,14 +6,13 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/model"
-	"github.com/dvoyni/cog/bundles/scene"
 )
 
 // The vendored files the animation bake is judged against.
 //
 // Fox is the skinned asset: a real 24-joint rig with three clips, an inverse
 // bind per joint and every vertex weighted across four influences, which is the
-// shape no document built in memory in cog/bundles/scene reproduces. CesiumMilkTruck is
+// shape no document built in memory in cog/bundles/model reproduces. CesiumMilkTruck is
 // the degenerate-joint asset: its wheels are rigid node animation, which is
 // ordinary glTF and the case the "any node a clip steers becomes a joint" rule
 // exists for.
@@ -48,7 +47,7 @@ func jointsOf(t *testing.T, e *headless.Engine, path string) []string {
 // influences. The clip names are the file's own, which is what a caller has to
 // address a play with.
 func TestFoxDeclaresItsThreeClipsAndItsRig(t *testing.T) {
-	e := drawing(t, foxAsset, scene.ModelDraw{})
+	e := drawing(t, foxAsset, modelDraw{})
 	clips := clipsOf(t, e, foxAsset)
 	names := map[string]float32{}
 	for _, clip := range clips {
@@ -92,7 +91,7 @@ func TestFoxDeclaresItsThreeClipsAndItsRig(t *testing.T) {
 // so the size it produces is worth pinning to the real rig rather than to a
 // document built to be small.
 func TestFoxBakesTheExpectedPoseMemory(t *testing.T) {
-	e := drawing(t, foxAsset, scene.ModelDraw{})
+	e := drawing(t, foxAsset, modelDraw{})
 	var bytes int
 	e.LookupDevice(func(la model.LookupDeviceAccess) { bytes, _ = la.PoseBytes(foxAsset) })
 	// 24 joints x 48 bytes is a row; the rest frame plus every clip's frames
@@ -111,21 +110,14 @@ func TestFoxBakesTheExpectedPoseMemory(t *testing.T) {
 	}
 }
 
-// A skinned draw is never culled, so a playing Fox reaches the pass whatever
-// the frustum thinks of its bind-pose sphere.
+// A skinned draw is never culled, so a playing Fox reaches the backend
+// whatever the frustum thinks of its bind-pose sphere.
 func TestFoxDrawsWithAClipPlaying(t *testing.T) {
-	e := drawing(t, foxAsset, scene.ModelDraw{
+	e := drawing(t, foxAsset, modelDraw{
 		Plays: []model.ClipPlay{{Clip: "Walk", Time: 0.4, Loop: true, Weight: 1}},
 	})
-	passes := e.Passes()
-	if len(passes) != 1 {
-		t.Fatalf("passes = %d, want the camera's one", len(passes))
-	}
-	if passes[0].Instances == 0 {
+	if _, instances := sceneDraws(t, e); instances == 0 {
 		t.Fatal("a playing Fox drew nothing")
-	}
-	if passes[0].Culled != 0 {
-		t.Errorf("culled %d draws, want none: a skinned draw is exempt", passes[0].Culled)
 	}
 	if errs := e.Errors(); len(errs) != 0 {
 		t.Errorf("a clean file with a real clip reported %v", errs)
@@ -133,20 +125,20 @@ func TestFoxDrawsWithAClipPlaying(t *testing.T) {
 }
 
 // Blending two of the file's own clips is the case the four-play cap and the
-// weight normalisation exist for, and it must reach the pass as one draw per
+// weight normalisation exist for, and it must reach the backend as one draw per
 // primitive rather than one per play.
 func TestFoxBlendsTwoClipsAsOneDraw(t *testing.T) {
-	single := drawing(t, foxAsset, scene.ModelDraw{
+	single := drawing(t, foxAsset, modelDraw{
 		Plays: []model.ClipPlay{{Clip: "Walk", Time: 0.4, Loop: true, Weight: 1}},
 	})
-	blended := drawing(t, foxAsset, scene.ModelDraw{
+	blended := drawing(t, foxAsset, modelDraw{
 		Plays: []model.ClipPlay{
 			{Clip: "Walk", Time: 0.4, Loop: true, Weight: 0.5},
 			{Clip: "Run", Time: 0.2, Loop: true, Weight: 0.5},
 		},
 	})
-	if got, want := batches(t, blended), batches(t, single); got != want {
-		t.Errorf("a two-clip blend drew %d batches and one clip drew %d; a blend is one draw", got, want)
+	if got, want := drawn(t, blended), drawn(t, single); got != want {
+		t.Errorf("a two-clip blend drew %d primitives and one clip drew %d; a blend is one draw", got, want)
 	}
 	if errs := blended.Errors(); len(errs) != 0 {
 		t.Errorf("blending two of the file's own clips reported %v", errs)
@@ -157,7 +149,7 @@ func TestFoxBlendsTwoClipsAsOneDraw(t *testing.T) {
 // model still draws - at its rest pose, which is a real pose because row 0 is
 // the authored hierarchy resolved once.
 func TestFoxReportsAClipNameItDoesNotCarry(t *testing.T) {
-	e := drawing(t, foxAsset, scene.ModelDraw{
+	e := drawing(t, foxAsset, modelDraw{
 		Plays: []model.ClipPlay{{Clip: "Gallop", Weight: 1}},
 	})
 	missing := 0
@@ -169,7 +161,7 @@ func TestFoxReportsAClipNameItDoesNotCarry(t *testing.T) {
 	if missing != 1 {
 		t.Errorf("reported %d missing clips over the run, want one: %v", missing, e.Errors())
 	}
-	if batches(t, e) == 0 {
+	if drawn(t, e) == 0 {
 		t.Error("the Fox vanished; a typo'd clip costs the play, not the model")
 	}
 }
@@ -178,7 +170,7 @@ func TestFoxReportsAClipNameItDoesNotCarry(t *testing.T) {
 // rule that a node a clip steers becomes a degenerate single-joint skin is what
 // keeps them turning without a second animation mechanism.
 func TestTheMilkTruckWheelsAreDegenerateJoints(t *testing.T) {
-	e := drawing(t, truckAsset, scene.ModelDraw{})
+	e := drawing(t, truckAsset, modelDraw{})
 	joints := jointsOf(t, e, truckAsset)
 	if len(joints) == 0 {
 		t.Fatal("the truck has no joints; its wheel animation would be frozen")
@@ -190,17 +182,17 @@ func TestTheMilkTruckWheelsAreDegenerateJoints(t *testing.T) {
 	// Its whole file still flattens to the same five primitives: a degenerate
 	// joint changes where a primitive's transform lives, not how many there
 	// are.
-	if got := batches(t, e); got != truckPrimitives {
-		t.Errorf("the truck drew %d batches, want its %d primitives", got, truckPrimitives)
+	if got := drawn(t, e); got != truckPrimitives {
+		t.Errorf("the truck drew %d primitives, want its %d primitives", got, truckPrimitives)
 	}
 	// One wheel out of the file still selects one primitive, and re-rooting it
 	// against a node whose transform now lives in the pose buffer still works.
-	wheel := drawing(t, truckAsset, scene.ModelDraw{
+	wheel := drawing(t, truckAsset, modelDraw{
 		Node:  "Wheels",
 		Plays: []model.ClipPlay{{Clip: clips[0].Name, Time: 0.5, Loop: true, Weight: 1}},
 	})
-	if got := batches(t, wheel); got != 1 {
-		t.Errorf("the Wheels node drew %d batches while playing, want the one wheel", got)
+	if got := drawn(t, wheel); got != 1 {
+		t.Errorf("the Wheels node drew %d primitives while playing, want the one wheel", got)
 	}
 	if errs := wheel.Errors(); len(errs) != 0 {
 		t.Errorf("re-rooting an animated node reported %v", errs)
@@ -211,7 +203,7 @@ func TestTheMilkTruckWheelsAreDegenerateJoints(t *testing.T) {
 // prop off the per-vertex pose path entirely.
 func TestAStaticVendoredModelBakesNoPoses(t *testing.T) {
 	const bottle = "assets/WaterBottle/WaterBottle.glb"
-	e := drawing(t, bottle, scene.ModelDraw{})
+	e := drawing(t, bottle, modelDraw{})
 	var bytes int
 	var clips []model.ClipInfo
 	e.LookupDevice(func(la model.LookupDeviceAccess) {
@@ -230,7 +222,7 @@ func TestAStaticVendoredModelBakesNoPoses(t *testing.T) {
 // clip's end wraps rather than sticking - which is what makes gameplay's
 // monotonically increasing clock the only clock in the system.
 func TestALoopedPlayPastTheEndStillDraws(t *testing.T) {
-	clips := clipsOf(t, drawing(t, foxAsset, scene.ModelDraw{}), foxAsset)
+	clips := clipsOf(t, drawing(t, foxAsset, modelDraw{}), foxAsset)
 	var walk float32
 	for _, clip := range clips {
 		if clip.Name == "Walk" {
@@ -241,10 +233,10 @@ func TestALoopedPlayPastTheEndStillDraws(t *testing.T) {
 		t.Fatal("Fox's Walk clip has no duration to loop over")
 	}
 	for _, time := range []float32{walk * 37, -walk * 4.5, float32(math.Nextafter(float64(walk), 0))} {
-		e := drawing(t, foxAsset, scene.ModelDraw{
+		e := drawing(t, foxAsset, modelDraw{
 			Plays: []model.ClipPlay{{Clip: "Walk", Time: time, Loop: true, Weight: 1}},
 		})
-		if batches(t, e) == 0 {
+		if drawn(t, e) == 0 {
 			t.Errorf("a looped play at t=%v drew nothing", time)
 		}
 		if errs := e.Errors(); len(errs) != 0 {

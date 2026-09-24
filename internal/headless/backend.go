@@ -51,8 +51,7 @@ type Backend struct {
 	// arenas reach the backend this way, so it is how a test reads back what
 	// the flush packed - the per-pass sceneFrame block above all, whose
 	// sixteen-light array is the only record of which lights survived the cap.
-	// Nothing else can see that: PassView reports how many were packed and the
-	// drop is silent by design.
+	// Nothing else can see that: the drop is silent by design.
 	//
 	// The bytes are copied rather than retained, because the queue's arenas are
 	// reused frame to frame and a retained slice would report the newest frame
@@ -105,15 +104,15 @@ type DrawCall struct {
 // in the gogpu package, the only tree with a front end; here the layout stands
 // in so scene's bindings reach the backend at the group and binding the shader
 // declares.
-const sceneShaderPath = "builtin/scene/scene.wgsl"
+const sceneShaderPath = "builtin/model/scene.wgsl"
 
-// sceneShaderLayout mirrors bundles/scene/builtin/scene/scene.wgsl's declared bindings
-// with both defines supplied, all sixteen of them, and its one uniform block,
-// the material's numbers. sceneVariantLayout cuts it down to what a variant
-// actually declares.
+// sceneShaderLayout mirrors model's builtin/model/scene.wgsl's declared
+// bindings with both defines supplied, all sixteen of them, and its one
+// uniform block, the material's numbers. sceneVariantLayout cuts it down to
+// what a variant actually declares.
 //
 // It has to be all sixteen rather than the ones a given assertion cares
-// about, because gfx resolves a recorder's parameters by name against the
+// about, because gfx resolves a draw's parameters by name against the
 // reflected layout: a binding this list omits is silently dropped on the way to
 // the backend, which is indistinguishable here from a flush that never packed
 // it. Group 2 and sceneAnim were missing until the animated demo needed to

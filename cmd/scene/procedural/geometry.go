@@ -4,6 +4,7 @@ import (
 	"math"
 	"unsafe"
 
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -37,6 +38,92 @@ var demoVertexLayout = [...]gfx.VertexAttr{
 	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Tint)), gfx.Float32x3),
 }
 
+// The two bundled-PBR shapes are model.Vertex meshes rather than the Vertex
+// above, because they are here to be drawn with no Material at all: a Mesh
+// with none draws the bundled PBR, which reads only the standard layout.
+// Scene's own debug shapes will not do instead, because they are self-lit, and
+// the whole reason these two are in the frame is to be lit by the same sun as
+// the caller's material.
+
+// groundGeometry builds the ground: a side x side square in the XZ plane
+// centred on the origin, facing +Y, and its mirror facing -Y at the same
+// place. Two faces because the bundled PBR culls back faces and the orbit may
+// dip below the ground; only the face towards the camera survives the cull, so
+// the two never fight for depth.
+func groundGeometry(side float32) ([]model.Vertex, []uint32) {
+	half := side / 2
+	vertices := make([]model.Vertex, 0, 8)
+	indices := make([]uint32, 0, 12)
+	for _, up := range [2]float32{1, -1} {
+		base := uint32(len(vertices))
+		normal := m.Vec3{Y: up}
+		// Seen from the side the normal points to, x then z*up runs
+		// counter-clockwise, so the mirrored face swaps the Z of its corners.
+		for _, corner := range [4]m.Vec2{{X: -1, Y: -1}, {X: 1, Y: -1}, {X: 1, Y: 1}, {X: -1, Y: 1}} {
+			vertices = append(vertices, model.Vertex{
+				Position: m.Vec3{X: corner.X * half, Z: -corner.Y * half * up},
+				Normal:   normal,
+				Tangent:  m.Vec4{X: 1, W: 1},
+				UV0:      m.Vec2{X: (corner.X + 1) / 2, Y: (corner.Y + 1) / 2},
+				Color:    m.White,
+			})
+		}
+		indices = append(indices, base, base+1, base+2, base, base+2, base+3)
+	}
+	return vertices, indices
+}
+
+// The reference sphere's tessellation, the one scene's lit debug sphere had
+// when the demo drew it through that: sixteen segments round and twelve rings
+// from pole to pole.
+const (
+	sphereSegments = 16
+	sphereRings    = 12
+)
+
+// sphereGeometry builds the radius-1 UV sphere: sphereRings+1 rows of
+// sphereSegments+1 vertices from the north pole down, the extra column closing
+// the seam, with smooth normals equal to the position. The rows touching a
+// pole contribute one triangle per segment rather than two, since the other
+// would have no area.
+func sphereGeometry() ([]model.Vertex, []uint32) {
+	const columns = sphereSegments + 1
+	vertices := make([]model.Vertex, 0, columns*(sphereRings+1))
+	for ring := range sphereRings + 1 {
+		v := float64(ring) / sphereRings
+		y, radius := float32(math.Cos(v*math.Pi)), float32(math.Sin(v*math.Pi))
+		for segment := range columns {
+			u := float64(segment) / sphereSegments
+			sin, cos := math.Sincos(u * 2 * math.Pi)
+			position := m.Vec3{X: radius * float32(cos), Y: y, Z: radius * float32(sin)}
+			vertices = append(vertices, model.Vertex{
+				Position: position,
+				Normal:   position,
+				Tangent:  m.Vec4{X: float32(-sin), Z: float32(cos), W: 1},
+				UV0:      m.Vec2{X: float32(u), Y: float32(v)},
+				Color:    m.White,
+			})
+		}
+	}
+	indices := make([]uint32, 0, sphereSegments*(2*sphereRings-2)*3)
+	for ring := range sphereRings {
+		for segment := range sphereSegments {
+			a := uint32(ring*columns + segment)
+			b, c := a+1, a+columns
+			d := c + 1
+			// Rows run north to south and columns eastward, so seen from
+			// outside (a, b, d) and (a, d, c) run counter-clockwise.
+			if ring != 0 {
+				indices = append(indices, a, b, d)
+			}
+			if ring != sphereRings-1 {
+				indices = append(indices, a, d, c)
+			}
+		}
+	}
+	return vertices, indices
+}
+
 // The ridge: a heightfield over the unit square in X and Z, rebuilt and
 // re-baked every frame through UpdateMesh. It is authored at unit size and
 // placed by its transform's uniform Scale, so the sphere below is local space
@@ -53,7 +140,7 @@ const (
 	ridgeWavesZ      = 1.5
 )
 
-// ridgeBounds is the local-space radius the ridge's draw declares. A custom
+// ridgeBounds is the local-space radius the ridge's Mesh declares. A custom
 // vertex layout gets no baked sphere - scene cannot locate POSITION in bytes it
 // has never seen a layout for - so without this the ridge would be exempt from
 // culling entirely. It is the circumradius of the unit square plus the wave's
@@ -107,8 +194,8 @@ func ridgeGeometry(cells int, phase float32) ([]Vertex, []uint32) {
 }
 
 // The ribbon: a closed band around the origin, rebuilt from scratch every frame
-// as a temporary mesh and thrown away with the frame. It is authored in world
-// units and placed by a translation alone.
+// as a fresh mesh, with the previous frame's released as it goes. It is
+// authored in world units and placed by a translation alone.
 const (
 	ribbonSegments  = 96
 	ribbonRadius    = 3.1

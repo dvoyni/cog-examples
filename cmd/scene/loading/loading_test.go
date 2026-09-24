@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/ecs"
 	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/kernel"
@@ -24,16 +25,21 @@ import (
 // and almost no picture on purpose: loading and the lookup facade are the two
 // contracts whose failures are invisible in a frame, so the frame is the
 // smaller half of the demonstration and this is the larger one.
+//
+// What a test knows of the frame is what reached the fake Backend: the passes
+// gfx began, the draws it made in each and the pipelines they drew through.
+// scene publishes no account of its own frame, so a count here is a count of
+// instances the GPU was asked to draw.
 
 // run starts the demo headless over the vendored asset set and steps until
 // every station has reached the outcome its table row expects - thirteen
 // loaded, three failed - which is the frame the reference screenshot shows.
 //
-// The loop survives from when loading was asynchronous and now settles on its
-// first pass: a load runs inside the flush that named the file, so the frame
-// that draws a station is the frame that loaded it. What that frame costs is the
-// hitch this design accepts - decoding TextureSettingsTest's images is the
-// expensive one - and Preload is the lever a game pulls to move it.
+// The loop settles on its first pass: a load runs inside the tick whose load
+// System keyed the file, so the tick that draws a station is the tick that
+// loaded it. What that tick costs is the hitch this design accepts - decoding
+// TextureSettingsTest's images is the expensive one - and Preload is the lever
+// a game pulls to move it.
 func run(t *testing.T) (*headless.Engine, *Loading) {
 	t.Helper()
 	engine, demo := start(t)
@@ -50,8 +56,7 @@ func start(t *testing.T) (*headless.Engine, *Loading) {
 }
 
 // settle steps until every station has reached its expected residency, then
-// twice more: the frame that first sees a model resident is also the first to
-// record its draws, and Passes publishes the frame the last flush consumed.
+// twice more, so what the backend holds last is a whole settled frame.
 func settle(t *testing.T, engine *headless.Engine, demo *Loading) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
@@ -95,18 +100,46 @@ func unexpectedErrors(engine *headless.Engine, demo *Loading) []error {
 	return out
 }
 
-// pass is the frame's one pass. The camera declares no passes at all, so this
-// is the implicit forward pass at the camera's own id.
-func pass(t *testing.T, engine *headless.Engine) scene.PassView {
-	t.Helper()
-	passes := engine.Passes()
-	if len(passes) != 1 {
-		t.Fatalf("published %d passes, want the one implicit pass", len(passes))
+// frame is what one step sent the backend: the passes scene began for its
+// cameras, and the draws made in them. Draws index frame.passes.
+type frame struct {
+	passes []gfx.PassDesc
+	draws  []headless.DrawCall
+}
+
+// cameraPassPrefix begins every pass scene labels for a camera,
+// "scene.camera<ID>.<tag>". Anything else in the backend is canvas's.
+const cameraPassPrefix = "scene.camera"
+
+// step takes one step and keeps what it sent the backend in scene's passes.
+func step(engine *headless.Engine) frame {
+	backend := engine.Backend()
+	passes, draws := len(backend.Passes), len(backend.Draws)
+	engine.Steps(1)
+	var f frame
+	rebase := map[int]int{}
+	for i, pass := range backend.Passes[passes:] {
+		if strings.HasPrefix(pass.Label, cameraPassPrefix) {
+			rebase[passes+i] = len(f.passes)
+			f.passes = append(f.passes, pass)
+		}
 	}
-	if passes[0].CameraID != CameraMain {
-		t.Fatalf("pass camera %d, want %d", passes[0].CameraID, CameraMain)
+	for _, draw := range backend.Draws[draws:] {
+		if at, ok := rebase[draw.Pass]; ok {
+			draw.Pass = at
+			f.draws = append(f.draws, draw)
+		}
 	}
-	return passes[0]
+	return f
+}
+
+// instances is how many instances a frame's scene draws asked for in all.
+func (f frame) instances() int {
+	total := 0
+	for _, draw := range f.draws {
+		total += draw.Instances
+	}
+	return total
 }
 
 // Every station reaches the residency its table row expects, and the three that
@@ -120,93 +153,90 @@ func TestEveryStationReachesTheResidencyItsTableExpects(t *testing.T) {
 				stations[i].name, stateName(got), got, stations[i].loads)
 		}
 	}
+	// The camera, then a pad and a station each.
+	if got, want := demo.Entities(), 1+2*len(stations); got != want {
+		t.Errorf("setup spawned %d Entities, want %d", got, want)
+	}
 }
 
 // Every pad is drawn and only a station whose selector resolved on a resident
 // model draws a model. Five pads are bare, and a count is the only thing that
 // separates "skipped" from "drawn somewhere off-screen".
+//
+// Nothing is culled at the reference pose, so the instances the backend was
+// asked for are the table's count exactly; and scene draws each Batch of equal
+// instances as one draw, so there are fewer draws than instances.
 func TestEveryPadIsDrawnAndOnlyResolvedStationsDrawAModel(t *testing.T) {
 	engine, _ := run(t)
-	view := pass(t, engine)
-	if view.Recorded != RecordedDraws {
-		t.Errorf("recorded %d draws, want %d", view.Recorded, RecordedDraws)
+	f := step(engine)
+	if len(f.passes) != 1 {
+		t.Fatalf("scene began %d camera passes, want the camera's one default pass", len(f.passes))
 	}
-	if view.Culled != 0 {
-		t.Errorf("culled %d draws at the reference pose, want none", view.Culled)
+	// The default pass keeps the colour canvas's backdrop cleared below it.
+	if f.passes[0].Load == gfx.LoadClear {
+		t.Error("the camera's default pass clears colour, which would wipe the backdrop")
 	}
-	if view.Instances != RecordedDraws {
-		t.Errorf("packed %d instances, want %d", view.Instances, RecordedDraws)
+	if got := f.instances(); got != SettledInstances {
+		t.Errorf("the pass drew %d instances, want %d: sixteen pads and each resident "+
+			"station's primitives", got, SettledInstances)
 	}
-	// Nothing here is an instanced draw, but equal draws side by side merge.
-	if len(view.Batches) != Batches {
-		t.Errorf("emitted %d batches for %d draws, want %d",
-			len(view.Batches), RecordedDraws, Batches)
-	}
-	if ops := len(engine.Ops()); ops != RecordedOps {
-		t.Errorf("reported %d ops, want %d", ops, RecordedOps)
+	if len(f.draws) >= SettledInstances {
+		t.Errorf("the pass made %d draws for %d instances; equal instances batch, so "+
+			"there should be fewer", len(f.draws), SettledInstances)
 	}
 }
 
-// Nothing is substituted for a model that is not resident. On the first frame
-// nothing has loaded, so the only draws are the sixteen pads - not a box, not a
-// smaller model, not the last model that did load.
+// Nothing is substituted for a model that is not resident. The only draws for a
+// station that failed are none at all - not a box, not a smaller model, not the
+// last model that did load.
 //
 // This is the contract that cannot be seen any other way. A substitute would
 // render a plausible frame, and every count in it would look reasonable.
 func TestNothingIsSubstitutedForAModelThatIsNotResident(t *testing.T) {
 	engine, demo := start(t)
-	// Every frame from the first to settled. On each one the draw count has to
-	// be at most the pads plus the primitives of the stations resident on that
-	// frame. A substitute is the one thing that could push it over, and it
-	// would push it over on precisely the frames this loop covers and no
-	// others.
+	// Every frame from the first to a few past settled. On each one the
+	// instance count has to be at most the pads plus the primitives of the
+	// stations resident on that tick. A substitute is the one thing that could
+	// push it over.
 	//
-	// Both numbers come from LastFlush, which reads them together. Taking them
-	// separately - the count from the queue, the residency from the demo's own
-	// table - compares two different frames, because a load installs at a frame
-	// boundary that falls between the two reads; that skew failed this
-	// assertion about one run in nine with nothing substituted anywhere.
+	// Both numbers describe the same tick: the survey reads the residency
+	// after scene's load System keyed the Models, and scene draws what that
+	// System keyed, in the same tick.
 	deadline := time.Now().Add(60 * time.Second)
 	incomplete := 0
-	for frames := 0; !demo.Settled(); frames++ {
+	for frames, extra := 0, 0; extra < 3; frames++ {
 		if time.Now().After(deadline) {
 			t.Fatalf("stations never settled: %s", unsettled(demo))
 		}
-		engine.Steps(1)
-		incomplete += checkNothingSubstituted(t, demo, frames)
+		f := step(engine)
+		incomplete += checkNothingSubstituted(t, demo, f, frames)
+		if demo.Settled() {
+			extra++
+		}
 		time.Sleep(time.Millisecond)
 	}
-	// The loop's last flush is described by the update after it, so one more
-	// step is what brings the final unsettled frame - the one with the most
-	// resident stations and so the tightest bound of all of them - into view.
-	engine.Steps(1)
-	incomplete += checkNothingSubstituted(t, demo, -1)
 	if incomplete == 0 {
 		t.Error("every station was resident on the very first frame, so this test saw " +
 			"no frame in which anything could have been substituted")
 	}
 }
 
-// checkNothingSubstituted holds the bound for the frame the last flush
-// consumed, and returns 1 if that frame was one in which a substitution was
-// possible at all - that is, one with a station still not resident.
-func checkNothingSubstituted(t *testing.T, demo *Loading, frame int) int {
+// checkNothingSubstituted holds the bound for one frame, and returns 1 if that
+// frame was one in which a substitution was possible at all - that is, one
+// with a station still not resident.
+func checkNothingSubstituted(t *testing.T, demo *Loading, f frame, at int) int {
 	t.Helper()
-	recorded, residency, ok := demo.LastFlush()
-	if !ok {
-		return 0
-	}
 	want, resident := len(stations), 0
 	for i := range stations {
-		if residency[i] {
+		if demo.State(i) == nil {
 			want += stations[i].draws
 			resident++
 		}
 	}
-	if recorded > want {
-		t.Fatalf("frame %d recorded %d draws with %d of %d stations resident; "+
+	if got := f.instances(); got > want {
+		t.Fatalf("frame %d drew %d instances with %d of %d stations resident; "+
 			"at most %d can be real, so something was substituted",
-			frame, recorded, resident, len(stations), want)
+			at, got, resident, len(stations), want)
 	}
 	if resident < len(stations) {
 		return 1
@@ -215,9 +245,9 @@ func checkNothingSubstituted(t *testing.T, demo *Loading, frame int) int {
 }
 
 // Preload names every path the grid draws. A station whose path was missing
-// here would load off its first draw instead, which is a different code path
-// and a silent one: the picture would be identical and the hitch would have
-// moved back into the frame.
+// here would load off scene's load System instead, which is a different code
+// path and a silent one: the picture would be identical and the hitch would
+// have moved back into the frame.
 func TestPreloadNamesEveryPathTheGridDraws(t *testing.T) {
 	named := map[string]bool{}
 	for _, path := range PreloadOrder {
@@ -243,15 +273,15 @@ func TestPreloadNamesEveryPathTheGridDraws(t *testing.T) {
 	}
 }
 
-// Preload makes a model resident with no draw of it anywhere. It is the same
-// idempotent load a draw fires, fired without one, which is the whole of moving
-// a decode into a loading screen the app controls.
+// Preload makes a model resident with no Entity naming it anywhere. It is the
+// same idempotent load scene's load System fires, fired without one, which is
+// the whole of moving a decode into a loading screen the app controls.
 func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
 	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	// No demo plugin: nothing in this engine records a single op, so the
+	// No demo plugin: nothing in this engine spawns a single Entity, so the
 	// asset set is mounted on its own.
 	engine := headless.New(t, headless.Mounting(mount))
 	engine.LookupDevice(func(la model.LookupDeviceAccess) {
@@ -262,9 +292,10 @@ func TestPreloadMakesAModelResidentWithNoDrawOfIt(t *testing.T) {
 	})
 	// The bakes Preload queued reach the backend on the render after the update
 	// that made them, so a test measuring uploads still steps the frames.
-	engine.Steps(3)
-	if passes := engine.Passes(); len(passes) != 0 {
-		t.Fatalf("published %d passes with nothing recording, want none", len(passes))
+	for range 3 {
+		if f := step(engine); len(f.passes) != 0 {
+			t.Fatalf("scene began %d camera passes with no camera, want none", len(f.passes))
+		}
 	}
 }
 
@@ -288,24 +319,10 @@ func loadNow(t *testing.T, engine *headless.Engine, path string) {
 	engine.Steps(3)
 }
 
-// failNow is loadNow for a path that is meant not to load.
-func failNow(t *testing.T, engine *headless.Engine, path string) {
-	t.Helper()
-	var err error
-	engine.LookupDevice(func(la model.LookupDeviceAccess) {
-		la.Preload(path)
-		err = la.State(path)
-	})
-	if err == nil {
-		t.Fatalf("%s loaded, want it to have failed", path)
-	}
-	engine.Steps(3)
-}
-
-// Every failure happens where the caller is standing. There is no longer a
-// slow half and a fast half: the read, the parse and the uploads all run inside
-// the call that asked, so an invalid path, a truncated file and a file that is
-// not there all answer on the first query.
+// Every failure happens where the caller is standing. There is no slow half
+// and fast half: the read, the parse and the uploads all run inside the call
+// that asked, so an invalid path, a truncated file and a file that is not
+// there all answer on the first query.
 //
 // This replaces what this demo's ticket asked for twice over. #97 expected the
 // non-existent path to be the synchronous one and it was not, because finding
@@ -332,7 +349,7 @@ func TestEveryFailureHappensInTheCallThatAsked(t *testing.T) {
 	// The two file failures are distinguishable by what they wrap, which is the
 	// honest report of what the API can tell a caller. The absent one is the
 	// library's own read failure, reported under the descriptor; the truncated
-	// one is the loader's, reported as scene's own error.
+	// one is the loader's, reported as model's own error.
 	var notExist, unexpectedEOF bool
 	for _, err := range engine.Errors() {
 		if strings.Contains(err.Error(), pathMissing) && errors.Is(err, fs.ErrNotExist) {
@@ -369,24 +386,16 @@ func reportsFor(engine *headless.Engine, path string) int {
 	return count
 }
 
-// settleBroken without a demo loads the two broken paths, each of which fails.
-func settleBroken(t *testing.T, engine *headless.Engine) {
-	t.Helper()
-	for _, path := range []string{pathTruncated, pathMissing} {
-		failNow(t, engine, path)
-	}
-}
-
 // A failed path never retries, and unload is the only lever that clears it.
-// A typo'd path drawn every frame must not re-read the file every frame
-// forever, so failure is terminal - and a Retry that did not first free would
-// be a second name for the idempotent load that already exists.
+// A typo'd path named by a Model every tick must not re-read the file every
+// tick forever, so failure is terminal - and a Retry that did not first free
+// would be a second name for the idempotent load that already exists.
 func TestAFailedPathNeverRetriesAndUnloadIsTheOnlyLever(t *testing.T) {
 	engine, demo := run(t)
-	// Thirty frames drawing three failed paths, and none of them loads again.
-	// The observable is the report count: a path that retried would report
-	// afresh, because the entry that silences it is the same entry that stops
-	// the load.
+	// Thirty frames with three failed paths on the grid, and none of them loads
+	// again. The observable is the report count: a path that retried would
+	// report afresh, because the entry that silences it is the same entry that
+	// stops the load.
 	before := map[string]int{}
 	for _, path := range []string{pathTruncated, pathMissing} {
 		before[path] = reportsFor(engine, path)
@@ -412,12 +421,10 @@ func TestAFailedPathNeverRetriesAndUnloadIsTheOnlyLever(t *testing.T) {
 	// because all three are still broken - and the observable is a second
 	// report, because reports are keyed and fired once and the key is cleared
 	// on unload. The truncated file reporting twice is the proof the unload
-	// actually retired the entry.
+	// actually retired the entry, and reporting exactly twice is the proof
+	// that marking its Model changed did not load it a third time.
 	reported := reportsFor(engine, pathTruncated)
 	demo.Retry()
-	// The unload and the preload now happen in one handler, in that order, and
-	// that is enough: freeing is immediate, so the preload behind it loads
-	// afresh rather than finding the entry the unload gave up.
 	engine.Steps(2)
 	if after := reportsFor(engine, pathTruncated); after != reported+1 {
 		t.Errorf("the truncated file reported %d times before the retry and %d after, "+
@@ -578,9 +585,9 @@ func TestReRootingDiscardsEveryAncestorTransform(t *testing.T) {
 	}
 }
 
-// A Node draw discards the scene root's transform and an empty Node keeps it.
-// On this asset that is a whole axis: the scene's only root is Yup2Zup, whose
-// rotation is what stands the truck up, so the body drawn through a Node
+// A Node selector discards the scene root's transform and an empty Node keeps
+// it. On this asset that is a whole axis: the scene's only root is Yup2Zup,
+// whose rotation is what stands the truck up, so the body drawn through a Node
 // selector lies on its side and the same subtree drawn as the scene does not.
 func TestAWholeSceneDrawKeepsTheRootTransformAndANodeDrawDiscardsIt(t *testing.T) {
 	engine, _ := run(t)
@@ -612,12 +619,12 @@ func TestAWholeSceneDrawKeepsTheRootTransformAndANodeDrawDiscardsIt(t *testing.T
 }
 
 // A Scene selector that names the file's own scene resolves, and resolves to
-// the same draw the default would - which on this asset set is the only shape a
+// the same view the default would - which on this asset set is the only shape a
 // matching Scene can take. Six vendored assets name their scene "Scene", and in
 // every one of them that scene is also the declared default; MultipleScenes,
 // the repository's only file with more than one scenes entry, leaves both of
 // its unnamed. So selecting a non-default scene has no asset behind it and is
-// recorded here as a gap rather than designed around.
+// kept here as a gap rather than designed around.
 func TestAMatchedSceneSelectorResolvesToTheSameDrawAsTheDefault(t *testing.T) {
 	engine, _ := run(t)
 	var named, byDefault m.Box3
@@ -659,11 +666,11 @@ func TestAnUnmatchedSelectorReportsOnceHoweverManyFramesDrawIt(t *testing.T) {
 	}
 	if sceneReports != 1 {
 		t.Errorf("the unmatched Scene reported %d times over ~%d frames, want once",
-			sceneReports, demo.step)
+			sceneReports, demo.Step())
 	}
 	if nodeReports != 1 {
 		t.Errorf("the unmatched Node reported %d times over ~%d frames, want once",
-			nodeReports, demo.step)
+			nodeReports, demo.Step())
 	}
 }
 
@@ -681,19 +688,18 @@ func TestTheTextureCacheBakesOneTexturePerImageNotPerGlTFTexture(t *testing.T) {
 	}
 	// Alone in its own engine, and preloaded rather than drawn, so the count is
 	// this file's and nothing else's: the grid's own engine also carries
-	// canvas's font atlas and scene's two 1x1 defaults, and a total that had to
-	// subtract them would be an assertion about the subtraction.
+	// canvas's font atlas, and a total that had to subtract it would be an
+	// assertion about the subtraction.
 	mount, err := assets.Mount()
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
 	engine := headless.New(t, headless.Mounting(mount))
-	engine.LookupDevice(func(la model.LookupDeviceAccess) { la.Preload(pathSamplers) })
 	loadNow(t, engine, pathSamplers)
 	backend := engine.Backend()
-	// Every model texture is baked with a mip chain and scene's own two 1x1
-	// defaults are not, so the mipped count is the model's alone and needs no
-	// subtraction to say so.
+	// Every model texture is baked with a mip chain and the bundled PBR's two
+	// 1x1 defaults are not, so the mipped count is the model's alone and needs
+	// no subtraction to say so.
 	if got := backend.MippedTextures; got != len(doc.Images) {
 		t.Errorf("baked %d model textures for a file with %d images and %d glTF "+
 			"textures over %d samplers, want %d: the cache is keyed by resolved "+
@@ -701,14 +707,14 @@ func TestTheTextureCacheBakesOneTexturePerImageNotPerGlTFTexture(t *testing.T) {
 			got, len(doc.Images), len(doc.Textures), len(doc.Samplers), len(doc.Images))
 	}
 	if got := backend.BakedTextures; got != len(doc.Images)+defaultTextures {
-		t.Errorf("baked %d textures in all, want %d model textures plus scene's %d "+
-			"1x1 defaults", got, len(doc.Images), defaultTextures)
+		t.Errorf("baked %d textures in all, want %d model textures plus the bundled "+
+			"PBR's %d 1x1 defaults", got, len(doc.Images), defaultTextures)
 	}
 }
 
 // Drawing one model six times bakes its texture once. It is the other of the
 // two honest exercises of the path-keyed cache, and the one that says the key
-// is the path rather than the draw.
+// is the path rather than the Entity.
 func TestDrawingOneModelManyTimesBakesItsTextureOnce(t *testing.T) {
 	copies := 0
 	for i := range stations {
@@ -723,14 +729,18 @@ func TestDrawingOneModelManyTimesBakesItsTextureOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	// The same number of draws the grid makes, alone in an engine with no HUD,
-	// so the mipped count is the truck's and needs no subtraction.
+	// The same number of truck Entities the grid spawns, alone in an engine
+	// with no HUD, so the mipped count is the truck's and needs no subtraction.
 	engine := headless.New(t, headless.Mounting(mount), &soloDemo{path: pathTruck, copies: copies})
 	loadNow(t, engine, pathTruck)
 	truck := parse(t, pathTruck)
 	if got := engine.Backend().MippedTextures; got != len(truck.Images) {
-		t.Errorf("%d draws of one model baked %d textures, want %d - one per image, "+
+		t.Errorf("%d Entities of one model baked %d textures, want %d - one per image, "+
 			"because a model's cache key is its path", copies, got, len(truck.Images))
+	}
+	if f := step(engine); f.instances() != copies*TruckPrimitives {
+		t.Errorf("%d truck Entities drew %d instances, want %d",
+			copies, f.instances(), copies*TruckPrimitives)
 	}
 }
 
@@ -745,8 +755,8 @@ func TestEveryModelTextureCarriesAMipChain(t *testing.T) {
 	if backend.MippedTextures == 0 {
 		t.Fatal("not one texture in the whole grid was baked with a mip chain")
 	}
-	// Scene's own two 1x1 defaults are in the total and are deliberately not
-	// mipped: for a constant texel every level is identical, so there is
+	// The bundled PBR's two 1x1 defaults are in the total and are deliberately
+	// not mipped: for a constant texel every level is identical, so there is
 	// nothing to generate. Canvas's font atlas is in it too. So the claim here
 	// is a floor - every model texture - rather than an equality.
 	images := len(parse(t, pathSamplers).Images) + len(parse(t, pathTruck).Images)
@@ -757,9 +767,9 @@ func TestEveryModelTextureCarriesAMipChain(t *testing.T) {
 	}
 }
 
-// defaultTextures is how many 1x1 textures scene bakes for itself: the white
-// texel every empty colour slot binds and the flat normal every empty normal
-// slot binds.
+// defaultTextures is how many 1x1 textures the bundled PBR bakes for itself:
+// the white texel every empty colour slot binds and the flat normal every empty
+// normal slot binds.
 const defaultTextures = 2
 
 // Unloading a model does not cascade to its textures. With no refcount the
@@ -780,11 +790,16 @@ func TestUnloadingAModelDoesNotCascadeToItsTextures(t *testing.T) {
 	}
 
 	demo.UnloadModel()
-	// The unload frees where the caller stands, and the same frame's draws then
-	// load the truck again: a free followed by a get is a reload, not an error.
-	// So what is being measured after this is the reload, which is exactly what
-	// makes the texture count the assertion.
-	engine.Steps(2)
+	// The unload frees where the System stands, and marks the truck's Models
+	// changed, so scene's load System loads the truck again in the same tick:
+	// a free followed by a touch is a reload, not an error. So what is being
+	// measured after this is the reload, which is exactly what makes the
+	// texture count the assertion.
+	f := step(engine)
+	if got := f.instances(); got != SettledInstances {
+		t.Errorf("the tick that unloaded the truck drew %d instances, want the %d of a "+
+			"settled grid: the reload lands before scene draws", got, SettledInstances)
+	}
 	settle(t, engine, demo)
 	if demo.State(stationScene) != nil {
 		t.Errorf("the truck did not come back after UnloadModel: %v", demo.State(stationScene))
@@ -819,9 +834,10 @@ func TestUnloadTextureIsTheLeverThatFreesThem(t *testing.T) {
 // UnloadAll gives up every loaded model and every cached texture at once. It is
 // the level teardown, and it walks what is loaded at the call.
 //
-// The observable is the same one UnloadTexture's is: the frame's own draws load
-// everything again straight afterwards, and because the textures went with the
-// models, that reload bakes every image afresh.
+// The observable is the same one UnloadTexture's is: the unload System marks
+// every station's Model changed, so everything loads again straight
+// afterwards, and because the textures went with the models, that reload
+// bakes every image afresh.
 func TestUnloadAllReleasesEveryLoadedModel(t *testing.T) {
 	engine, demo := run(t)
 	backend := engine.Backend()
@@ -836,39 +852,45 @@ func TestUnloadAllReleasesEveryLoadedModel(t *testing.T) {
 		t.Errorf("reloading after UnloadAll baked %d textures, want every image again",
 			got-before)
 	}
+	if f := step(engine); f.instances() != SettledInstances {
+		t.Errorf("after UnloadAll the grid drew %d instances, want the %d of a settled grid",
+			f.instances(), SettledInstances)
+	}
 }
 
-// A replacement Material binds neither the file's record nor its textures, and
-// OverrideParams keeps both. The two stations draw the same subtree of the same
-// file, so everything that differs between their batches is the material.
+// textShaderLabel is the label gfx gives a shader built from inline source,
+// which is how a draw with the repaint material is told from a bundled one.
+const textShaderLabel = "gfx.shader"
+
+// A replacement is the repaint shader drawing the repainted station and
+// nothing else, and a tint is the bundled shader. The two stations draw the
+// same subtree of the same file, so everything that differs between their
+// draws is what the Entity carries.
 //
-// The observable is the material id: scene interns a material by content, so
-// the repainted station's batches carry an id no other station's do, and the
-// tinted station's carry the file's own - a merge is a copy of the record, not
-// a different material.
-func TestAReplacementMaterialIsADifferentMaterialAndAMergeIsNot(t *testing.T) {
+// The observable is the pipeline: the repainted station's primitives, and only
+// they, reach the backend through a shader built from inline source, and the
+// tinted station's draw through the bundled one like every other model's.
+func TestAReplacementMaterialIsADifferentShaderAndATintIsNot(t *testing.T) {
 	engine, _ := run(t)
-	batches := pass(t, engine).Batches
-	pipelines := scenePipelines(engine)
-	if len(pipelines) < 2 {
-		t.Fatalf("the frame built %d scene-shaded pipelines, want at least two - one for "+
-			"the bundled PBR and one for the replacement", len(pipelines))
-	}
-	// The replacement's own shader is inline text rather than a resource path,
-	// which is how a test tells a demo's WGSL from a bundled shader.
+	f := step(engine)
 	backend := engine.Backend()
-	replacement := 0
-	for _, desc := range backend.Pipelines {
-		if backend.ShaderPath(desc.Shader) != headless.SceneShaderPath {
-			replacement++
+	repainted, bundled := 0, 0
+	for _, draw := range f.draws {
+		switch {
+		case backend.ShaderPath(backend.PipelineOf(draw.Pipeline).Shader) == textShaderLabel:
+			repainted += draw.Instances
+		case backend.IsScenePipeline(draw.Pipeline):
+			bundled += draw.Instances
 		}
 	}
-	if replacement == 0 {
-		t.Error("no pipeline was built from a shader that is not the bundled scene one, " +
-			"so the replacement Material never reached the GPU")
+	if repainted != stations[stationRepainted].draws {
+		t.Errorf("%d instances drew with the repaint shader, want the repainted "+
+			"station's %d primitives", repainted, stations[stationRepainted].draws)
 	}
-	if len(batches) == 0 {
-		t.Fatal("no batches")
+	// Everything else in the pass - the pads and every other resident
+	// station, the tinted one among them - is the bundled shader's.
+	if want := SettledInstances - stations[stationRepainted].draws; bundled != want {
+		t.Errorf("%d instances drew with the bundled scene shader, want %d", bundled, want)
 	}
 }
 
@@ -966,7 +988,6 @@ func TestTheConvertedLinePrimitivesReachALinePipeline(t *testing.T) {
 func TestTheQuantisedCubeDequantisesToItsPlainTwinsBounds(t *testing.T) {
 	engine, _ := run(t)
 	const plain = "assets/AnimatedMorphCube/AnimatedMorphCube.glb"
-	engine.LookupDevice(func(la model.LookupDeviceAccess) { la.Preload(plain) })
 	loadNow(t, engine, plain)
 
 	doc := parse(t, pathQuantized)
@@ -1013,10 +1034,8 @@ func TestAnEightBitIndexedModelDrawsTheFilesOwnIndexCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("locate assets: %v", err)
 	}
-	solo := &soloDemo{path: pathNarrowIndices}
-	engine := headless.New(t, headless.Mounting(mount), solo)
+	engine := headless.New(t, headless.Mounting(mount), &soloDemo{path: pathNarrowIndices})
 	loadNow(t, engine, pathNarrowIndices)
-	engine.Steps(2)
 
 	doc := parse(t, pathNarrowIndices)
 	want, narrow := flattenedIndices(t, doc)
@@ -1024,22 +1043,23 @@ func TestAnEightBitIndexedModelDrawsTheFilesOwnIndexCount(t *testing.T) {
 		t.Fatalf("%s no longer carries any u8 index accessor, so it cannot exercise "+
 			"the widening any more", pathNarrowIndices)
 	}
+	f := step(engine)
 	backend := engine.Backend()
 	got := 0
-	for _, draw := range backend.Draws {
+	for _, draw := range f.draws {
 		if !backend.IsScenePipeline(draw.Pipeline) {
 			continue
 		}
 		if !draw.Indexed {
 			t.Error("a draw of an indexed model is not indexed")
 		}
+		// scene draws the nodes that share a mesh as one instanced draw, so a
+		// draw's indices are its count once per instance.
 		got += draw.Count * draw.Instances
 	}
-	// Every frame's draws accumulate in the backend since the engine started,
-	// so the total is a whole number of frames' worth of the file's own count.
-	if want == 0 || got == 0 || got%want != 0 {
-		t.Errorf("the frames drew %d indices in total, want a multiple of the %d the "+
-			"file's own accessors declare", got, want)
+	if got != want {
+		t.Errorf("the frame drew %d indices, want the %d the file's own accessors "+
+			"declare", got, want)
 	}
 }
 
@@ -1077,40 +1097,51 @@ func flattenedIndices(t *testing.T, doc *gltf.Document) (total, narrow int) {
 	return total, narrow
 }
 
-// soloDemo draws one model at the origin and nothing else, so a test can
-// attribute what reached the GPU to it.
+// soloDemo spawns one model at the origin, or several side by side, and a
+// camera, and nothing else, so a test can attribute what reached the GPU to it.
 type soloDemo struct {
 	path   string
 	copies int
 }
 
+type (
+	soloEye struct {
+		Place  m.Transform
+		Camera scene.Camera
+	}
+	soloModel struct {
+		Place m.Transform
+		Model scene.Model
+	}
+	soloSetup kernel.Subscription[app.InitEvent]
+)
+
 func (*soloDemo) Name() kernel.PluginName { return "solo" }
 
 func (*soloDemo) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{scene.Name, storage.Name}
+	return []kernel.PluginName{ecs.Name, scene.Name, storage.Name}
 }
 
 func (d *soloDemo) Register(registrar *kernel.Registrar, _ any) error {
-	registrar.Subscribe[updateEventHandler](d.draw)
-	return nil
-}
-
-func (d *soloDemo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var sceneQueue kernel.Write[*scene.OpQueue]
-	return func(access kernel.ResourceAccess) {
-			sceneQueue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, _ app.UpdateEvent) {
-			q := sceneQueue.Get()
-			q.Camera(CameraMain, scene.CameraDescr{
-				Transform: m.LookAt(m.Vec3{Y: 4, Z: 20}, m.Vec3{}, m.Vec3{Y: 1}),
-				FovY:      fieldOfViewY, Near: nearPlane, Far: farPlane,
+	registrar.Subscribe[soloSetup](ecs.ToHandler[app.InitEvent](registrar,
+		func(eyes *ecs.Spawn[soloEye], models *ecs.Spawn[soloModel]) {
+			eyes.New(soloEye{
+				Place: m.LookAt(m.Vec3{Y: 4, Z: 20}, m.Vec3{}, m.Vec3{Y: 1}),
+				Camera: scene.Camera{
+					ID: CameraMain, FovY: fieldOfViewY, Near: nearPlane, Far: farPlane,
+				},
 			})
-			for i := range max(d.copies, 1) {
-				q.Model(0, d.path, scene.ModelDraw{
-					Transform: m.At(float32(i)*6, 0, 0),
+			// Side by side about the origin, so every copy is in view and a
+			// count of instances is a count of copies.
+			copies := max(d.copies, 1)
+			for i := range copies {
+				models.New(soloModel{
+					Place: m.At((float32(i)-float32(copies-1)/2)*6, 0, 0),
+					Model: scene.Model{Ref: model.ModelRef{Path: d.path}},
 				})
 			}
-		}
+		}))
+	return nil
 }
 
 // parse reads one vendored file's glTF document, so an expectation can be
@@ -1142,8 +1173,8 @@ func nodeNamed(t *testing.T, doc *gltf.Document, name string) *gltf.Node {
 }
 
 // meshBox is one mesh's own local-space box, from its primitives' POSITION
-// accessors' declared min and max - which is the same source scene's own bounds
-// come from, and glTF requires them on POSITION.
+// accessors' declared min and max - which is the same source model's own
+// bounds come from, and glTF requires them on POSITION.
 func meshBox(t *testing.T, doc *gltf.Document, mesh *int) m.Box3 {
 	t.Helper()
 	if mesh == nil {

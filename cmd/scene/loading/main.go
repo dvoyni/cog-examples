@@ -13,20 +13,21 @@
 //
 // # The grid
 //
-// Sixteen pads in four rows, one model draw over each, whether or not there is
-// anything to draw. Every pad is drawn unconditionally: a station whose model
-// is still loading, failed, or whose selector matched nothing shows a bare pad,
-// because scene skips the draw rather than substituting anything for it. That
-// is the whole of "skip, never substitute", and the pad is what makes it
-// visible rather than merely absent.
+// Sixteen pads in four rows, and one Model Entity standing on each, whether or
+// not there is anything to draw. Every pad is drawn unconditionally: a station
+// whose model failed, or whose selector matched nothing, shows a bare pad,
+// because scene's load System leaves such a Model unkeyed and scene draws
+// nothing for it rather than substituting anything. That is the whole of
+// "skip, never substitute", and the pad is what makes it visible rather than
+// merely absent.
 //
 //   - Row 1, addressing: the whole truck through a Scene selector that matches,
 //     then its body and each of its two wheel pairs through a Node selector
 //     that re-roots.
-//   - Row 2, materials and selectors: the body tinted through OverrideParams and
-//     the body repainted through a replacement Material, then MultipleScenes at
-//     its declared default and MultipleScenes under a Scene name no file in the
-//     repository carries.
+//   - Row 2, materials and selectors: the body tinted through a Params
+//     Component and the body repainted through a Material whose shader reads
+//     none of the file's bindings, then MultipleScenes at its declared default
+//     and MultipleScenes under a Scene name no file in the repository carries.
 //   - Row 3, the four WebGPU gaps the loader papers over: nine textures over
 //     three images through five samplers, a file with all seven primitive modes
 //     in it, a quantised mesh, and a model whose indices are eight bits wide.
@@ -37,20 +38,21 @@
 //
 // The four trucks in row 1 differ, and each difference is a contract. The first
 // stands upright because its scene's Yup2Zup root is kept; the second lies on
-// its side because a Node draw discards that root's rotation and replaces it
-// with the draw's own Transform. The last two are wheel *pairs* - the file has
-// one mesh for an axle and hangs it off two nodes - and they are identical to
-// each other and centred on their pads, standing on end because the axle runs
-// along the model's own Y once Yup2Zup is gone. That they are identical is the
-// assertion: they are the same mesh under the same local rotation hanging off
-// two parents with different offsets, so a re-root that left any ancestor's
+// its side because a Node selector discards that root's rotation and replaces
+// it with the Entity's own Transform. The last two are wheel *pairs* - the file
+// has one mesh for an axle and hangs it off two nodes - and they are identical
+// to each other and centred on their pads, standing on end because the axle
+// runs along the model's own Y once Yup2Zup is gone. That they are identical is
+// the assertion: they are the same mesh under the same local rotation hanging
+// off two parents with different offsets, so a re-root that left any ancestor's
 // transform in would put them in two different places.
 //
 // In row 2 the tinted body keeps its livery under a colour wash, and the
 // repainted one is flat grey with no livery at all. One sentence, two
-// contracts: OverrideParams merges over the file's own material and keeps its
-// textures, and a replacement Material unbinds the file's record entirely, so
-// its base colours, factors and texture transforms do not survive.
+// contracts: Params lay a colour over the file's own material by name and keep
+// its textures, and a Material whose shader declares none of the file's
+// bindings never reads them, so its base colours, factors and texture
+// transforms do not survive.
 //
 // The four pads in row 4 are bare, and one pad in row 2 is bare. Five empty
 // slots is the correct picture.
@@ -62,11 +64,15 @@
 // how a human moves it:
 //
 //	u  unload the truck's geometry - its textures stay cached, so the reload
-//	   that the next frame's draws trigger bakes no new texture
+//	   that follows bakes no new texture
 //	t  unload the truck's textures too, which is the separate, deliberate lever
 //	x  unload everything
 //	r  unload the three failed paths and preload them again, which is the only
 //	   retry there is - and all three fail again, because they are still broken
+//
+// An unload is followed by a reload in the same tick: the unload System marks
+// every Model naming the path changed, and scene's load System, which runs on
+// what changed, loads the file again. A free followed by a touch is a reload.
 //
 // # The reference pose
 //
@@ -75,6 +81,18 @@
 // because a demo whose numbers came off the wall clock could not be captured
 // twice. reference.png beside this file is the frame once every station has
 // settled.
+//
+// # Systems
+//
+// Each System is in the file named for it, and the one Component the demo
+// declares, Station, is in components.go:
+//
+//	setup     bakes the pad, spawns the camera, the pads and the stations  (init)
+//	advance   steps the demo clock and turns key presses into levers
+//	unload    pulls the levers, and marks the Models they freed changed
+//	preload   asks for every path once, before scene's load System does
+//	survey    asks the facade what it knows, for the HUD and the tests
+//	hud       prints the residency table
 package main
 
 import (
@@ -91,6 +109,8 @@ import (
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
@@ -125,8 +145,8 @@ const (
 const CameraMain scene.CameraID = -100
 
 // The canvas layers, which are gfx orders directly. The camera declares no
-// passes, and the implicit forward pass preserves colour rather than clearing
-// it, so the frame's one colour clear is canvas's on a layer below the camera.
+// passes, and its one default pass preserves colour rather than clearing it,
+// so the frame's one colour clear is canvas's on a layer below the camera.
 const (
 	layerBackdrop canvas.Layer = -200
 	layerHUD      canvas.Layer = 0
@@ -143,8 +163,8 @@ func main() {
 	}
 	permanentfs.Configure(config)
 
-	// The demo plugin is last because it records into the queues the plugins
-	// before it declare.
+	// The demo plugin is last because its Systems order themselves against
+	// scene's, which have to be registered first.
 	demo := New()
 	plugins := []kernel.Plugin{
 		storageplugin.New(),
@@ -153,8 +173,9 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		modelplugin.New(), sceneplugin.New(),
+		modelplugin.New(),
 		gogpuplugin.New(),
+		ecsplugin.New(), sceneplugin.New(),
 		mcpplugin.New(),
 		demo,
 	}
@@ -202,7 +223,7 @@ func (p *Loading) report(err error) error {
 // purpose, and what provoked it.
 //
 // It matches on the error's own fields rather than on its text wherever it can:
-// scene's own errors carry the path and the selector that produced them, which
+// model's own errors carry the path and the selector that produced them, which
 // is exactly what an allow-list needs to stay narrow.
 //
 // The one exception is the failed read. The asset library performs the read
@@ -252,8 +273,18 @@ func (p *Loading) expectedReport(err error) (bool, string) {
 // Name is the demo plugin's name.
 const Name kernel.PluginName = "loading"
 
-type windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
-type updateEventHandler kernel.Subscription[app.UpdateEvent]
+// The demo's Systems and its one plain handler. Each System is in the file
+// named for it.
+type (
+	setupSystem   kernel.Subscription[app.InitEvent]
+	advanceSystem kernel.Subscription[app.UpdateEvent]
+	unloadSystem  kernel.Subscription[app.UpdateEvent]
+	preloadSystem kernel.Subscription[app.UpdateEvent]
+	surveySystem  kernel.Subscription[app.UpdateEvent]
+	hudSystem     kernel.Subscription[app.UpdateEvent]
+
+	windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
+)
 
 // The demo's fixed timestep. Demo time is accumulated fixed steps, never wall
 // clock: the update event's Dt is deliberately ignored. Nothing in the frame
@@ -294,9 +325,8 @@ const (
 type station struct {
 	name string
 	path string
-	// scene and node are the draw's selectors, and ref() pairs them with path
-	// for a query. They are held apart from a ModelDraw because two stations
-	// carry a material as well, and a scene.Material is not a comparable value.
+	// scene and node are the Model's selectors, and ref() pairs them with path
+	// for the Model Component and for a query alike.
 	scene string
 	node  string
 	// column and row place the pad, from the left and from the front.
@@ -318,12 +348,12 @@ type station struct {
 	// by the time the call that asked for it returned: there is no third answer
 	// and no in-flight state left to name.
 	loads bool
-	// draws is how many draw records this station flushes to once it has
-	// settled: one per primitive the selector's subtree covers, and zero for a
-	// station that never draws anything.
+	// draws is how many instances this station's Model contributes to a frame
+	// once it has settled: one per primitive the selector's subtree covers, and
+	// zero for a station that never draws anything.
 	draws int
-	// tint, when non-zero, is the base colour this station merges over the
-	// file's own materials through OverrideParams. repaint replaces them.
+	// tint, when non-zero, is the base colour this station's Params lay over
+	// the file's own materials. repaint gives it a Material instead.
 	tint    m.Color
 	repaint bool
 	// note is what this station is here for, printed beside its residency.
@@ -334,7 +364,8 @@ type station struct {
 	note string
 }
 
-// ref is the station's selectors as the lookup facade takes them.
+// ref is the station's selectors, as the Model Component holds them and the
+// lookup facade takes them.
 func (s *station) ref() model.ModelRef {
 	return model.ModelRef{Path: s.path, Scene: s.scene, Node: s.node}
 }
@@ -373,15 +404,15 @@ var stations = [...]station{
 		note: "same mesh, different ancestor offset, same box",
 	},
 
-	// Row 2: what a draw may say about a resident model's materials, and what a
-	// selector that matches nothing does.
+	// Row 2: what an Entity may say about a resident model's materials, and
+	// what a selector that matches nothing does.
 	{
 		name: "tinted", path: pathTruck, node: "Cesium_Milk_Truck",
 		column: 0, row: 1, scale: 0.62,
 		size: m.Vec3{X: 4.8689, Y: 2.792, Z: 2.6532}, minY: -1.396,
 		loads: true, draws: TruckPrimitives,
 		tint: m.NewColorSrgb(1.0, 0.45, 0.30, 1),
-		note: "OverrideParams merges: the livery survives",
+		note: "Params lay over it by name: the livery survives",
 	},
 	{
 		name: "repainted", path: pathTruck, node: "Cesium_Milk_Truck",
@@ -389,7 +420,7 @@ var stations = [...]station{
 		size: m.Vec3{X: 4.8689, Y: 2.792, Z: 2.6532}, minY: -1.396,
 		loads: true, draws: TruckPrimitives,
 		repaint: true,
-		note:    "Material replaces: the file's records are gone",
+		note:    "a Material reading none of the file's replaces it",
 	},
 	{
 		name: "default scene", path: pathScenes,
@@ -543,17 +574,23 @@ var (
 	hudOkColor    = m.NewColorSrgb(0.55, 0.85, 0.60, 1)
 )
 
-// Loading is the demo's gameplay plugin: it records the whole frame, owns the
-// step counter and the residency table the HUD prints, and holds the unload
-// levers a key press pulls.
+// Loading is the demo plugin. What its Systems share - the step counter, the
+// residency table the HUD prints and the levers a key press pulls - is the
+// Residency resource, and the plugin keeps the same pointer so a test reads
+// and pulls exactly what a human does.
 type Loading struct {
+	residency *Residency
+}
+
+// Residency is the state the demo's Systems share, as one resource.
+type Residency struct {
 	step int
 	// preloaded is whether the one Preload pass has run. It runs on the first
-	// update rather than at construction because Preload needs a device facade,
-	// which only a handler holding the three locks can build.
+	// update whose backend is up rather than at init, because a load before
+	// the backend is up is refused.
 	preloaded bool
-	// pending is the unload a key press asked for, applied at the top of the
-	// next update while the facade is in hand.
+	// pending is the unload a key press asked for, applied by the unload
+	// System at the top of the next update.
 	pending pendingUnload
 	// states is each station's outcome as of this frame - nil where the file
 	// loaded - known says a frame has asked at all, and settled is the step
@@ -564,19 +601,22 @@ type Loading struct {
 	// poseBytes and morphBytes are the lookup-wide totals, which are what an
 	// unload visibly moves.
 	poseBytes, morphBytes int
-	// nodes is the scratch Nodes reads into, kept so the HUD's per-frame query
-	// allocates nothing.
+	// nodes is the scratch Nodes reads into, kept so the survey's per-frame
+	// query allocates nothing.
 	nodes []string
 	// nodeCount is how many addressable nodes each station's selector covers.
 	nodeCount [len(stations)]int
-	stats     stats
-	rate      rate
-	// repaint is the replacement material the repainted station binds. It holds
-	// no GPU handle, so it is built once at construction.
-	repaint scene.Material
+	// entities is how many Entities setup spawned: the camera, the pads and
+	// the stations. It is a count the demo knows because it did the spawning.
+	entities int
+	// reloads is how many Models the unload System has marked changed since
+	// the start, which is how many reloads the levers have asked for.
+	reloads int
+	rate    rate
 }
 
-// pendingUnload is what the next update should give up before it records.
+// pendingUnload is what the next update should give up before scene's load
+// System runs.
 type pendingUnload struct {
 	model, texture, all, retry bool
 }
@@ -608,36 +648,15 @@ func (r *rate) measure(now time.Time) {
 	}
 }
 
-// stats is what the previous frame's flush decided, read back out of the scene
-// queue at the top of each update and printed by the HUD. It is the previous
-// frame's because Passes publishes the frame the last flush consumed.
-//
-// resident belongs here rather than beside the table the HUD prints because it
-// is the residency *that* flush drew against, and a draw count is only
-// interpretable against the residency of its own frame. The two are read in the
-// same breath at the top of the update, which is the first moment after the
-// flush at which either can be observed at all.
-type stats struct {
-	passes    int
-	ops       int
-	recorded  int
-	culled    int
-	instances int
-	batches   int
-	// resident is each station's residency as of the frame these counts
-	// describe, and known is false before the first flush, when there is no
-	// such frame.
-	resident [len(stations)]bool
-	known    bool
-}
-
 // New builds the demo plugin.
-func New() *Loading { return &Loading{repaint: newRepaintMaterial()} }
+func New() *Loading { return &Loading{residency: &Residency{}} }
 
 func (p *Loading) Name() kernel.PluginName { return Name }
 
 func (p *Loading) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
+	return []kernel.PluginName{
+		canvas.Name, ecs.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name,
+	}
 }
 
 func (p *Loading) Register(registrar *kernel.Registrar, _ any) error {
@@ -651,8 +670,26 @@ func (p *Loading) Register(registrar *kernel.Registrar, _ any) error {
 	}
 	registrar.ProvideAdapter[assets.StorageReadMount](mount)
 
+	ecs.RegisterComponent[Station](registrar, uint32(len(stations)))
+	registrar.InitResource(p.residency)
+
+	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
+	registrar.Subscribe[advanceSystem](ecs.ToHandler[app.UpdateEvent](registrar, advance)).First()
+	// The levers and the preload run before scene's load System, so a Model
+	// the unload marked changed is loaded again in the same tick and nothing
+	// scene draws ever names a model the tick freed.
+	registrar.Subscribe[unloadSystem](ecs.ToHandler[app.UpdateEvent](registrar, unload)).
+		After[advanceSystem]().Before[scene.LoadOnUpdate]()
+	registrar.Subscribe[preloadSystem](ecs.ToHandler[app.UpdateEvent](registrar, preload)).
+		After[unloadSystem]().Before[scene.LoadOnUpdate]()
+	// The survey runs after the load System, so a station's state as printed
+	// is the state its own Model was keyed against this tick.
+	registrar.Subscribe[surveySystem](ecs.ToHandler[app.UpdateEvent](registrar, survey)).
+		After[scene.LoadOnUpdate]()
+	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
+		After[surveySystem]()
+
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
-	registrar.Subscribe[updateEventHandler](p.draw)
 	return nil
 }
 
@@ -675,136 +712,22 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 		}
 }
 
-// draw records the whole frame. It takes the Lookup, the filesystem and the
-// resource queue, because Preload, State and the node queries all load the file
-// they name, and the texture unloads free a GPU texture at the call. UnloadModel
-// needs none of that and comes off the other facade over the same resource.
-//
-// This is where the cost of a synchronous load is meant to be visible: a demo
-// that loads models declares what loading needs.
-func (p *Loading) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var sceneQueue kernel.Write[*scene.OpQueue]
-	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var lookup kernel.Write[*model.Lookup]
-	var inputState kernel.Read[*input.State]
-	var files kernel.Read[storage.FileSystem]
-	var resources kernel.Write[*gfx.ResourceQueue]
-	return func(access kernel.ResourceAccess) {
-			sceneQueue = access.GetWrite[*scene.OpQueue]()
-			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			lookup = access.GetWrite[*model.Lookup]()
-			inputState = access.GetRead[*input.State]()
-			files = access.GetRead[storage.FileSystem]()
-			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) {
-			q := sceneQueue.Get()
-			la := model.NewLookupAccess(k, lookup.Get())
-			device := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
-			p.rate.measure(time.Now())
-			p.readStats(q, device)
-			p.advance(inputState.Get())
-			p.applyUnloads(la, device)
-			p.preload(device)
-			p.record(q)
-			p.readLookup(la, device)
-			p.hud(canvasQueue.Get())
-		}
-}
-
-// advance steps the demo's own clock and turns key presses into the unload the
-// next block applies. The keys are queued rather than applied here because this
-// runs before the facade is in hand, and because an unload landing between two
-// of the frame's own queries would make the HUD disagree with itself.
-func (p *Loading) advance(state *input.State) {
-	p.step++
-	if state == nil {
-		return
-	}
-	if state.JustPressed(input.KeyU) {
-		p.pending.model = true
-	}
-	if state.JustPressed(input.KeyT) {
-		p.pending.texture = true
-	}
-	if state.JustPressed(input.KeyX) {
-		p.pending.all = true
-	}
-	if state.JustPressed(input.KeyR) {
-		p.pending.retry = true
-	}
-}
-
 // time is the demo's clock: accumulated fixed steps, so step N is the same
 // frame on every machine.
-func (p *Loading) time() float32 { return float32(p.step) * fixedStep }
+func (r *Residency) time() float32 { return float32(r.step) * fixedStep }
 
 // UnloadModel, UnloadTexture, UnloadAll and Retry queue what the four keys
 // queue. They are exported so loading_test.go drives the same levers a human
 // does rather than a second path built for it.
-func (p *Loading) UnloadModel()   { p.pending.model = true }
-func (p *Loading) UnloadTexture() { p.pending.texture = true }
-func (p *Loading) UnloadAll()     { p.pending.all = true }
-func (p *Loading) Retry()         { p.pending.retry = true }
-
-// applyUnloads gives up whatever the last key press asked for. Every one of
-// these frees at the call, and the frame this update is about to record loads
-// back whatever it still draws: a free followed by a get is a reload.
-func (p *Loading) applyUnloads(la model.LookupAccess, device model.LookupDeviceAccess) {
-	pending := p.pending
-	p.pending = pendingUnload{}
-	if pending.all {
-		device.UnloadAll()
-	}
-	if pending.model {
-		// The truck's geometry, baked poses and material records. Not its
-		// textures: with no refcount the lookup cannot know whether another
-		// resident model binds the same image by path, so freeing one that is
-		// still bound would be a dead texture in a live bind group rather than
-		// a missing picture.
-		la.UnloadModel(pathTruck)
-	}
-	if pending.texture {
-		// The separate, deliberate lever. For a glb the path names the
-		// container, so this releases every image embedded in it.
-		device.UnloadTexture(pathTruck)
-	}
-	if pending.retry {
-		// The only retry there is. A failed path clears here and nowhere else,
-		// and Preload is what asks again - there is no Retry, because a Retry
-		// that did not first free would be a second name for the idempotent
-		// load that already exists. The two calls sit in one handler because
-		// freeing is immediate: the preload behind the unload loads afresh.
-		// All three fail again: they are still broken.
-		for _, path := range []string{pathTruncated, pathMissing, pathInvalid} {
-			la.UnloadModel(path)
-			device.Preload(path)
-		}
-	}
-}
-
-// preload asks for every distinct path once, on the first update, before
-// anything is drawn.
-//
-// It is the loading screen in miniature: Preload is the same command a draw
-// fires, fired without one, so an app moves the decode into a screen it
-// controls instead of into the first frame that names the file. Nothing here
-// waits for it - the stations are recorded on the very next line whatever their
-// state, because a draw of a model that is not resident is skipped, never
-// substituted, and that is what the bare pads show.
-func (p *Loading) preload(la model.LookupDeviceAccess) {
-	if p.preloaded {
-		return
-	}
-	p.preloaded = true
-	for _, path := range PreloadOrder {
-		la.Preload(path)
-	}
-}
+func (p *Loading) UnloadModel()   { p.residency.pending.model = true }
+func (p *Loading) UnloadTexture() { p.residency.pending.texture = true }
+func (p *Loading) UnloadAll()     { p.residency.pending.all = true }
+func (p *Loading) Retry()         { p.residency.pending.retry = true }
 
 // PreloadOrder is every distinct path the grid names, in the order the one
 // Preload pass asks for them. Exported because it is the list a test checks the
 // station table against: a station whose path is missing here would load off
-// its first draw instead, which is a different code path and a silent one.
+// scene's load System instead, which is a different code path and a silent one.
 var PreloadOrder = []string{
 	pathTruck,
 	pathScenes,
@@ -817,73 +740,10 @@ var PreloadOrder = []string{
 	pathInvalid,
 }
 
-// record records the frame: one camera, sixteen pads and sixteen model draws.
-func (p *Loading) record(q *scene.OpQueue) {
-	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: m.LookAt(cameraEye, cameraTarget, m.Vec3{Y: 1}),
-		FovY:      fieldOfViewY,
-		Near:      nearPlane,
-		Far:       farPlane,
-		// Everything else is left at its zero value: Projection is Perspective,
-		// CullMask is LayersAll, both intensities are 1, and Passes is empty,
-		// which emits one implicit forward pass at the camera's own id.
-		SunDirection:  m.Vec3{X: -0.35, Y: -1, Z: -0.45},
-		SunColor:      m.NewColorSrgb(1, 0.98, 0.94, 1),
-		AmbientSky:    m.NewColorSrgb(0.30, 0.34, 0.42, 1),
-		AmbientGround: m.NewColorSrgb(0.10, 0.09, 0.08, 1),
-	})
-
-	for i := range stations {
-		station := &stations[i]
-		pad := padColor
-		if !station.loads {
-			pad = padFailColor
-		}
-		q.Plane(0, stationPad(station), m.Vec2{X: padSize, Y: padSize}, pad)
-
-		draw := scene.ModelDraw{
-			Transform: stationPlacement(station),
-			Scene:     station.scene,
-			Node:      station.node,
-		}
-		switch {
-		case station.repaint:
-			// A replacement unbinds the file's own record along with its
-			// bindings, so the draw takes glTF's defaults under a shader that
-			// never heard of the file's livery.
-			draw.Material = p.repaint
-		case station.tint != (m.Color{}):
-			// A merge over the file's own material, by name. glTF's parameter
-			// names are the user-facing contract, so this is the whole of a
-			// team colour.
-			draw.OverrideParams = []gfx.ParameterDescr{
-				gfx.ColorParam("baseColorFactor", station.tint),
-			}
-		}
-		q.Model(0, station.path, draw)
-	}
-}
-
-// RecordedOps is how many operations Ops reports: the camera registration, the
-// sixteen pads and the sixteen model calls. A Model call is one op whatever it
-// expands to, exactly as a WireBox is one.
-const RecordedOps = 1 + len(stations) + len(stations)
-
-// Batches is how many batches the frame packs once every station has settled.
-// scene collapses equal draws that sort side by side, so it is RecordedDraws
-// less what merges: the pads are one batch per pad colour, and the three body
-// primitives the scene and body stations both draw untinted pair up. The truck's
-// wheels do not: the two wheel nodes ride different joints and alternate in the
-// sort, so no two equal wheels are neighbours.
-var Batches = RecordedDraws - (len(stations) - 2) - truckBodyPrimitives
-
-// truckBodyPrimitives is the body's share of TruckPrimitives: everything but the
-// two wheel draws.
-const truckBodyPrimitives = TruckPrimitives - 2
-
-// RecordedDraws is how many draw records the frame flushes to once every
+// SettledInstances is how many instances the camera's pass draws once every
 // station has settled: one per pad, plus each station's own primitive count.
-var RecordedDraws = func() int {
+// It is a count the table knows, which is why a test can hold the frame to it.
+var SettledInstances = func() int {
 	total := len(stations)
 	for i := range stations {
 		total += stations[i].draws
@@ -891,113 +751,28 @@ var RecordedDraws = func() int {
 	return total
 }()
 
-// stationPad is the centre of one station's pad, on the ground plane.
-func stationPad(s *station) m.Vec3 {
-	return m.Vec3{
-		X: (float32(s.column) - float32(columns-1)/2) * colSpacing,
-		Z: (float32(rows-1)/2 - float32(s.row)) * rowSpacing,
-	}
-}
+// Step is the demo's own step counter.
+func (p *Loading) Step() int { return p.residency.step }
 
-// stationPlacement is the transform one station's model is drawn at: its own
-// scale, lifted so the model's lowest point rests on the pad.
-//
-// The lift is the file's own minY through the scale, which is why the table
-// carries minY: a Node draw re-roots, so the number is the subtree's, not the
-// scene's, and the two differ by a whole axis on this asset.
-func stationPlacement(s *station) m.Transform {
-	pad := stationPad(s)
-	return m.At(pad.X, pad.Y-s.minY*s.scale, pad.Z).WithScale(s.scale)
-}
-
-// readStats reads the previous frame's flush result back out of the queue,
-// together with the residency that flush drew against.
-//
-// Passes publishes the frame the last flush consumed, so these are the numbers
-// for the frame before this one - which is what a HUD can print without
-// stalling the pipeline to ask about the frame it is still recording.
-//
-// The residency is read here, and not from the table readLookup fills, because
-// a load lands at a frame boundary: readLookup runs inside the update, before
-// scene's own flush handler, so a model that installs between the two is one
-// this frame's flush draws and that table calls loading. Judging a draw count
-// against a residency read on the wrong side of the flush is a skew, not a
-// substitution, and it is what made this demo's own substitution test flake.
-// Here both numbers describe the same frame: nothing can install between the
-// flush and this update's start without also being visible to the query below.
-//
-// The first update has no flush behind it, so it takes no snapshot at all -
-// which also keeps Preload the first thing in the demo that names a path,
-// rather than a query fired to fill a table for a frame that does not exist.
-func (p *Loading) readStats(q *scene.OpQueue, la model.LookupDeviceAccess) {
-	if p.step == 0 {
-		return
-	}
-	views := q.Passes(nil)
-	p.stats = stats{passes: len(views), ops: len(q.Ops(nil)), known: true}
-	for i := range views {
-		p.stats.recorded += views[i].Recorded
-		p.stats.culled += views[i].Culled
-		p.stats.instances += views[i].Instances
-		p.stats.batches += len(views[i].Batches)
-	}
-	for i := range stations {
-		p.stats.resident[i] = la.State(stations[i].path) == nil
-	}
-}
-
-// LastFlush is the frame the last flush consumed: how many draws it recorded
-// and which stations were resident when it recorded them. ok is false until a
-// frame has flushed.
-//
-// Exported as one value rather than as two queries because the pairing is the
-// whole point - see readStats.
-func (p *Loading) LastFlush() (recorded int, resident [len(stations)]bool, ok bool) {
-	return p.stats.recorded, p.stats.resident, p.stats.known
-}
-
-// readLookup asks the facade what it knows, once per frame, for the HUD.
-//
-// Every query here loads the file it names, which is why it runs after record
-// rather than before: a station's state as printed is the state its own draw
-// saw. State is the only one of these that says why a file is not there - every
-// other query answers false for a typo and for a broken file alike, and a
-// loading screen watching only ok can never print a reason.
-//
-// Two facades: the two totals need neither the filesystem nor the queue, so
-// they sit on the half a caller builds from the Lookup alone.
-func (p *Loading) readLookup(totals model.LookupAccess, la model.LookupDeviceAccess) {
-	for i := range stations {
-		state := la.State(stations[i].path)
-		if !p.known[i] || (p.states[i] == nil) != (state == nil) {
-			p.settled[i] = p.step
-		}
-		p.states[i], p.known[i] = state, true
-		p.nodes = p.nodes[:0]
-		if names, ok := la.Nodes(stations[i].ref(), p.nodes); ok {
-			p.nodes = names
-			p.nodeCount[i] = len(names)
-		} else {
-			p.nodeCount[i] = -1
-		}
-	}
-	p.poseBytes, p.morphBytes = totals.TotalPoseBytes(), totals.TotalMorphBytes()
-}
-
-// State is one station's outcome as of the last frame the demo recorded: nil
+// State is one station's outcome as of the last tick the demo surveyed: nil
 // where the file loaded, and the reason it did not otherwise.
-func (p *Loading) State(i int) error { return p.states[i] }
+func (p *Loading) State(i int) error { return p.residency.states[i] }
 
 // NodeCount is how many addressable nodes one station's selector covered, or -1
 // where the query answered false - which is a failed path and an unmatched
 // selector alike.
-func (p *Loading) NodeCount(i int) int { return p.nodeCount[i] }
+func (p *Loading) NodeCount(i int) int { return p.residency.nodeCount[i] }
+
+// Entities is how many Entities setup spawned.
+func (p *Loading) Entities() int { return p.residency.entities }
 
 // Settled reports whether every station has reached the residency its table row
 // expects, which is when the frame is the one the reference screenshot shows.
-func (p *Loading) Settled() bool {
+func (p *Loading) Settled() bool { return p.residency.settledAll() }
+
+func (r *Residency) settledAll() bool {
 	for i := range stations {
-		if !p.known[i] || (p.states[i] == nil) != stations[i].loads {
+		if !r.known[i] || (r.states[i] == nil) != stations[i].loads {
 			return false
 		}
 	}
@@ -1005,9 +780,9 @@ func (p *Loading) Settled() bool {
 }
 
 // TotalPoseBytes and TotalMorphBytes are the lookup-wide totals as of the last
-// frame, which is what an unload visibly moves.
-func (p *Loading) TotalPoseBytes() int  { return p.poseBytes }
-func (p *Loading) TotalMorphBytes() int { return p.morphBytes }
+// tick, which is what an unload visibly moves.
+func (p *Loading) TotalPoseBytes() int  { return p.residency.poseBytes }
+func (p *Loading) TotalMorphBytes() int { return p.residency.morphBytes }
 
 // stationForPath finds the station a report's path names. Two stations may
 // share a path - six share the truck - and the first is enough here: the

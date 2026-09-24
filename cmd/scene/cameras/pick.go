@@ -16,24 +16,25 @@ type pickable struct {
 //
 // # Why there is no scene.Raycast
 //
-// Scene has no list to raycast against. Draws are frame-local and consumed at
-// flush - by the time a click arrives the frame that drew the cubes is gone -
-// and the retained PassView and BatchView carry dense integers: a mesh id, a
-// material id, an instance range. None of that is a thing in the world. A
-// scene.Raycast would have to retain a whole second structure, one that exists
-// for no other query, kept in step with every draw call in the frame, to answer
-// a question the caller can already answer about its own entities.
+// Scene draws Entities, but what a click may name is the app's to decide: a
+// debug cube's bounds are its own size, a model's are its file's, and which
+// Entities are pickable at all - the frustum lines are not - is a rule of this
+// demo rather than of the renderer. scene answers the one question only it can,
+// the matrix a camera draws through, as scene.ViewProjection, and m turns a
+// click into a ray with it. A scene.Raycast would have to keep a second
+// structure in step with every Component in the world, to answer a question
+// the caller can already answer about its own Entities.
 //
 // So it is not a decree that picking is out of scope; it is that the app has
-// the list and scene does not. This function is the ten lines that replaces it,
-// and the demo ships it rather than an assurance that it is short.
+// the list. This function is the ten lines that answer it, and the demo ships
+// it rather than an assurance that it is short.
 //
 // # What the caller supplies
 //
 // A world-space sphere per candidate. Where each one comes from is the app's
 // business and this demo has both cases: the debug cubes know their own half
-// extent, and the glTF model asks LookupAccess.Bounds for its local sphere and
-// puts it through m.Sphere.Transform - which is exact under the uniform scale a
+// extent, and the glTF model asks model's device facade, Bounds, for its local
+// sphere and puts it through m.Sphere.Transform - which is exact under the uniform scale a
 // m.Transform carries, and conservative otherwise. That pairing is what
 // Bounds exists for.
 //

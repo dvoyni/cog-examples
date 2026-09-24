@@ -3,27 +3,31 @@ package main
 import (
 	"encoding/binary"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/dvoyni/cog-examples/internal/headless"
+	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
+	"github.com/dvoyni/cog/slots/gfx"
 )
 
 // run starts the demo headless over the vendored asset set and steps until all
-// three files are resident, which is when the frame it records is the frame the
+// three files are resident, which is when the frame it draws is the frame the
 // reference screenshot was taken of.
 //
-// The loop settles on its first pass: a load runs inside the flush that named
-// the file. What that frame costs is the hitch this design accepts - decoding
-// WaterBottle's 1024px textures is the expensive one here - and Preload is the
-// lever a game pulls to move it.
-func run(t *testing.T) (*headless.Engine, *Instancing) {
+// The loop settles on its first pass: the load System loads a file inside the
+// step whose Hook first named it. What that step costs is the hitch this design
+// accepts - decoding WaterBottle's 1024px textures is the expensive one here -
+// and Preload is the lever a game pulls to move it.
+func run(t *testing.T) (*headless.Engine, *Demo) {
 	t.Helper()
-	demo := New()
-	engine := headless.New(t, demo)
+	plugin := New()
+	engine := headless.New(t, plugin)
+	demo := plugin.demo
 	deadline := time.Now().Add(60 * time.Second)
 	for demo.ResidentCount() < len(modelPaths) {
 		if time.Now().After(deadline) {
@@ -33,33 +37,145 @@ func run(t *testing.T) (*headless.Engine, *Instancing) {
 		engine.Steps(1)
 		time.Sleep(time.Millisecond)
 	}
-	// One more pair of steps: the frame that first sees every file resident is
-	// also the first to record its draws, and Passes publishes the frame the
-	// last flush consumed.
-	engine.Steps(2)
+	// One more step: the HUD reads residency after the step that keyed the
+	// files, so the step it first sees them in has already drawn them, and the
+	// next is the first whose frame a test inspects.
+	engine.Steps(1)
 	if errs := engine.Errors(); len(errs) > 0 {
 		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
 	}
 	return engine, demo
 }
 
-// pass is the frame's one pass. The camera declares no passes at all, so this
-// is the implicit forward pass at the camera's own id.
-func pass(t *testing.T, engine *headless.Engine) scene.PassView {
-	t.Helper()
-	passes := engine.Passes()
-	if len(passes) != 1 {
-		t.Fatalf("published %d passes, want the one implicit pass", len(passes))
-	}
-	if passes[0].CameraID != CameraMain {
-		t.Fatalf("pass camera %d, want %d", passes[0].CameraID, CameraMain)
-	}
-	return passes[0]
+// frame is what one step sent the backend through the camera's one pass: its
+// draws in emission order, and the pass's instance range decoded.
+type frame struct {
+	draws     []headless.DrawCall
+	instances []packedInstance
+	backend   *headless.Backend
 }
 
-// blendBatches is how many batches the blend bucket holds: one per blended
-// primitive per screen, because a blend-class instanced call does not batch.
-const blendBatches = len(paneStands) * PaneBlendPrimitives
+// cameraPassLabel is the label scene gives the camera's one default pass.
+const cameraPassLabel = "scene.camera-100.forward"
+
+// step takes one step and keeps what it sent the backend in the camera's pass.
+//
+// The backend's lists accumulate across every step since the engine started,
+// so the step's own share is everything past their lengths before it. The
+// camera's pass is found by its label, and its draws by the pass they were made
+// in; canvas's HUD draws in passes of its own.
+func step(t *testing.T, engine *headless.Engine) frame {
+	t.Helper()
+	backend := engine.Backend()
+	passes, draws, buffers := len(backend.Passes), len(backend.Draws), len(backend.Buffers)
+	presents := backend.Presents
+	engine.Steps(1)
+	if errs := engine.Errors(); len(errs) > 0 {
+		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
+	}
+	if backend.Presents == presents {
+		t.Fatal("the backend was not asked to present")
+	}
+	pass := -1
+	for i := passes; i < len(backend.Passes); i++ {
+		if backend.Passes[i].Label != cameraPassLabel {
+			continue
+		}
+		if pass >= 0 {
+			t.Fatalf("the step began two passes labelled %q", cameraPassLabel)
+		}
+		pass = i
+	}
+	if pass < 0 {
+		t.Fatalf("the step began no pass labelled %q", cameraPassLabel)
+	}
+	f := frame{backend: backend}
+	for _, call := range backend.Draws[draws:] {
+		if call.Pass == pass {
+			f.draws = append(f.draws, call)
+		}
+	}
+	if len(f.draws) == 0 {
+		t.Fatal("the camera's pass made no draws")
+	}
+	f.instances = decodeInstances(t, backend, buffers)
+	return f
+}
+
+// total is how many instances the pass's draws read between them.
+func (f frame) total() int {
+	n := 0
+	for _, call := range f.draws {
+		n += call.Instances
+	}
+	return n
+}
+
+// blended reports whether a draw was made through a blending pipeline.
+func (f frame) blended(call headless.DrawCall) bool {
+	return f.backend.PipelineOf(call.Pipeline).State.Blend != gfx.BlendOpaque
+}
+
+// field is the field's draw, which is the largest in the frame by a wide
+// margin: everything else in the courtyard is a handful of instances.
+// Identifying it by size rather than by anything scene assigns is what keeps
+// the test out of scene's internals, and the margin is asserted rather than
+// assumed.
+func (f frame) field(t *testing.T) headless.DrawCall {
+	t.Helper()
+	best, second := headless.DrawCall{}, 0
+	for _, call := range f.draws {
+		if call.Instances > best.Instances {
+			best, second = call, best.Instances
+			continue
+		}
+		second = max(second, call.Instances)
+	}
+	if best.Instances < 2*second+1 {
+		t.Fatalf("the largest draw holds %d instances and the next holds %d; the field is "+
+			"meant to be unmistakable", best.Instances, second)
+	}
+	return best
+}
+
+// read is the instances one draw reads, out of the pass's range.
+func (f frame) read(t *testing.T, call headless.DrawCall) []packedInstance {
+	t.Helper()
+	if call.FirstInstance+call.Instances > len(f.instances) {
+		t.Fatalf("a draw reads instances %d to %d of a range holding %d",
+			call.FirstInstance, call.FirstInstance+call.Instances, len(f.instances))
+	}
+	return f.instances[call.FirstInstance : call.FirstInstance+call.Instances]
+}
+
+// The frustum the camera culls against at the demo's current pose, rebuilt
+// from the same Camera Component and Transform the demo gave scene, at the
+// headless framebuffer's aspect.
+func frustum(t *testing.T, demo *Demo) m.Frustum {
+	t.Helper()
+	viewProjection, err := scene.ViewProjection(camera(), demo.place(),
+		m.Vec2{X: headless.FramebufferWidth, Y: headless.FramebufferHeight})
+	if err != nil {
+		t.Fatalf("the camera has no view-projection: %v", err)
+	}
+	return m.FrustumFromMat4(viewProjection)
+}
+
+// survivors is the translation of every crate of the field the frustum keeps.
+func survivors(t *testing.T, engine *headless.Engine, demo *Demo) []m.Vec3 {
+	t.Helper()
+	local := modelSphere(t, engine, cratePath)
+	view := frustum(t, demo)
+	var kept []m.Vec3
+	for i := range crateTransforms {
+		world := crateTransforms[i].Mat4()
+		sphere := local.Transform(world)
+		if view.ContainsSphere(sphere.Center, sphere.Radius) {
+			kept = append(kept, world.Translation())
+		}
+	}
+	return kept
+}
 
 // The lattice is what the demo says it is, and the colonnade is a rule rather
 // than a number.
@@ -106,84 +222,97 @@ func TestTheLatticeIsTheDocumentedRule(t *testing.T) {
 	}
 }
 
-// Every file becomes resident, every instance of every primitive becomes a
-// draw, and the frame packs the batches the layout predicts.
+// Every file becomes resident, every surviving instance of every primitive is
+// drawn, and the frame makes the draws the layout predicts.
 //
 // This is the number the demo rests on. A model that silently loaded half of
-// itself, or an instanced call that expanded to one draw instead of N, would
-// still render a picture; only a spelled-out count catches either.
-func TestEveryInstanceOfEveryPrimitiveBecomesADraw(t *testing.T) {
+// itself, or a Batch that drew one instance instead of N, would still render a
+// picture; only a spelled-out count catches either.
+func TestEverySurvivingInstanceIsDrawnInThePredictedDraws(t *testing.T) {
 	engine, demo := run(t)
 	if demo.ResidentCount() != len(modelPaths) {
 		t.Fatalf("%d of %d files resident", demo.ResidentCount(), len(modelPaths))
 	}
-	view := pass(t, engine)
-	if view.Recorded != RecordedDraws {
-		t.Errorf("recorded %d draws, want %d", view.Recorded, RecordedDraws)
+	f := step(t, engine)
+	culled := CrateCount - len(survivors(t, engine, demo))
+	if want := Instances - culled; f.total() != want {
+		t.Errorf("the pass drew %d instances; %d exist and the frustum culls %d crates, "+
+			"so want %d", f.total(), Instances, culled, want)
 	}
-	if view.Culled+view.Instances != view.Recorded {
-		t.Errorf("recorded %d draws, culled %d and packed %d; the three do not add up",
-			view.Recorded, view.Culled, view.Instances)
+	if len(f.draws) != InstancedDraws {
+		t.Errorf("the pass made %d draws, want %d", len(f.draws), InstancedDraws)
 	}
-	if len(view.Batches) != InstancedBatches {
-		t.Errorf("packed %d batches, want %d", len(view.Batches), InstancedBatches)
-	}
-	packed := 0
-	for _, batch := range view.Batches {
-		packed += batch.InstanceCount
-	}
-	if packed != view.Instances {
-		t.Errorf("the batches hold %d instances and the pass reports %d", packed, view.Instances)
+	if len(f.instances) != f.total() {
+		t.Errorf("the pass bound %d instances and its draws read %d", len(f.instances), f.total())
 	}
 }
 
 // The per-instance cull is the frustum's own answer, instance by instance.
 //
-// This is the demo's centrepiece and it is asserted against the published
-// frustum rather than against a count: a call that culled the whole set when
-// any one instance left the frustum, or none of it when any one stayed, would
-// pass a count-shaped test at some pose. Every crate is tested here, the
-// survivors are compared to the packed instance slice position by position, and
-// the comparison is in order - which is also the proof that the survivors pack
-// contiguously and in recording order, since they arrive as one batch of N.
-func TestThePerInstanceCullAgreesWithThePublishedFrustum(t *testing.T) {
-	engine, _ := run(t)
-	view := pass(t, engine)
-	local := modelSphere(t, engine, cratePath)
-
-	var expected []m.Vec3
-	for i := range crateTransforms {
-		world := crateTransforms[i].Mat4()
-		sphere := local.Transform(world)
-		if view.Frustum.ContainsSphere(sphere.Center, sphere.Radius) {
-			expected = append(expected, world.Translation())
-		}
-	}
+// This is the demo's centrepiece and it is asserted against the frustum rather
+// than against a count: a Batch that culled whole when any one instance left
+// the frustum, or kept whole when any one stayed, would pass a count-shaped
+// test at some pose. Every crate is tested here, and the field's draw is
+// compared with the survivors instance by instance - which is also the proof
+// that the survivors pack contiguously, since they arrive as one draw of N.
+//
+// They are compared as a set. The ECS leaves the order it walks Entities in
+// unspecified, and scene packs a Batch's survivors in that order, so the order
+// inside the draw is not the demo's to predict.
+func TestThePerInstanceCullAgreesWithTheFrustum(t *testing.T) {
+	engine, demo := run(t)
+	f := step(t, engine)
+	expected := survivors(t, engine, demo)
 	culled := CrateCount - len(expected)
 	if len(expected) == 0 || culled == 0 {
 		t.Fatalf("the reference pose keeps %d crates and culls %d; it is meant to do both",
 			len(expected), culled)
 	}
-	// Nothing but crates is culled at the reference pose - the courtyard is in
-	// front of the camera - so the pass's own count is the field's.
-	if view.Culled != culled {
-		t.Errorf("the pass culled %d draws and %d crates fail the frustum test",
-			view.Culled, culled)
-	}
 
-	// The stack merges into the field's batch after its survivors, so the
-	// batch is the surviving crates and then the stack's three.
-	batch := largestBatch(t, view.Batches)
-	if batch.InstanceCount != len(expected)+stackCount {
-		t.Fatalf("the field packed %d instances and %d crates pass the frustum test, "+
-			"with the stack's %d after them", batch.InstanceCount, len(expected), stackCount)
+	// The stack shares the field's key, so the draw is the surviving crates
+	// and the stack's three.
+	field := f.field(t)
+	if field.Instances != len(expected)+stackCount {
+		t.Fatalf("the field's draw holds %d instances and %d crates pass the frustum test, "+
+			"with the stack's %d beside them", field.Instances, len(expected), stackCount)
 	}
-	instances := sceneInstances(t, engine)
-	for i, want := range expected {
-		got := instances[batch.FirstInstance+i].translation()
-		if got.Distance(want) > positionEpsilon {
-			t.Fatalf("packed instance %d of the field stands at %v, want the crate at %v",
-				i, got, want)
+	want := append(slices.Clone(expected), stackTranslations()...)
+	if missing := unmatched(want, translations(f.read(t, field))); len(missing) > 0 {
+		t.Fatalf("%d of the field's survivors are not in its draw, first at %v",
+			len(missing), missing[0])
+	}
+}
+
+// stackTranslations is where each crate of the stack stands.
+func stackTranslations() []m.Vec3 {
+	out := make([]m.Vec3, len(stackTransforms))
+	for i := range stackTransforms {
+		out[i] = stackTransforms[i].Mat4().Translation()
+	}
+	return out
+}
+
+// The stack is spawned apart from the field and still draws in the field's one
+// draw: a Batch is every Entity whose key is equal, and nothing in the key says
+// which spawn placed an Entity, where it stands or how large it is.
+func TestTheStackDrawsInTheFieldsDraw(t *testing.T) {
+	engine, _ := run(t)
+	f := step(t, engine)
+	field := f.field(t)
+	if missing := unmatched(stackTranslations(), translations(f.read(t, field))); len(missing) > 0 {
+		t.Fatalf("stacked crate at %v is not in the field's draw; it shares the field's "+
+			"key and must share its draw", missing[0])
+	}
+	for _, call := range f.draws {
+		if call == field {
+			continue
+		}
+		for _, instance := range f.read(t, call) {
+			for _, at := range stackTranslations() {
+				if instance.translation().Distance(at) <= positionEpsilon {
+					t.Fatalf("stacked crate at %v drew apart from the field", at)
+				}
+			}
 		}
 	}
 }
@@ -195,18 +324,18 @@ func isStretched(transform m.Transform) bool {
 	return s.X != s.Y || s.Y != s.Z
 }
 
-// The non-uniform flag follows the instance, not the call.
+// The non-uniform flag follows the instance, not the Batch.
 //
-// SCENE_NONUNIFORM is set per instance at pack time, and the pillars are
-// entries in the very same Transforms slice as the cubes around them, as the
-// squat bottles are in the bottles' - so a flag set per draw would mark all of
-// each call or none of it. The ground is the frame's remaining non-uniform
-// basis, a Plane being a stretched unit box, and it is counted here rather than
-// excused.
-func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheCall(t *testing.T) {
-	engine, _ := run(t)
-	view := pass(t, engine)
+// SCENE_NONUNIFORM is set per instance as it is packed, and the pillars share
+// the field's Batch with the cubes around them, as the squat bottles share the
+// bottles' - so a flag set per draw would mark all of each draw or none of it.
+// The ground and the lamp marker are debug shapes baked at their own size and
+// drawn at an unscaled Transform, so neither is non-uniform.
+func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheBatch(t *testing.T) {
+	engine, demo := run(t)
+	f := step(t, engine)
 	local := modelSphere(t, engine, cratePath)
+	view := frustum(t, demo)
 
 	pillars := 0
 	for i := range crateTransforms {
@@ -214,7 +343,7 @@ func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheCall(t *testing.T) {
 			continue
 		}
 		sphere := local.Transform(crateTransforms[i].Mat4())
-		if view.Frustum.ContainsSphere(sphere.Center, sphere.Radius) {
+		if view.ContainsSphere(sphere.Center, sphere.Radius) {
 			pillars++
 		}
 	}
@@ -226,192 +355,103 @@ func TestTheNonUniformFlagFollowsTheInstanceRatherThanTheCall(t *testing.T) {
 		t.Fatalf("%d of %d bottles are squat; the row is meant to alternate", squats, bottleCount)
 	}
 
-	instances := sceneInstances(t, engine)
 	nonUniform := 0
-	for i := range instances {
-		if instances[i].nonUniform() {
+	for i := range f.instances {
+		if f.instances[i].nonUniform() {
 			nonUniform++
 		}
 	}
-	if want := pillars + squats + 1; nonUniform != want {
-		t.Errorf("%d of %d packed instances are non-uniform, want %d: %d surviving pillars, "+
-			"%d squat bottles and the ground",
-			nonUniform, len(instances), want, pillars, squats)
+	if want := pillars + squats; nonUniform != want {
+		t.Errorf("%d of %d packed instances are non-uniform, want %d: %d surviving pillars "+
+			"and %d squat bottles", nonUniform, len(f.instances), want, pillars, squats)
 	}
 
-	// And positively: the flagged instances of the field's own batch are the
+	// And positively: the flagged instances of the field's own draw are the
 	// pillars, not merely as many as there are pillars.
-	batch := largestBatch(t, view.Batches)
-	for i := range batch.InstanceCount {
-		instance := instances[batch.FirstInstance+i]
+	for i, instance := range f.read(t, f.field(t)) {
 		tall := instance.world[1].Y > crateSize*1.5
 		if instance.nonUniform() != tall {
-			t.Fatalf("packed instance %d of the field has y scale %v and nonUniform=%v",
+			t.Fatalf("instance %d of the field's draw has y scale %v and nonUniform=%v",
 				i, instance.world[1].Y, instance.nonUniform())
 		}
 	}
 }
 
-// The opaque and alpha-masked batches come first, sorted by material then mesh
-// with no depth term, and the blended ones come last.
+// A blended Batch splits into one draw per instance, while the same Model's
+// opaque primitives stay one draw of two each.
 //
-// The stack is what makes this more than a restatement of recording order. It
-// is recorded after the bottles and the screens and carries a material interned
-// before either of theirs, so the sort has to lift it back beside the field;
-// everything else in the frame is already in key order as it is recorded, and a
-// monotonic scan alone would pass with the sort deleted.
-//
-// It lands immediately after the field rather than merely before the bottles:
-// the two share a mesh and a material and therefore a sort key, and the sort's
-// final tiebreak is the recording ordinal, which the field wins. Being equal
-// draws side by side, the two then merge into one batch, with the stack's
-// crates as the batch's last three instances.
-func TestTheOpaqueBatchesComeOutInSortKeyOrder(t *testing.T) {
-	engine, _ := run(t)
-	view := pass(t, engine)
-	batches := view.Batches
-	opaque := batches[:len(batches)-blendBatches]
-	if len(opaque) < 3 {
-		t.Fatalf("%d opaque batches is not enough to sort", len(opaque))
-	}
-	for i := 1; i < len(opaque); i++ {
-		if opaqueKey(opaque[i-1]) > opaqueKey(opaque[i]) {
-			t.Fatalf("batch %d (material %d mesh %d) sorts after batch %d (material %d mesh %d)",
-				i-1, opaque[i-1].MaterialID, opaque[i-1].MeshID,
-				i, opaque[i].MaterialID, opaque[i].MeshID)
-		}
-	}
-
-	field := largestBatch(t, batches)
-	at := -1
-	for i, batch := range batches {
-		if batch == field {
-			at = i
-		}
-	}
-	if at < 0 || at+1 >= len(opaque) {
-		t.Fatalf("the field is batch %d of %d opaque batches", at, len(opaque))
-	}
-	// The stack is the tail of the field's batch, in its own recording order.
-	instances := sceneInstances(t, engine)
-	tail := field.FirstInstance + field.InstanceCount - stackCount
-	for i := range stackTransforms {
-		want := stackTransforms[i].Mat4().Translation()
-		if got := instances[tail+i].translation(); got.Distance(want) > positionEpsilon {
-			t.Fatalf("instance %d of the field's batch stands at %v, want stacked crate %d at %v; "+
-				"the stack is a second call of the same model and must merge in straight after it",
-				tail+i-field.FirstInstance, got, i, want)
-		}
-	}
-	// It was recorded after two models that sort after it, which is the whole
-	// of what the sort had to do here.
-	for _, batch := range batches[at+1:] {
-		if batch.MaterialID <= field.MaterialID {
-			t.Errorf("batch material %d follows the stack's %d; the stack was recorded last "+
-				"and nothing after it should sort below it", batch.MaterialID, field.MaterialID)
-		}
-	}
-	if len(batches[at+1:]) < 2 {
-		t.Error("nothing sorts after the stack; it is meant to be recorded past two models")
-	}
-}
-
-// opaqueKey is the key the opaque class is sorted by, material first and mesh
-// second.
-func opaqueKey(batch scene.BatchView) uint64 {
-	return uint64(batch.MaterialID)<<32 | uint64(batch.MeshID)
-}
-
-// A blend-class instanced call splits back into one batch per instance, while
-// the same call's opaque primitives stay one batch of two.
-//
-// Both halves come out of one Model call with two Transforms, which is what
-// makes this the exception rather than a second demo: sorting the pair by its
-// nearest instance would composite the far screen over the near one. The two
-// screens stand at two depths, so the four blended batches interleave - abab -
-// where a material-keyed sort would group them aabb.
-func TestABlendedInstancedCallSplitsIntoOneBatchPerInstance(t *testing.T) {
+// Both halves come out of the two screen Entities, which share a key per
+// primitive, and that is what makes this the exception rather than a second
+// demo: sorting the pair by its nearest instance would composite the far screen
+// over the near one. The blended draws come after every opaque one, and walk
+// back to front.
+func TestABlendedBatchSplitsIntoOneDrawPerInstance(t *testing.T) {
 	engine, demo := run(t)
-	view := pass(t, engine)
-	blend := view.Batches[len(view.Batches)-blendBatches:]
+	f := step(t, engine)
 
-	for i, batch := range blend {
-		if batch.InstanceCount != 1 {
-			t.Fatalf("blend batch %d holds %d instances, want one each",
-				i, batch.InstanceCount)
+	blendAt := -1
+	var blend []headless.DrawCall
+	for i, call := range f.draws {
+		if !f.blended(call) {
+			if blendAt >= 0 {
+				t.Fatalf("opaque draw %d follows blended draw %d; blending is drawn last", i, blendAt)
+			}
+			continue
+		}
+		if blendAt < 0 {
+			blendAt = i
+		}
+		blend = append(blend, call)
+	}
+	if want := len(paneStands) * PaneBlendPrimitives; len(blend) != want {
+		t.Fatalf("the pass made %d blended draws, want %d: one per blended primitive per screen",
+			len(blend), want)
+	}
+	for i, call := range blend {
+		if call.Instances != 1 {
+			t.Fatalf("blended draw %d holds %d instances, want one each", i, call.Instances)
 		}
 	}
-	meshes := map[uint32]int{}
-	for _, batch := range blend {
-		meshes[batch.MeshID]++
-	}
-	if len(meshes) != PaneBlendPrimitives {
-		t.Fatalf("the blend bucket holds %d distinct meshes, want %d",
-			len(meshes), PaneBlendPrimitives)
-	}
-	if blend[0].MeshID != blend[2].MeshID || blend[1].MeshID != blend[3].MeshID ||
-		blend[0].MeshID == blend[1].MeshID {
-		t.Fatalf("the blend bucket is ordered %d %d %d %d; a depth sort interleaves the "+
-			"two screens and a material-keyed sort groups them",
-			blend[0].MeshID, blend[1].MeshID, blend[2].MeshID, blend[3].MeshID)
-	}
 
-	// Each blended batch's instance is no nearer the eye than the one before
+	// Each blended draw's instance is no nearer the eye than the one before
 	// it, which is what back-to-front means.
 	eye := demo.eye()
-	instances := sceneInstances(t, engine)
 	previous := float32(math.Inf(1))
-	for i, batch := range blend {
-		distance := instances[batch.FirstInstance].translation().Distance(eye)
+	for i, call := range blend {
+		distance := f.read(t, call)[0].translation().Distance(eye)
 		if distance > previous {
-			t.Fatalf("blend batch %d is %.2f from the eye, behind the %.2f before it",
+			t.Fatalf("blended draw %d is %.2f from the eye, behind the %.2f before it",
 				i, distance, previous)
 		}
 		previous = distance
 	}
 
-	// The same call's opaque primitives did batch: one batch of two each.
-	opaque := view.Batches[:len(view.Batches)-blendBatches]
+	// The same Entities' opaque primitives did batch: one draw of two each.
 	paired := 0
-	for _, batch := range opaque {
-		if batch.InstanceCount == len(paneStands) {
+	for _, call := range f.draws {
+		if !f.blended(call) && call.Instances == len(paneStands) {
 			paired++
 		}
 	}
 	if want := panePrimitives - PaneBlendPrimitives; paired != want {
-		t.Errorf("%d opaque batches hold both screens, want %d", paired, want)
+		t.Errorf("%d opaque draws hold both screens, want %d", paired, want)
 	}
 }
 
-// Every batch is one instanced draw at the backend, reading its own slice of
-// the pass's instance range.
+// Every draw reads its own slice of the pass's instance range, and the slices
+// tile it.
 //
 // firstInstance is load-bearing rather than decorative: WebGPU's instance_index
-// starts at it, so a batch reads sceneInstances with no offset plumbing of its
-// own, and a draw whose firstInstance does not match its batch would render
-// some other batch's transforms with no error anywhere.
-func TestEveryBatchReachesTheBackendAsOneInstancedDraw(t *testing.T) {
+// starts at it, so a draw reads sceneInstances with no offset plumbing of its
+// own, and a draw whose firstInstance is wrong would render some other Batch's
+// transforms with no error anywhere. Sorted by firstInstance the draws run
+// 0..n with no gap and no overlap; a draw reading a wrong range that happened
+// to hold the right count would fail here.
+func TestEveryDrawReadsItsOwnSliceOfThePassRange(t *testing.T) {
 	engine, _ := run(t)
-	batches := pass(t, engine).Batches
-	draws := sceneDraws(t, engine)
-	if len(draws) != len(batches) {
-		t.Fatalf("the frame packed %d batches and made %d scene draws",
-			len(batches), len(draws))
-	}
-	for i, batch := range batches {
-		if draws[i].FirstInstance != batch.FirstInstance || draws[i].Instances != batch.InstanceCount {
-			t.Errorf("batch %d is %d instances from %d and the draw is %d from %d",
-				i, batch.InstanceCount, batch.FirstInstance,
-				draws[i].Instances, draws[i].FirstInstance)
-		}
-	}
-
-	// And the draws tile the pass's instance range exactly: sorted by
-	// firstInstance they run 0..Instances with no gap and no overlap. A batch
-	// and its draw agreeing on a wrong number would pass the loop above; only
-	// the tiling says the numbers are the arena's.
-	covered := make([]bool, pass(t, engine).Instances)
-	for _, call := range draws {
+	f := step(t, engine)
+	covered := make([]bool, len(f.instances))
+	for _, call := range f.draws {
 		for i := range call.Instances {
 			at := call.FirstInstance + i
 			if at >= len(covered) {
@@ -428,161 +468,151 @@ func TestEveryBatchReachesTheBackendAsOneInstancedDraw(t *testing.T) {
 			t.Fatalf("instance %d was packed and no draw reads it", i)
 		}
 	}
-
-	if engine.Backend().Presents == 0 {
-		t.Error("the backend was never asked to present")
-	}
 }
 
-// One instance arena for the whole frame, bound to every draw as a range, and
-// one material record per batch inside a second one.
+// One instance range per pass, bound to every draw of the bundled shader.
 //
-// The two are the same discipline and differ in what a range means. Every draw
-// of a pass binds the same slice of the instance arena - the pass's own - and
-// finds its instances inside it through firstInstance. A batch binds no
-// material record of scene's: its material's numbers are params gfx packs into
-// the shader's uniform block by name.
-func TestOneInstanceArenaPerPass(t *testing.T) {
+// Every draw of a pass binds the same slice of the frame's instance arena - the
+// pass's own - and finds its instances inside it through firstInstance, so the
+// slice is exactly as long as the pass's instances.
+func TestOneInstanceRangePerPass(t *testing.T) {
 	engine, _ := run(t)
-	view := pass(t, engine)
 	backend := engine.Backend()
+	buffers := len(backend.Buffers)
+	f := step(t, engine)
 
-	instances := lastBindings(t, engine, 0, 1, len(view.Batches))
-	for i, bound := range instances {
-		if bound.Buffer != instances[0].Buffer || bound.Offset != instances[0].Offset ||
-			bound.Size != instances[0].Size {
+	bound := instanceBindings(backend, buffers)
+	if len(bound) == 0 {
+		t.Fatal("no draw of the bundled shader bound its instances")
+	}
+	for i, binding := range bound {
+		if binding.Buffer != bound[0].Buffer || binding.Offset != bound[0].Offset ||
+			binding.Size != bound[0].Size {
 			t.Fatalf("draw %d bound instances at buffer %d offset %d size %d, and the first "+
 				"bound buffer %d offset %d size %d",
-				i, bound.Buffer, bound.Offset, bound.Size,
-				instances[0].Buffer, instances[0].Offset, instances[0].Size)
+				i, binding.Buffer, binding.Offset, binding.Size,
+				bound[0].Buffer, bound[0].Offset, bound[0].Size)
 		}
 	}
-	if want := view.Instances * instanceRecordSize; instances[0].Size != want {
-		t.Errorf("the pass bound %d bytes of instances for %d packed instances, want %d",
-			instances[0].Size, view.Instances, want)
-	}
-
-	if backend.Presents == 0 {
-		t.Error("the backend was never asked to present")
+	if want := f.total() * instanceRecordSize; bound[0].Size != want {
+		t.Errorf("the pass bound %d bytes of instances for %d drawn instances, want %d",
+			bound[0].Size, f.total(), want)
 	}
 }
 
-// One call per crate packs exactly the frame one instanced call packs, in the
-// same batches.
+// Key 2 gives every crate a key of its own, and the field becomes one draw per
+// surviving crate reading exactly the instances the one draw read; key 1 folds
+// them back into one.
 //
-// This is the automatic collapse of consecutive equal draws, asserted from the
-// other side: it has to be output-identical to the instanced form, and
-// identical means these bytes and this batch count. The two orders coincide
-// because the crates share a mesh and a material and therefore a sort key, and
-// the sort's final tiebreak is the recording ordinal; the batch counts coincide
-// because the per-crate calls are equal draws side by side, and merge.
-func TestOneCallPerCrateIsTheSameFrameInTheSameBatches(t *testing.T) {
+// This is what a Batch key costs, asserted from both sides: the same instances,
+// byte for byte, in one draw or in five hundred. The parameter key 2 writes is
+// one no shader declares, so it changes the key and nothing else.
+func TestAKeyPerCrateIsTheSameInstancesInADrawPerCrate(t *testing.T) {
 	engine, demo := run(t)
-	view := pass(t, engine)
-	before := sceneInstances(t, engine)
+	shared := step(t, engine)
+	kept := len(survivors(t, engine, demo)) + stackCount
 
-	demo.perCall = true
-	engine.Steps(2)
-	after := pass(t, engine)
-	if errs := engine.Errors(); len(errs) > 0 {
-		t.Fatalf("drawing the field per crate reported %d errors, first: %v", len(errs), errs[0])
+	perCrate := tap(t, engine, input.Key2)
+	if demo.FieldKeys() != CrateCount+stackCount {
+		t.Fatalf("after key 2 the crates hold %d keys, want one each", demo.FieldKeys())
+	}
+	if want := len(shared.draws) - 1 + kept; len(perCrate.draws) != want {
+		t.Errorf("a key per crate made %d draws, want %d: the %d other draws and one for "+
+			"each of the %d crates in view", len(perCrate.draws), want,
+			len(shared.draws)-1, kept)
+	}
+	if !sameRecords(shared.instances, perCrate.instances) {
+		t.Error("a key per crate packed different instances than one shared key")
 	}
 
-	if after.Instances != view.Instances {
-		t.Errorf("per crate the pass packed %d instances, and instanced it packed %d",
-			after.Instances, view.Instances)
+	again := tap(t, engine, input.Key1)
+	if len(again.draws) != len(shared.draws) {
+		t.Errorf("key 1 made %d draws, want the %d one shared key makes",
+			len(again.draws), len(shared.draws))
 	}
-	if len(after.Batches) != len(view.Batches) {
-		t.Errorf("per crate the pass packed %d batches and instanced it packed %d; "+
-			"the per-crate calls are meant to merge back into the field's one",
-			len(after.Batches), len(view.Batches))
+	if again.field(t).Instances != kept {
+		t.Errorf("key 1 folded %d crates back into the field's draw, want %d",
+			again.field(t).Instances, kept)
 	}
-	packed := sceneInstances(t, engine)
-	if len(packed) != len(before) {
-		t.Fatalf("per crate the arena holds %d instances and instanced it held %d",
-			len(packed), len(before))
-	}
-	for i := range before {
-		if packed[i] != before[i] {
-			t.Fatalf("packed instance %d is %+v per crate and was %+v instanced",
-				i, packed[i], before[i])
-		}
-	}
+}
+
+// tap presses one key through input, as a window would, takes the step that
+// reads the press, and releases the key. The release comes after the step
+// because input clears a JustPressed edge at its next apply, and the demo's own
+// key handling is what the step is meant to see.
+func tap(t *testing.T, engine *headless.Engine, key input.Key) frame {
+	t.Helper()
+	engine.Input(input.KeyChange(key, 0, true))
+	f := step(t, engine)
+	engine.Input(input.KeyChange(key, 0, false))
+	return f
 }
 
 // Orbiting changes which instances survive without changing what the frame is
-// made of. A batch is a run of equal draws, so a field that loses half its
-// crates to the frustum is still one batch.
-func TestOrbitingChangesTheSurvivorsAndNotTheBatches(t *testing.T) {
+// made of. A Batch is its Entities, not its survivors, so a field that loses
+// more of its crates to the frustum is still one draw.
+func TestOrbitingChangesTheSurvivorsAndNotTheDraws(t *testing.T) {
 	engine, demo := run(t)
-	before := pass(t, engine)
-	beforeCulled, beforeBatches := before.Culled, len(before.Batches)
+	before := step(t, engine)
 
 	demo.azimuth = startAzimuth + 0.9
 	demo.elevation = 0.9
-	engine.Steps(2)
-	after := pass(t, engine)
-	if errs := engine.Errors(); len(errs) > 0 {
-		t.Fatalf("orbiting reported %d errors, first: %v", len(errs), errs[0])
-	}
+	after := step(t, engine)
 
-	if after.Culled == beforeCulled {
-		t.Errorf("the same %d draws were culled from both poses; the cull is not per instance "+
-			"against this camera's frustum", beforeCulled)
+	if after.total() == before.total() {
+		t.Errorf("the pass drew %d instances from both poses; the cull is not per instance "+
+			"against this camera's frustum", before.total())
 	}
-	if len(after.Batches) != beforeBatches {
-		t.Errorf("the frame packed %d batches from one pose and %d from the other; a batch "+
-			"is a run of equal draws, not its survivors", beforeBatches, len(after.Batches))
+	if want := Instances - CrateCount + len(survivors(t, engine, demo)); after.total() != want {
+		t.Errorf("from the second pose the pass drew %d instances and the frustum keeps %d",
+			after.total(), want)
 	}
-	if after.Recorded != before.Recorded {
-		t.Errorf("the frame recorded %d draws from one pose and %d from the other",
-			before.Recorded, after.Recorded)
+	if len(after.draws) != len(before.draws) {
+		t.Errorf("the frame made %d draws from one pose and %d from the other; a Batch "+
+			"is its Entities, not its survivors", len(before.draws), len(after.draws))
 	}
 }
 
-// Every frame at a given pose is the same frame. The demo records nothing that
-// moves on its own, which is what lets the reference screenshot be retaken by
-// launching the demo and capturing it rather than by hitting a step number.
+// Every frame at a given pose is the same frame. The demo moves nothing on its
+// own, which is what lets the reference screenshot be retaken by launching the
+// demo and capturing it rather than by hitting a step number.
 func TestTheReferencePoseIsTheSameFrameAtEveryStep(t *testing.T) {
 	engine, demo := run(t)
-	before := append([]scene.BatchView(nil), pass(t, engine).Batches...)
-	step := demo.step
+	before := step(t, engine)
+	at := demo.step
 
-	engine.Steps(37)
-	if demo.step == step {
+	engine.Steps(36)
+	after := step(t, engine)
+	if demo.step == at {
 		t.Fatal("the step counter did not advance")
 	}
-	after := pass(t, engine).Batches
-	if len(before) != len(after) {
-		t.Fatalf("the frame emitted %d batches and then %d", len(before), len(after))
+	if len(before.draws) != len(after.draws) {
+		t.Fatalf("the frame made %d draws and then %d", len(before.draws), len(after.draws))
 	}
-	for i := range before {
-		if before[i] != after[i] {
-			t.Fatalf("batch %d was %+v and is now %+v", i, before[i], after[i])
+	for i := range before.draws {
+		b, a := before.draws[i], after.draws[i]
+		if b.First != a.First || b.Count != a.Count ||
+			b.Instances != a.Instances || b.FirstInstance != a.FirstInstance {
+			t.Fatalf("draw %d was %+v and is now %+v", i, b, a)
 		}
+	}
+	if !slices.Equal(before.instances, after.instances) {
+		t.Error("the frame packed different instances at the same pose")
 	}
 }
 
-// Reading back what the flush packed.
+// Reading back what the step packed.
 //
 // The instance record is decoded rather than asked for because there is nothing
-// to ask: PassView reports how many instances a pass packed, and an instance's
-// own matrix and flags are visible nowhere in the public surface. The layout is
-// the one the specification fixes for builtin/scene/scene.wgsl, anchored at the
-// end of the record so a field added ahead of it does not silently shift what
-// is read:
+// to ask: an instance's own matrix and flags are visible nowhere in the public
+// surface. The layout is model's Instance, which builtin/model's shaders read,
+// and the flag is model's own constant:
 //
-//	SceneInstance 64 bytes: three rows of the 4x3 world matrix, an animation
-//	                        offset and the flags
-const (
-	instanceRecordSize = 64
-	// sceneNonUniform marks an instance whose world matrix does not scale
-	// uniformly, and is the shader's signal to take an inverse-transpose for
-	// its normals.
-	sceneNonUniform = 1
-)
+//	Instance 64 bytes: three rows of the 4x3 world matrix, an animation offset,
+//	                   the flags, a joint and a mesh slot
+const instanceRecordSize = 64
 
-// packedInstance is one entry of the pass's instance slice.
+// packedInstance is one entry of the pass's instance range.
 type packedInstance struct {
 	world [3]m.Vec4
 	flags uint32
@@ -594,15 +624,82 @@ func (p packedInstance) translation() m.Vec3 {
 	return m.Vec3{X: p.world[0].W, Y: p.world[1].W, Z: p.world[2].W}
 }
 
-func (p packedInstance) nonUniform() bool { return p.flags&sceneNonUniform != 0 }
+func (p packedInstance) nonUniform() bool { return p.flags&model.SceneNonUniform != 0 }
 
-// sceneInstances decodes the pass's instance slice. The binding is the pass's
-// own range of the frame's instance arena, which is what makes a batch's
-// FirstInstance an index into it.
-func sceneInstances(t *testing.T, engine *headless.Engine) []packedInstance {
+func translations(instances []packedInstance) []m.Vec3 {
+	out := make([]m.Vec3, len(instances))
+	for i := range instances {
+		out[i] = instances[i].translation()
+	}
+	return out
+}
+
+// unmatched is every position in want with no position in got within
+// positionEpsilon, each position in got matching at most one.
+func unmatched(want, got []m.Vec3) []m.Vec3 {
+	used := make([]bool, len(got))
+	var missing []m.Vec3
+	for _, w := range want {
+		found := false
+		for i, g := range got {
+			if !used[i] && g.Distance(w) <= positionEpsilon {
+				used[i], found = true, true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, w)
+		}
+	}
+	return missing
+}
+
+// sameRecords reports whether two instance ranges hold the same records,
+// whatever order they hold them in.
+func sameRecords(a, b []packedInstance) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	used := make([]bool, len(b))
+	for _, record := range a {
+		found := false
+		for i := range b {
+			if !used[i] && b[i] == record {
+				used[i], found = true, true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// instanceBindings is every binding of sceneInstances the draws of the bundled
+// shader made since the backend's Buffers held from entries. Filtering on the
+// pipeline is what keeps canvas's bindings out, since gfx labels every pipeline
+// alike and only the shader behind it differs.
+func instanceBindings(backend *headless.Backend, from int) []headless.BufferBinding {
+	var out []headless.BufferBinding
+	for _, binding := range backend.Buffers[from:] {
+		if binding.Group == 0 && binding.Binding == 1 && backend.IsScenePipeline(binding.Pipeline) {
+			out = append(out, binding)
+		}
+	}
+	return out
+}
+
+// decodeInstances decodes the pass's instance range, as the first draw of the
+// bundled shader since from bound it. Every such draw binds the same range,
+// which TestOneInstanceRangePerPass asserts.
+func decodeInstances(t *testing.T, backend *headless.Backend, from int) []packedInstance {
 	t.Helper()
-	bound := lastBindings(t, engine, 0, 1, 1)[0]
-	data := engine.Backend().BoundBytes(bound)
+	bound := instanceBindings(backend, from)
+	if len(bound) == 0 {
+		t.Fatal("no draw of the bundled shader bound its instances")
+	}
+	data := backend.BoundBytes(bound[0])
 	if data == nil {
 		t.Fatal("the instance binding named an unbaked buffer")
 	}
@@ -617,89 +714,9 @@ func sceneInstances(t *testing.T, engine *headless.Engine) []packedInstance {
 	return out
 }
 
-// lastBindings is the last n bindings the frame made at one group and binding
-// through a pipeline built from the bundled scene shader, in the order the
-// frame made them.
-//
-// It scans backwards because the backend records every binding since the engine
-// started, and the frames before the models were resident bound a much shorter
-// instance range. Filtering on the pipeline is what keeps canvas's own bindings
-// out, since gfx labels every pipeline alike and only the shader behind it
-// differs; asking for exactly as many as the frame has draws is what keeps the
-// previous frame's out.
-func lastBindings(t *testing.T, engine *headless.Engine, group, binding, n int) []headless.BufferBinding {
-	t.Helper()
-	backend := engine.Backend()
-	out := make([]headless.BufferBinding, 0, n)
-	for i := len(backend.Buffers) - 1; i >= 0 && len(out) < n; i-- {
-		bound := backend.Buffers[i]
-		if bound.Group != group || bound.Binding != binding {
-			continue
-		}
-		if !backend.IsScenePipeline(bound.Pipeline) {
-			continue
-		}
-		out = append(out, bound)
-	}
-	if len(out) < n {
-		t.Fatalf("the frame bound group %d binding %d %d times, want %d",
-			group, binding, len(out), n)
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
-}
-
-// sceneDraws is the last frame's scene draws, in emission order.
-//
-// The backend's draw list accumulates across every frame since the engine
-// started, and one frame's draws are the pass's own followed by canvas's HUD -
-// so the last frame's scene draws are the run of scene-pipeline draws found by
-// skipping the canvas draws at the end and stopping at the first canvas draw
-// before them.
-func sceneDraws(t *testing.T, engine *headless.Engine) []headless.DrawCall {
-	t.Helper()
-	backend := engine.Backend()
-	end := len(backend.Draws)
-	for end > 0 && !backend.IsScenePipeline(backend.Draws[end-1].Pipeline) {
-		end--
-	}
-	start := end
-	for start > 0 && backend.IsScenePipeline(backend.Draws[start-1].Pipeline) {
-		start--
-	}
-	if start == end {
-		t.Fatal("the frame made no scene draws")
-	}
-	return backend.Draws[start:end]
-}
-
-// largestBatch is the field's batch, which is the largest one in the frame by a
-// wide margin: everything else in the courtyard is a handful of instances.
-// Identifying it by size rather than by id is what keeps the test out of
-// scene's internal id assignment, and the margin is asserted rather than
-// assumed.
-func largestBatch(t *testing.T, batches []scene.BatchView) scene.BatchView {
-	t.Helper()
-	best, second := scene.BatchView{}, 0
-	for _, batch := range batches {
-		if batch.InstanceCount > best.InstanceCount {
-			best, second = batch, best.InstanceCount
-			continue
-		}
-		second = max(second, batch.InstanceCount)
-	}
-	if best.InstanceCount < 2*second+1 {
-		t.Fatalf("the largest batch holds %d instances and the next holds %d; the field is "+
-			"meant to be unmistakable", best.InstanceCount, second)
-	}
-	return best
-}
-
 // modelSphere is a resident model's local-space bounding sphere, read from the
-// lookup facade rather than transcribed. It is the sphere the culler tests, so
-// a test that asks for it is asking the same question the flush answered.
+// lookup facade rather than transcribed. It is the sphere scene culls by, so a
+// test that asks for it is asking the same question scene's cull answered.
 func modelSphere(t *testing.T, engine *headless.Engine, path string) m.Sphere {
 	t.Helper()
 	var sphere m.Sphere

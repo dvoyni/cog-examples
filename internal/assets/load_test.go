@@ -48,7 +48,7 @@ func engine(t *testing.T) *headless.Engine {
 }
 
 // Every vendored asset loads. This is the assertion the loader is actually
-// judged by: the unit tests in cog/bundles/scene build documents in memory and can only
+// judged by: the unit tests in cog/bundles/model build documents in memory and can only
 // exercise the shapes their author thought of, where the Khronos set carries
 // u8 indices, a non-indexed primitive, all seven topologies, quantised meshes,
 // nine textures over three images, and an extension nobody implemented.

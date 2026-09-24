@@ -4,7 +4,7 @@
 //	go run ./cmd/scene/pbr
 //
 // The assets are the point. Every model here was authored and
-// screenshot-verified by Khronos against exactly the BRDF scene implements, so
+// screenshot-verified by Khronos against exactly the BRDF scene draws with, so
 // "the model looks wrong" is a bug in this tree rather than an open question
 // about which approximation was picked. That is what makes this the one demo
 // whose visible criterion is falsifiable without a second implementation to
@@ -14,10 +14,15 @@
 // names, the five texture slots, the two 1x1 defaults an empty slot binds, the
 // Khronos BRDF and EnvBRDFApprox, COLOR_0, and KHR_texture_transform as flat
 // per-slot members; alphaMode mapped onto pipeline state, Cull and FrontFace;
-// the back-to-front blend bucket; point and spot lights, Range zero meaning
+// the back-to-front blend sort; point and spot lights, Range zero meaning
 // infinite, the sixteen-light cap and its silent drop; and
 // KHR_materials_emissive_strength folded in at load beside KHR_lights_punctual
 // reaching the app as data it declares itself.
+//
+// Every drawable is an Entity: a Model Component for each of the seven model
+// draws, a Mesh and a Params for the ground and each plinth, a Light for each
+// of the twenty-one lamps and a Camera for the eye. The Systems that spawn and
+// steer them are one to a file, each named for its System.
 //
 // # The six stations
 //
@@ -36,22 +41,22 @@
 //
 // The alpha station is drawn twice, at two depths. One copy's two blended
 // primitives cannot tell a depth sort from a mesh-id sort - with two copies the
-// correct order interleaves them and a material-keyed sort groups them, which is
-// what pbr_test.go asserts.
+// correct order interleaves them and a material-keyed sort groups them - and
+// pbr_test.go asserts the blended draws reach the backend farthest first.
 //
 // # Lights, and the cap
 //
-// Twenty-one punctual lights are recorded and sixteen are packed. The eight
+// Twenty-one punctual lights are declared and sixteen are packed. The eight
 // that PointLightIntensityTest declares are read back through ModelLights and
-// re-declared at the station's world transform, because scene converts none of
-// a file's lights automatically: a lamp prop placed forty times would blow the
-// cap silently, and which of a file's lights matter is the app's judgement. One
-// fill light leaves Range at zero, which is glTF's own default and means
-// infinite - it is the only light here that cannot be culled, and so always
-// survives to the cap. A spot stands over the bottle and another over the alpha
-// panes. Five rim lamps line the front edge with a range long enough to reach
-// the camera, and five deep lamps stand behind the back row with a range that
-// does not.
+// spawned as Light Entities at the station's world transform, because scene
+// converts none of a file's lights automatically: a lamp prop placed forty
+// times would blow the cap silently, and which of a file's lights matter is the
+// app's judgement. One fill light leaves Range at zero, which is glTF's own
+// default and means infinite - it is the only light here that cannot be
+// culled, and so always survives to the cap. A spot stands over the bottle and
+// another over the alpha panes. Five rim lamps line the front edge with a range
+// long enough to reach the camera, and five deep lamps stand behind the back
+// row with a range that does not.
 //
 // The five deep lamps are the five the cap drops, and the arrangement is what
 // makes the rule visible rather than merely stated. The ranking is each light's
@@ -62,8 +67,8 @@
 // so they score nothing and lose; orbiting round behind the still life brings
 // the camera inside that range, they start scoring, and they take the places of
 // lights that score zero from there - the two spots and the station's own
-// eight, none of which reaches the eye either. The count on the HUD never moves
-// off 16 while any of that happens, and nothing is reported.
+// eight, none of which reaches the eye either. The count never moves off 16
+// while any of that happens, and nothing is reported.
 //
 // That is the whole reason the drop is silent rather than reported once: which
 // sixteen survive is dynamic and camera-shaped, so there is no natural moment
@@ -72,18 +77,23 @@
 // so a lamp lighting the ground behind a model scores nothing there while
 // contributing plenty to what the camera is looking at.
 //
+// Among lights that tie - and every light whose window is closed at the eye
+// ties at zero - the first sixteen offered are kept, and scene offers its Light
+// Entities in the order its Query walks them. lampsystem.go spawns the lamps
+// with that walk in mind; see lampSystem for what that rests on.
+//
 // # The reference pose
 //
 // The demo starts at a documented fixed pose - the camera orbits orbitTarget at
 // radius overviewRadius, azimuth startAzimuth and elevation startElevation - and
 // reference.png beside this file is the frame at that pose.
 //
-// Nothing in the recorded frame moves on its own. The clock is still
-// accumulated fixed steps, and the HUD prints it, but it drives only the orbit
-// rate: every frame at the reference pose is the same frame, so the reference
-// screenshot can be retaken by launching the demo and capturing it, with no step
-// to hit. A still life is what a set of material test cards wants to be, and it
-// buys exact reproducibility for the one demo whose acceptance is a picture.
+// Nothing in the drawn frame moves on its own. The clock is still accumulated
+// fixed steps, and the HUD prints it, but it drives only the orbit rate: every
+// frame at the reference pose is the same frame, so the reference screenshot
+// can be retaken by launching the demo and capturing it, with no step to hit. A
+// still life is what a set of material test cards wants to be, and it buys
+// exact reproducibility for the one demo whose acceptance is a picture.
 //
 // Input may orbit, focus and pause freely, and touching it voids nothing: the
 // assertions live in pbr_test.go rather than in the running app.
@@ -107,7 +117,7 @@
 // right - strength 1, 2, 4, 8, 16 - and the last two are the same white,
 // because there is no tonemapping anywhere in this pipeline and both are past
 // the top of the range; a demo where all five matched would mean
-// KHR_materials_emissive_strength never reached the record. Each of the six
+// KHR_materials_emissive_strength never reached the material. Each of the six
 // panels (key 6) takes the colour of the lamp in front of it, and each pool
 // stops short of its neighbour because Range 1.125 closes the falloff before it
 // gets there; a pool that reaches its neighbour is a Range that did not pack.
@@ -136,12 +146,13 @@ import (
 	"math"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
@@ -177,7 +188,7 @@ const (
 const CameraMain scene.CameraID = -100
 
 // The canvas layers, which are gfx orders directly. The camera declares no
-// passes, and the implicit forward pass preserves colour rather than clearing
+// passes, and its default forward pass preserves colour rather than clearing
 // it, so the frame's one colour clear is canvas's on a layer below the camera.
 const (
 	layerBackdrop canvas.Layer = -200
@@ -198,8 +209,8 @@ func main() {
 	}
 	permanentfs.Configure(config)
 
-	// The demo plugin is last because it records into the queues the plugins
-	// before it declare.
+	// The demo plugin is last because its Systems read the Components and
+	// resources the plugins before it register.
 	plugins := []kernel.Plugin{
 		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
@@ -207,8 +218,9 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		modelplugin.New(), sceneplugin.New(),
+		modelplugin.New(),
 		gogpuplugin.New(),
+		ecsplugin.New(), sceneplugin.New(),
 		mcpplugin.New(),
 		New(),
 	}
@@ -233,8 +245,81 @@ func main() {
 // Name is the demo plugin's name.
 const Name kernel.PluginName = "pbr"
 
-type windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
-type updateEventHandler kernel.Subscription[app.UpdateEvent]
+// Demo is the demo's gameplay plugin. It registers the Systems and the one
+// resource they share, and keeps a pointer to that resource so a test can read
+// what the HUD reads.
+type Demo struct {
+	pbr *Pbr
+}
+
+// New builds the demo plugin at its documented starting pose.
+func New() *Demo {
+	return &Demo{pbr: &Pbr{azimuth: startAzimuth, elevation: startElevation}}
+}
+
+func (d *Demo) Name() kernel.PluginName { return Name }
+
+func (d *Demo) Dependencies() []kernel.PluginName {
+	return []kernel.PluginName{canvas.Name, ecs.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
+}
+
+type (
+	setupSystem   kernel.Subscription[app.InitEvent]
+	steerSystem   kernel.Subscription[app.UpdateEvent]
+	orbitSystem   kernel.Subscription[app.UpdateEvent]
+	lampSystem    kernel.Subscription[app.UpdateEvent]
+	hudSystem     kernel.Subscription[app.UpdateEvent]
+	viewportFixer kernel.Subscription[app.WindowSizeChangeEvent]
+)
+
+func (d *Demo) Register(registrar *kernel.Registrar, _ any) error {
+	// storage mounts nothing by default, and the vendored asset set lives in
+	// the repository rather than beside the executable, which `go run` builds
+	// into a temporary directory - so the demo contributes it explicitly and
+	// refuses to start without it. A pbr demo that came up with six missing
+	// models would render an empty room and blame the loader.
+	mount, err := assets.Mount()
+	if err != nil {
+		return err
+	}
+	registrar.ProvideAdapter[assets.StorageReadMount](mount)
+
+	registrar.InitResource(d.pbr)
+
+	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
+	registrar.Subscribe[steerSystem](ecs.ToHandler[app.UpdateEvent](registrar, steer)).First()
+	// Every System that places an Entity runs Before scene.RecordOnUpdate,
+	// so a step draws the world as that step left it rather than whichever side
+	// of the tie the scheduler happened to break.
+	registrar.Subscribe[orbitSystem](ecs.ToHandler[app.UpdateEvent](registrar, orbit)).
+		After[steerSystem]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[lampSystem](ecs.ToHandler[app.UpdateEvent](registrar, lamps)).
+		After[scene.LoadOnUpdate]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
+		After[lampSystem]()
+
+	registrar.Subscribe[viewportFixer](setViewport)
+	return nil
+}
+
+// setViewport fits the logical screen inside the window, swapping the axes when
+// the window is taller than it is wide.
+func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
+	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
+	return func(access kernel.ResourceAccess) {
+			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
+		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
+			if event.Width <= 0 || event.Height <= 0 {
+				return
+			}
+			width, height := float32(screenWidth), float32(screenHeight)
+			if event.Height > event.Width {
+				width, height = height, width
+			}
+			setDesiredViewport(k,
+				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
+		}
+}
 
 // The demo's fixed timestep. Demo time is accumulated fixed steps, never wall
 // clock: the update event's Dt is deliberately ignored.
@@ -260,119 +345,12 @@ const (
 	sunStrength = 0.5
 )
 
+// sunDirection is the direction the camera's sun travels in.
+var sunDirection = m.Vec3{X: -0.35, Y: -1, Z: -0.55}
+
 // orbitTarget is the point the overview camera looks at and orbits, a little
 // above the plinths so the ground fills the lower third of the frame.
 var orbitTarget = m.Vec3{Y: 2.4}
-
-// Pbr is the demo's gameplay plugin: it records the whole frame and owns the
-// step counter, the orbit, the station table and the numbers the HUD prints.
-type Pbr struct {
-	step      int
-	paused    bool
-	azimuth   float32
-	elevation float32
-	// focus is 0 for the overview and 1..6 for a station close-up, which is the
-	// key that selected it.
-	focus int
-	stats stats
-	rate  rate
-	// modelLights is the scratch ModelLights reads into, kept so a frame that
-	// re-declares a file's eight lights allocates nothing.
-	modelLights []model.ModelLight
-	// resident is which stations reported residency on the last frame, for the
-	// HUD. ModelLights' ok is the only residency predicate the API has before
-	// the lookup facade lands, and it is false for a missing, loading and
-	// failed path alike, which is exactly what "not drawable yet" means.
-	resident [len(stations)]bool
-	// declared counts the punctual lights the last frame recorded, which is the
-	// number the pass's own Lights is capped from.
-	declared int
-}
-
-// rate is the HUD's frames-per-second meter, and the demo's only wall clock. It
-// cannot come from the update event's Dt, which is app's fixed timestep,
-// nor from the step counter, which is the same number however long a frame took.
-// It counts frames over a window rather than averaging 1/interval per frame, so
-// a startup spike is one frame in the count instead of a reading that never
-// happened decaying for a hundred frames afterwards.
-type rate struct {
-	window    time.Time
-	frames    int
-	perSecond float32
-}
-
-// ratePeriod is how long the meter counts before republishing.
-const ratePeriod = 250 * time.Millisecond
-
-func (r *rate) measure(now time.Time) {
-	if r.window.IsZero() {
-		r.window = now
-		return
-	}
-	r.frames++
-	if elapsed := now.Sub(r.window); elapsed >= ratePeriod {
-		r.perSecond = float32(float64(r.frames) / elapsed.Seconds())
-		r.frames, r.window = 0, now
-	}
-}
-
-// stats is what the previous frame's flush decided, read back out of the scene
-// queue at the top of each update and printed by the HUD. It is the previous
-// frame's because Passes publishes the frame the last flush consumed.
-type stats struct {
-	passes    int
-	ops       int
-	recorded  int
-	culled    int
-	instances int
-	lights    int
-	batches   int
-}
-
-// New builds the demo plugin at its documented starting pose.
-func New() *Pbr { return &Pbr{azimuth: startAzimuth, elevation: startElevation} }
-
-func (p *Pbr) Name() kernel.PluginName { return Name }
-
-func (p *Pbr) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
-}
-
-func (p *Pbr) Register(registrar *kernel.Registrar, _ any) error {
-	// storage mounts nothing by default, and the vendored asset set lives in
-	// the repository rather than beside the executable, which `go run` builds
-	// into a temporary directory - so the demo contributes it explicitly and
-	// refuses to start without it. A pbr demo that came up with six missing
-	// models would render an empty room and blame the loader.
-	mount, err := assets.Mount()
-	if err != nil {
-		return err
-	}
-	registrar.ProvideAdapter[assets.StorageReadMount](mount)
-
-	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
-	registrar.Subscribe[updateEventHandler](p.draw)
-	return nil
-}
-
-// setViewport fits the logical screen inside the window, swapping the axes when
-// the window is taller than it is wide.
-func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
-	var setDesiredViewport func(kernel.Kernel, gfx.SetDesiredViewportRequest) gfx.SetDesiredViewportResponse
-	return func(access kernel.ResourceAccess) {
-			setDesiredViewport = access.Uses[gfx.SetDesiredViewportCmd]()
-		}, func(k kernel.Kernel, event app.WindowSizeChangeEvent) {
-			if event.Width <= 0 || event.Height <= 0 {
-				return
-			}
-			width, height := float32(screenWidth), float32(screenHeight)
-			if event.Height > event.Width {
-				width, height = height, width
-			}
-			setDesiredViewport(k,
-				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
-		}
-}
 
 // The frame's own colours, written in sRGB and converted on the way in: Color
 // holds linear components, and a demo that typed linear literals would be
@@ -411,15 +389,14 @@ var deepColors = [5]m.Color{
 	m.NewColorSrgb(0.35, 0.85, 1.00, 1),
 }
 
-// The ground the whole still life stands on.
+// The ground the whole still life stands on: a unit quad under a Scale of
+// groundSide in x and z.
 const groundSide = 60
 
-// The plinth every station stands on: a slab, and the demo's only non-uniform
-// scale. Transform.Scale is per axis, so a slab is a Box with a flattened
-// Scale and a yaw; that is what puts a rotated non-uniform basis
-// through the bundled PBR's lit path, which nothing in box or procedural does -
-// Line3D and WireBox build such a matrix but are self-lit and never read a
-// normal.
+// The plinth every station stands on: a slab. Transform.Scale is per axis, so a
+// slab is the unit box Mesh under a flattened Scale and a yaw; that is what
+// puts a rotated non-uniform basis through the bundled PBR's lit path, which
+// the debug shapes cannot - they are self-lit and never read a normal.
 const (
 	plinthWidth  = 4.8
 	plinthDepth  = 3.6
@@ -439,11 +416,11 @@ const (
 // station is one model's place in the still life.
 //
 // The bounds each entry is scaled, lifted and centred against are the file's
-// own, read out of its POSITION accessors. They are constants here because a
-// resident model cannot yet be asked for its bounds through the public surface;
-// the lookup facade's Bounds is what will let a demo compute this instead of
-// tabulating it, and until then a file swapped underneath the demo moves its
-// model off its plinth rather than failing anything.
+// own, read out of its POSITION accessors. They are constants here rather than
+// read through the device facade's Bounds, because a placement computed from a
+// loaded file would move with the file: a file swapped underneath the demo
+// moves its model off its plinth rather than silently re-arranging the still
+// life, and the reference screenshot keeps meaning one arrangement.
 type station struct {
 	name string
 	path string
@@ -492,7 +469,7 @@ var stations = [...]station{
 		lift: plinthHeight + 2.90, radius: 5.6, height: 1.8},
 }
 
-// The station indices the frame refers to by name.
+// The station indices the Systems refer to by name.
 const (
 	stationBottle = iota
 	stationCompare
@@ -504,7 +481,7 @@ const (
 
 // alphaSecondCopy is where the alpha station's second copy stands, relative to
 // the first. It is offset in z so the four blended primitives have four
-// distinct depths - which is what makes the blend bucket's order an assertion
+// distinct depths - which is what makes the blend sort's order an assertion
 // rather than a coin flip - and a little in x so the two are separable by eye.
 // The offset stays inside the plinth's own footprint: the copy is a second pane
 // standing on the same slab, not a model floating behind it.
@@ -536,7 +513,7 @@ func buildPlacements() [len(stations)]placement {
 		ground := m.Vec3{X: s.x, Z: s.z}
 		yaw := m.QuatAxisAngle(m.Vec3{Y: 1}, yawToward(ground, referenceEye))
 		// The model's own middle is carried to the plinth's, through the same
-		// scale and rotation the draw is given, so a file authored from a
+		// scale and rotation the Entity is given, so a file authored from a
 		// corner stands where a file authored from its centre does.
 		middle := m.TRS4(m.Vec3{}, yaw, m.Vec3{X: s.scale, Y: s.scale, Z: s.scale}).
 			TransformPoint(m.Vec3{X: s.centerX, Z: s.centerZ})
@@ -576,11 +553,11 @@ func eyeAt(target m.Vec3, radius, azimuth, elevation float32) m.Vec3 {
 }
 
 // The lights the demo declares itself, beside the eight it reads out of
-// PointLightIntensityTest. They are recorded in the order declared here, and
-// that order is load-bearing: past the cap a light replaces the weakest kept one
-// only if it beats it, so among lights that all score the same - which is what
-// every light whose range window is closed at the eye scores - the first sixteen
-// offered are the sixteen kept.
+// PointLightIntensityTest. They are ranked in the order declared here, and
+// that order is load-bearing: past the cap a light replaces the weakest kept
+// one only if it beats it, so among lights that all score the same - which is
+// what every light whose range window is closed at the eye scores - the first
+// sixteen offered are the sixteen kept.
 //
 // The fill light leaves Range at zero, which is glTF's own default and means
 // infinite. It is the one light that cannot be culled - the packed record holds
@@ -620,28 +597,29 @@ const (
 	deepRange     = 8.0
 )
 
-// RecordedLights is how many punctual lights the frame records once every model
-// is resident: one fill, two spots, the eight PointLightIntensityTest declares,
-// five rim lamps and five deep ones. It is five more than the cap on purpose.
-const RecordedLights = 1 + 2 + ModelDeclaredLights + rimCount + deepCount
+// DeclaredLights is how many Light Entities the demo spawns once the lights
+// station is resident: one fill, two spots, the eight PointLightIntensityTest
+// declares, five rim lamps and five deep ones. It is five more than the cap on
+// purpose.
+const DeclaredLights = 1 + 2 + ModelDeclaredLights + rimCount + deepCount
 
 // ModelDeclaredLights is how many KHR_lights_punctual lights the lights station
 // contributes. They are the file's own, re-declared by this demo at the
 // station's world transform.
 const ModelDeclaredLights = 8
 
-// MaxLights is scene's per-pass cap. It is a fixed constant there rather than a
-// Config knob, and it is spelled out here so the HUD and the assertions read the
-// same number.
+// MaxLights is scene's per-pass cap, model's MaxLights. It is a fixed constant
+// there rather than a Config knob, and it is spelled out here so the HUD and
+// the assertions read the same number.
 const MaxLights = 16
 
-// RecordedDraws is how many draws the frame flushes to once every model is
-// resident: one per primitive of each model, the alpha model twice, plus the six
-// plinths and the ground.
-const RecordedDraws = bottlePrimitives + comparePrimitives + 2*alphaPrimitives +
+// Instances is how many instances the frame draws once every model is
+// resident: one per primitive of each model, the alpha model twice, plus the
+// six plinths and the ground.
+const Instances = bottlePrimitives + comparePrimitives + 2*alphaPrimitives +
 	vertexPrimitives + emissivePrimitives + lightsPrimitives + len(stations) + 1
 
-// The primitive counts of the six files, which are what a model draw expands
+// The primitive counts of the six files, which are what a Model Entity expands
 // to. They are spelled out rather than counted at runtime so that an asset
 // swapped underneath the demo fails an assertion instead of quietly changing the
 // picture.
@@ -660,318 +638,17 @@ const (
 	lightsTestPrimitives = 2
 )
 
-// Batches is how many batches the frame packs once every model is resident.
-// scene collapses equal draws that sort side by side into one batch, so it is
-// RecordedDraws less what merges: the six plinths are one batch, the alpha
-// model's opaque primitives pair up across its two copies, and the lights
-// model's six "Test" nodes are one batch per primitive of the mesh they share.
-// Nothing else in the frame is equal to its neighbour in the sort.
-const Batches = RecordedDraws - (len(stations) - 1) - (alphaPrimitives - BlendPrimitives) -
+// SceneDraws is how many draws scene makes once every model is resident. A
+// Batch is one instanced draw of every opaque instance whose key is equal, and
+// a blended instance is a draw of its own, so it is Instances less what
+// shares a Batch: the six plinths are one Batch, the alpha model's opaque
+// primitives pair up across its two copies, and the lights model's six "Test"
+// nodes are one Batch per primitive of the mesh they share. Nothing else in the
+// frame shares a key with anything.
+const SceneDraws = Instances - (len(stations) - 1) - (alphaPrimitives - BlendPrimitives) -
 	lightsTestPrimitives*(lightsTestNodes-1)
 
 // BlendPrimitives is how many of the alpha model's primitives are alphaMode
 // BLEND: TestBlendMesh and DecalBlendMesh, both MatBlend. Everything else in the
 // frame is OPAQUE or MASK, and MASK sorts with opaque.
 const BlendPrimitives = 2
-
-// draw records the whole frame: the camera, the still life, the lights and the
-// HUD.
-//
-// It holds the Lookup, the filesystem and the resource queue because a
-// ModelLights read goes through the device facade, and every query on that
-// facade loads the file it names. A demo pays for that in its own Lock closure,
-// which is where the cost of a synchronous load belongs.
-func (p *Pbr) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var sceneQueue kernel.Write[*scene.OpQueue]
-	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var inputState kernel.Read[*input.State]
-	var lookup kernel.Write[*model.Lookup]
-	var files kernel.Read[storage.FileSystem]
-	var resources kernel.Write[*gfx.ResourceQueue]
-	return func(access kernel.ResourceAccess) {
-			sceneQueue = access.GetWrite[*scene.OpQueue]()
-			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			inputState = access.GetRead[*input.State]()
-			lookup = access.GetWrite[*model.Lookup]()
-			files = access.GetRead[storage.FileSystem]()
-			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) {
-			q := sceneQueue.Get()
-			p.rate.measure(time.Now())
-			p.readStats(q)
-			p.advance(inputState.Get())
-			p.record(q, model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
-			p.hud(canvasQueue.Get())
-		}
-}
-
-// advance steps the demo's own clock and applies the input. Input is read before
-// the step so a held arrow moves the camera on the very frame it is pressed.
-func (p *Pbr) advance(state *input.State) {
-	if state != nil {
-		if state.JustPressed(input.KeySpace) {
-			p.paused = !p.paused
-		}
-		step := orbitSpeed * fixedStep
-		if state.Pressed(input.KeyLeft) {
-			p.azimuth -= step
-		}
-		if state.Pressed(input.KeyRight) {
-			p.azimuth += step
-		}
-		if state.Pressed(input.KeyUp) {
-			p.elevation = m.Clamp(p.elevation+step, -0.2, 1.4)
-		}
-		if state.Pressed(input.KeyDown) {
-			p.elevation = m.Clamp(p.elevation-step, -0.2, 1.4)
-		}
-		for i, key := range focusKeys {
-			if state.JustPressed(key) {
-				p.setFocus(i + 1)
-			}
-		}
-		if state.JustPressed(input.Key0) {
-			p.setFocus(0)
-		}
-		if state.JustPressed(input.KeyR) {
-			p.setFocus(0)
-			p.step = 0
-		}
-	}
-	if !p.paused {
-		p.step++
-	}
-}
-
-// focusKeys are the number keys that fly the camera to a station, in station
-// order.
-var focusKeys = [len(stations)]input.Key{
-	input.Key1, input.Key2, input.Key3, input.Key4, input.Key5, input.Key6,
-}
-
-// setFocus points the camera at a station, or back at the overview, returning
-// the orbit to the documented azimuth and elevation so a focus key always lands
-// on the same picture.
-func (p *Pbr) setFocus(focus int) {
-	p.focus = focus
-	p.azimuth, p.elevation = startAzimuth, startElevation
-}
-
-// target and radius are the orbit the camera is on, which is the overview's or
-// the focused station's.
-func (p *Pbr) target() m.Vec3 {
-	if p.focus == 0 {
-		return orbitTarget
-	}
-	return placements[p.focus-1].center
-}
-
-func (p *Pbr) radius() float32 {
-	if p.focus == 0 {
-		return overviewRadius
-	}
-	return stations[p.focus-1].radius
-}
-
-// time is the demo's clock: accumulated fixed steps. Nothing in the recorded
-// frame reads it - the still life is deliberately still - so it is the HUD's
-// number and the orbit's rate, and every frame at a given pose is the same
-// frame.
-func (p *Pbr) time() float32 { return float32(p.step) * fixedStep }
-
-// eye is the camera's position on its orbit.
-func (p *Pbr) eye() m.Vec3 {
-	return eyeAt(p.target(), p.radius(), p.azimuth, p.elevation)
-}
-
-// record records the frame: one camera, the ground, six plinths, seven model
-// draws and twenty-one lights.
-func (p *Pbr) record(q *scene.OpQueue, la model.LookupDeviceAccess) {
-	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: m.LookAt(p.eye(), p.target(), m.Vec3{Y: 1}),
-		FovY:      fieldOfViewY,
-		Near:      nearPlane,
-		Far:       farPlane,
-		// Everything else is left at its zero value, and every zero is the
-		// default: Projection is Perspective, CullMask is LayersAll,
-		// SunIntensity and AmbientIntensity are 1, and Passes is empty, which
-		// emits one implicit forward pass at the camera's own id.
-		//
-		// SunColor carries sunStrength, and the ambient is cool: a bright sun would
-		// wash out twenty-one punctual lights and the demo would be a test of
-		// one directional light.
-		SunDirection:  m.Vec3{X: -0.35, Y: -1, Z: -0.55},
-		SunColor:      sunColor.MulS(sunStrength),
-		AmbientSky:    ambientSky,
-		AmbientGround: ambientGround,
-	})
-
-	q.Plane(0, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
-	for i := range placements {
-		q.Box(0, placements[i].plinth, plinthColor)
-		q.Model(0, stations[i].path, scene.ModelDraw{Transform: placements[i].model})
-	}
-
-	// The alpha station's second copy, at its own depth. Two copies is what
-	// makes the blend bucket's back-to-front order observable: one copy's two
-	// blended primitives cannot separate a depth sort from a mesh-id sort.
-	second := placements[stationAlpha].model
-	second.Position = second.Position.Add(alphaSecondCopy)
-	q.Model(0, stations[stationAlpha].path, scene.ModelDraw{Transform: second})
-
-	p.recordLights(q, la)
-	p.readResidency(la)
-}
-
-// recordLights declares every punctual light in the frame, and counts them.
-//
-// Order matters here and is the reason this reads as a script rather than a
-// loop over a table: the cap keeps the sixteen with the highest contribution at
-// the eye, and every light whose range window is closed there scores exactly
-// zero, so among a tie the first sixteen offered win. The fill, the two spots,
-// the station's own eight and the five rim lamps are offered first and are the
-// sixteen the reference pose keeps; the five deep lamps are offered last and are
-// the five it drops.
-func (p *Pbr) recordLights(q *scene.OpQueue, la model.LookupDeviceAccess) {
-	declared := 0
-
-	// The fill light. Range is left at zero, which means infinite: it is not
-	// culled by any frustum and its falloff window is open everywhere, so it is
-	// the one light in the frame with a real score at the reference pose.
-	q.PointLight(0, model.LightDescr{
-		Position:  m.Vec3{X: 0, Y: fillHeight, Z: fillDepth},
-		Color:     fillColor,
-		Intensity: fillIntensity,
-	})
-	declared++
-
-	q.SpotLight(0, model.LightDescr{
-		Position:  placements[stationBottle].center.Add(m.Vec3{Y: spotHeight}),
-		Direction: m.Vec3{Y: -1},
-		Color:     bottleSpot,
-		Intensity: spotIntensity,
-		Range:     spotRange,
-		InnerCone: spotInner,
-		OuterCone: spotOuter,
-	})
-	declared++
-
-	q.SpotLight(0, model.LightDescr{
-		Position:  placements[stationAlpha].center.Add(m.Vec3{Y: spotHeight, Z: -1}),
-		Direction: m.Vec3{Y: -1, Z: 0.25},
-		Color:     alphaSpot,
-		Intensity: spotIntensity,
-		Range:     spotRange,
-		InnerCone: spotInner,
-		OuterCone: spotOuter,
-	})
-	declared++
-
-	declared += p.recordModelLights(q, la)
-
-	for i := range rimColors {
-		q.PointLight(0, model.LightDescr{
-			Position:  m.Vec3{X: spread(i, rimCount, rimSpacing), Y: rimY, Z: rimZ},
-			Color:     rimColors[i],
-			Intensity: rimIntensity,
-			Range:     rimRange,
-		})
-		declared++
-	}
-
-	for i := range deepColors {
-		q.PointLight(0, model.LightDescr{
-			Position:  m.Vec3{X: spread(i, deepCount, deepSpacing), Y: deepY, Z: deepZ},
-			Color:     deepColors[i],
-			Intensity: deepIntensity,
-			Range:     deepRange,
-		})
-		declared++
-	}
-
-	p.declared = declared
-}
-
-// spread is the x of the i-th of n lamps in a row centred on the origin.
-func spread(i, n int, spacing float32) float32 {
-	return (float32(i) - float32(n-1)/2) * spacing
-}
-
-// recordModelLights declares the lights station's own KHR_lights_punctual
-// lights, and reports how many it declared.
-//
-// They come out of the file as data, in the file's own space, and nothing in
-// scene converts one: a lamp prop placed forty times would blow the cap
-// silently, and which of a file's lights matter is the app's judgement. So this
-// carries each one through the station's world matrix - the position through
-// the matrix, the direction through its basis, and the Range through the scale,
-// because a range authored in model units is a different distance once the model
-// is drawn three quarters the size.
-//
-// A file's directional light is skipped: scene has no recording call for one,
-// because the single directional light it shades with is the camera's own sun.
-// This file declares none, and the branch is here because a demo reading a
-// file's lights as data has to decide what to do with the kind it cannot
-// declare.
-func (p *Pbr) recordModelLights(q *scene.OpQueue, la model.LookupDeviceAccess) int {
-	station := &placements[stationLights]
-	lights, ok := la.ModelLights(stations[stationLights].path, p.modelLights[:0])
-	if !ok {
-		return 0
-	}
-	p.modelLights = lights
-	world := station.model.Mat4()
-	declared := 0
-	for i := range lights {
-		if lights[i].Directional {
-			continue
-		}
-		descr := lights[i].Descr
-		descr.Position = world.TransformPoint(descr.Position)
-		descr.Direction = world.TransformDirection(descr.Direction)
-		descr.Range *= station.scale
-		if descr.Kind == model.LightSpot {
-			q.SpotLight(0, descr)
-		} else {
-			q.PointLight(0, descr)
-		}
-		declared++
-	}
-	return declared
-}
-
-// readResidency asks each station whether its model is drawable, for the HUD
-// alone. ModelLights' ok is the drawable predicate: it is false for a file that
-// could not be read and for one that failed to parse alike.
-func (p *Pbr) readResidency(la model.LookupDeviceAccess) {
-	for i := range stations {
-		_, ok := la.ModelLights(stations[i].path, nil)
-		p.resident[i] = ok
-	}
-}
-
-// ResidentCount is how many stations reported residency on the last frame.
-func (p *Pbr) ResidentCount() int {
-	n := 0
-	for _, ok := range p.resident {
-		if ok {
-			n++
-		}
-	}
-	return n
-}
-
-// readStats reads the previous frame's flush result back out of the queue.
-// Passes publishes the frame the last flush consumed, which is what a HUD can
-// print without stalling the pipeline to ask about the frame it is recording.
-func (p *Pbr) readStats(q *scene.OpQueue) {
-	views := q.Passes(nil)
-	p.stats = stats{passes: len(views), ops: len(q.Ops(nil))}
-	for i := range views {
-		p.stats.recorded += views[i].Recorded
-		p.stats.culled += views[i].Culled
-		p.stats.instances += views[i].Instances
-		p.stats.lights += views[i].Lights
-		p.stats.batches += len(views[i].Batches)
-	}
-}

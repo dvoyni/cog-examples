@@ -1,10 +1,24 @@
-// Command tracer is the scene plugin's first pixel: one camera, one box, no
-// lighting. It is the narrowest complete path through every layer — record,
-// flush, pack instances, declare a gfx pass, draw — and it exists to be looked
-// at, because a projection sign error is exactly the bug an assertion written
-// by the author of the projection will happily confirm.
+// Command tracer is the scene plugin's first pixel: one camera, one spinning
+// box and a smaller one behind it, no lights beyond the camera's own sun and
+// ambient. It is the narrowest complete path through every layer - spawn the
+// Entities, let scene turn them into draws, pack instances, declare a gfx
+// pass, draw - and it exists to be looked at, because a projection sign error
+// is exactly the bug an assertion written by the author of the projection
+// will happily confirm.
 //
 //	go run ./cmd/scene/tracer
+//
+// The boxes are Meshes rather than debug shapes, because a debug shape is
+// drawn unlit, its colour straight out of the fragment stage: a spinning box of
+// one flat colour shows its silhouette and nothing of which face is which. A
+// Mesh drawn with the bundled PBR is lit by the camera's sun and ambient, so
+// every face of the spinning box reads apart from its neighbours.
+//
+// The Component the demo declares is in components.go, and each System sits in
+// the file named for it:
+//
+//	setupSystem  bakes the box mesh and spawns the camera and both boxes  (init)
+//	spinSystem   turns the front box about Y at a radian a second         (update)
 package main
 
 import (
@@ -13,15 +27,17 @@ import (
 	"os/signal"
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
 	"github.com/dvoyni/cog/extensions/gogpu"
 	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
-	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
 	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
@@ -30,9 +46,9 @@ import (
 	"github.com/dvoyni/cog/slots/storage/storageplugin"
 )
 
-// cameraMain sits below canvas's layer 0, which is where a scene camera goes
+// CameraMain sits below canvas's layer 0, which is where a scene camera goes
 // when 2D draws over it.
-const cameraMain scene.CameraID = -100
+const CameraMain scene.CameraID = -100
 
 func main() {
 	config := map[kernel.PluginName]any{
@@ -41,15 +57,18 @@ func main() {
 	}
 	permanentfs.Configure(config)
 
+	// The demo plugin is last because its Systems read the Components and
+	// resources the plugins before it register.
 	plugins := []kernel.Plugin{
 		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
 		inputplugin.New(),
 		appplugin.New(),
 		gfxplugin.New(),
-		modelplugin.New(), sceneplugin.New(),
+		modelplugin.New(),
 		gogpuplugin.New(),
-		newTracer(),
+		ecsplugin.New(), sceneplugin.New(),
+		New(),
 	}
 
 	engine := kernel.New(config).WithPlugins(plugins...)
@@ -69,57 +88,35 @@ func main() {
 	}
 }
 
+// Name is the demo plugin's name.
 const Name kernel.PluginName = "tracer"
 
-type updateEventHandler kernel.Subscription[app.UpdateEvent]
+// Tracer is the demo's gameplay plugin: it registers the Spin Component and
+// the two Systems. Everything it draws is an Entity, and the plugin itself
+// holds nothing.
+type Tracer struct{}
 
-// tracer records the same frame forever, except for the spin, which is there to
-// show that every face of the cube is where it should be.
-type tracer struct{ time float32 }
+func New() *Tracer { return &Tracer{} }
 
-func newTracer() *tracer { return &tracer{} }
+func (p *Tracer) Name() kernel.PluginName { return Name }
 
-func (p *tracer) Name() kernel.PluginName { return Name }
-
-func (p *tracer) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{gfx.Name, input.Name, scene.Name, storage.Name}
+func (p *Tracer) Dependencies() []kernel.PluginName {
+	return []kernel.PluginName{ecs.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
 }
 
-func (p *tracer) Register(registrar *kernel.Registrar, _ any) error {
-	registrar.Subscribe[updateEventHandler](p.draw)
+type (
+	setupOnInit  kernel.Subscription[app.InitEvent]
+	spinOnUpdate kernel.Subscription[app.UpdateEvent]
+)
+
+func (p *Tracer) Register(registrar *kernel.Registrar, _ any) error {
+	ecs.RegisterComponent[Spin](registrar, 1)
+
+	registrar.Subscribe[setupOnInit](ecs.ToHandler[app.InitEvent](registrar, setupSystem))
+	// The spin runs Before scene.RecordOnUpdate, the System that turns the
+	// world into draws, so a frame draws the box where this frame turned it.
+	registrar.Subscribe[spinOnUpdate](ecs.ToHandler[app.UpdateEvent](registrar, spinSystem,
+		ecs.Feed(func(e app.UpdateEvent) float64 { return e.Dt }))).
+		Before[scene.RecordOnUpdate]()
 	return nil
 }
-
-var clearColor = m.NewColorSrgb(0.06, 0.07, 0.09, 1)
-
-func (p *tracer) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var queue kernel.Write[*scene.OpQueue]
-	return func(access kernel.ResourceAccess) {
-			queue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, event app.UpdateEvent) {
-			p.time += float32(event.Dt)
-			q := queue.Get()
-			q.Camera(cameraMain, scene.CameraDescr{
-				Transform: m.LookAt(m.Vec3{X: 3, Y: 2, Z: 4}, m.Vec3{}, m.Vec3{Y: 1}),
-				FovY:      1.0472,
-				Near:      0.1,
-				Far:       100,
-				// A box is lit, so a camera with no sun and no ambient renders
-				// it black. These two fields are the floor of lighting.
-				SunDirection:  m.Vec3{X: -0.3, Y: -1, Z: -0.2},
-				SunColor:      m.NewColorSrgb(1, 0.98, 0.94, 1),
-				AmbientSky:    m.NewColorSrgb(0.18, 0.22, 0.3, 1),
-				AmbientGround: m.NewColorSrgb(0.1, 0.09, 0.08, 1),
-				Passes:        []scene.Pass{{ClearColor: m.Some(clearColor), ClearDepth: m.Some(clearDepth)}},
-			})
-			q.Box(0, m.At(0, 0, 0).WithRotation(m.QuatAxisAngle(m.Vec3{Y: 1}, p.time)),
-				m.NewColorSrgb(0.42, 0.71, 0.94, 1))
-			// A second, smaller box behind the first: depth testing is only
-			// visible when something can be behind something else.
-			q.Box(0, m.At(-1.2, 0, -1.2).WithScale(0.6), m.NewColorSrgb(0.94, 0.55, 0.35, 1))
-		}
-}
-
-// clearDepth is the far plane. Clearing to zero would clear to the near plane
-// and hide the whole scene.
-const clearDepth float32 = 1

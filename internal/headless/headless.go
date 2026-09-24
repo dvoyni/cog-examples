@@ -1,18 +1,12 @@
 // Package headless runs a cog engine with no GPU, so a demo's assertions can be
 // a plain `go test` beside its main.go.
 //
-// This is available because scene decides everything a demo asserts - culling,
-// sorting, packing - in the update-thread flush, publishes the result as
-// Passes(dst []PassView) including the frustum, gfx takes its Backend adapter
-// from whichever plugin provides one, and app takes its MainLoop the same way,
-// so the adapter plugin below stands in for the gogpu plugin without it being
-// present at all. What the fake backend below does with the translated queue is
-// therefore beside the point: it exists so the frame reaches the end of the
-// pipe, and the numbers a test reads were already decided before it was called.
-//
-// ecsscene publishes nothing like Passes: it records to gfx itself. A demo on
-// it starts from NewECS and asserts what reached the Backend and gfx's frame
-// snapshot, both of which a scene demo can read as well.
+// This is available because gfx takes its Backend adapter from whichever
+// plugin provides one, and app takes its MainLoop the same way, so the adapter
+// plugin below stands in for the gogpu plugin without it being present at
+// all. scene records to gfx itself and publishes no frame of its own to read,
+// so a demo asserts what reached the fake Backend below - the passes, draws
+// and bound buffers - and gfx's frame snapshot.
 //
 // It lives here rather than beside one demo because seven demos would otherwise
 // carry seven copies of the same twenty-odd stub methods. Nothing in it decides
@@ -28,8 +22,6 @@ import (
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
 	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
-	"github.com/dvoyni/cog/bundles/ecsscene"
-	"github.com/dvoyni/cog/bundles/ecsscene/ecssceneplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/model"
@@ -62,9 +54,6 @@ const Step = time.Second / 60
 type Engine struct {
 	t      testing.TB
 	kernel kernel.Executioner
-	// scene says scene is the renderer composed, and so that its queue is
-	// there to inspect.
-	scene    bool
 	backend  *Backend
 	mainLoop *mainLoop
 	// reported is guarded because a model load reports from its own goroutine
@@ -80,42 +69,28 @@ func (e *Engine) report(err error) {
 	e.reported = append(e.reported, err)
 }
 
-// New starts an engine with storage, input, app, gfx, canvas and scene, plus
-// the given demo plugins, composes storage's diskstorage Adapter (through
-// permanentfs), a fake backend adapter and a headless app MainLoop, has app's
-// Loop publish InitEvent, and sets the viewport. Every
-// error the engine reports is collected rather than fatal, so a test can assert
-// on the whole list at once.
+// New starts an engine with storage, input, app, gfx, canvas, model, ecs and
+// scene, plus the given demo plugins, composes storage's diskstorage Adapter
+// (through permanentfs), a fake backend adapter and a headless app MainLoop,
+// has app's Loop publish InitEvent, and sets the viewport. Every error the
+// engine reports is collected rather than fatal, so a test can assert on the
+// whole list at once. The given plugins must not compose ecs or scene again.
 //
 // It mounts nothing of its own: a headless demo run reads exactly the mounts its
-// plugins contribute - canvas's shaders, scene's, and the asset set a demo's own
-// plugin provides - so it does not depend on the working directory `go test`
-// happens to choose. A test that needs files no plugin in it provides adds them
-// with Mounting.
+// plugins contribute - canvas's shaders, model's, scene's, and the asset set a
+// demo's own plugin provides - so it does not depend on the working directory
+// `go test` happens to choose. A test that needs files no plugin in it provides
+// adds them with Mounting.
 func New(t testing.TB, plugins ...kernel.Plugin) *Engine {
 	t.Helper()
-	return start(t, true, append([]kernel.Plugin{sceneplugin.New(), &probe{renderer: scene.Name}}, plugins...))
-}
-
-// NewECS starts an engine exactly as New does, but rendering through ecsscene
-// instead of scene: it composes ecs and ecsscene in scene's place, because an
-// app runs one renderer or the other and never both. The given plugins must
-// not compose ecs or ecsscene again.
-//
-// Lookup and LookupDevice work as under New, since the Lookup is model's.
-// Passes and Ops read scene's queue, which is not there, so they fail the
-// test; a test of an ecsscene demo reads what reached the Backend, or gfx's
-// frame snapshot.
-func NewECS(t testing.TB, plugins ...kernel.Plugin) *Engine {
-	t.Helper()
-	return start(t, false, append([]kernel.Plugin{
-		ecsplugin.New(), ecssceneplugin.New(), &probe{renderer: ecsscene.Name},
+	return start(t, append([]kernel.Plugin{
+		ecsplugin.New(), sceneplugin.New(), &probe{},
 	}, plugins...))
 }
 
-func start(t testing.TB, withScene bool, plugins []kernel.Plugin) *Engine {
+func start(t testing.TB, plugins []kernel.Plugin) *Engine {
 	t.Helper()
-	engine := &Engine{t: t, scene: withScene, backend: &Backend{}, mainLoop: &mainLoop{}}
+	engine := &Engine{t: t, backend: &Backend{}, mainLoop: &mainLoop{}}
 
 	config := map[kernel.PluginName]any{
 		app.Name: app.Config{Step: Step},
@@ -185,22 +160,6 @@ func (e *Engine) Steps(n int) {
 	}
 }
 
-// Passes reads the last flush's pass results out of scene's queue. It fails
-// the test on an engine from NewECS, which has no scene.
-func (e *Engine) Passes() []scene.PassView {
-	var out []scene.PassView
-	e.inspect(func(q *scene.OpQueue) { out = q.Passes(nil) })
-	return out
-}
-
-// Ops reads the last flush's recorded operations out of scene's queue. It
-// fails the test on an engine from NewECS, which has no scene.
-func (e *Engine) Ops() []scene.Op {
-	var out []scene.Op
-	e.inspect(func(q *scene.OpQueue) { out = q.Ops(nil) })
-	return out
-}
-
 // Errors is every error the engine reported since it started.
 func (e *Engine) Errors() []error {
 	e.mu.Lock()
@@ -209,7 +168,7 @@ func (e *Engine) Errors() []error {
 }
 
 // Backend is the fake the frame was rendered through, for the rare assertion
-// that wants what actually reached the GPU rather than what scene decided.
+// that wants what actually reached the GPU.
 func (e *Engine) Backend() *Backend { return e.backend }
 
 // Executioner is the running engine's dispatch handle, which is how a test
@@ -252,24 +211,9 @@ func (e *Engine) LookupDevice(fn func(model.LookupDeviceAccess)) {
 	e.kernel.ExecuteCommand[lookupDeviceCmd](lookupDeviceRequest{run: fn})
 }
 
-// inspect runs fn inside a handler holding scene's OpQueue, so a test reads the
-// queue the way a recorder does rather than racing the update thread.
-func (e *Engine) inspect(fn func(*scene.OpQueue)) {
-	e.t.Helper()
-	if !e.scene {
-		e.t.Fatal("headless: this engine renders through ecsscene, so there is no scene queue to read")
-	}
-	e.kernel.ExecuteCommand[inspectCmd](inspectRequest{run: fn})
-}
-
-// probe is the plugin that lends a test model's Lookup lock and, when scene is
-// the renderer, scene's OpQueue lock. It depends on the renderer composed, so
-// it registers after it.
-type probe struct{ renderer kernel.PluginName }
-
-type inspectCmd kernel.Command[inspectRequest, inspectResponse]
-type inspectRequest struct{ run func(*scene.OpQueue) }
-type inspectResponse struct{}
+// probe is the plugin that lends a test model's Lookup lock. It depends on
+// scene, so it registers after the renderer.
+type probe struct{}
 
 type lookupCmd kernel.Command[lookupRequest, lookupResponse]
 type lookupRequest struct{ run func(model.LookupAccess) }
@@ -283,27 +227,14 @@ type lookupDeviceResponse struct{}
 
 func (*probe) Name() kernel.PluginName { return "headless-probe" }
 
-func (p *probe) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{model.Name, p.renderer, canvas.Name}
+func (*probe) Dependencies() []kernel.PluginName {
+	return []kernel.PluginName{model.Name, scene.Name, canvas.Name}
 }
 
-func (p *probe) Register(registrar *kernel.Registrar, _ any) error {
-	if p.renderer == scene.Name {
-		registrar.HandleCommand[inspectCmd](inspectCmdImpl)
-	}
+func (*probe) Register(registrar *kernel.Registrar, _ any) error {
 	registrar.HandleCommand[lookupCmd](lookupCmdImpl)
 	registrar.HandleCommand[lookupDeviceCmd](lookupDeviceCmdImpl)
 	return nil
-}
-
-func inspectCmdImpl() (kernel.Lock, kernel.Execute[inspectRequest, inspectResponse]) {
-	var queue kernel.Write[*scene.OpQueue]
-	return func(access kernel.ResourceAccess) {
-			queue = access.GetWrite[*scene.OpQueue]()
-		}, func(_ kernel.Kernel, req inspectRequest) inspectResponse {
-			req.run(queue.Get())
-			return inspectResponse{}
-		}
 }
 
 func lookupCmdImpl() (kernel.Lock, kernel.Execute[lookupRequest, lookupResponse]) {

@@ -13,15 +13,15 @@ import (
 
 // The layers, and the one thing they are load-bearing for.
 //
-// A camera draws an item iff its layers and the camera's CullMask share a bit,
-// and the overlay layer exists because the minimap draws the main camera's own
-// frustum. Seen from above that outline is the single most useful thing on the
-// map - it is where the main view's edge is, and therefore where a nameplate is
-// about to disappear. Seen from inside the main camera it would be four lines
-// radiating out of the viewer's own eye, across the whole frame, for ever. So
-// the main camera masks the layer out, and that is a CullMask doing work no
-// other mechanism in scene could do: the lines are recorded once, for every
-// camera, and one camera declines them.
+// A camera draws an Entity iff its Layers and the camera's CullMask share a
+// bit, and the overlay layer exists because the minimap draws the main camera's
+// own frustum. Seen from above that outline is the single most useful thing on
+// the map - it is where the main view's edge is, and therefore where a
+// nameplate is about to disappear. Seen from inside the main camera it would be
+// four lines radiating out of the viewer's own eye, across the whole frame, for
+// ever. So the main camera masks the layer out, and that is a CullMask doing
+// work no other mechanism in scene could do: the lines are Entities every
+// camera could draw, and one camera declines them.
 var (
 	LayerWorld   = scene.Layer(0)
 	LayerOverlay = scene.Layer(1)
@@ -111,7 +111,7 @@ var cubes = [...]struct {
 // The model is pbr's own BoxVertexColors, and it is here for a reason beyond
 // reusing an asset. It is the demo's one pickable whose bounds scene owns
 // rather than the app: the cubes and the obelisk know their own extents, and
-// the model asks LookupAccess.Bounds for its local sphere and puts it through
+// the model asks model's device facade, Bounds, for its local sphere and puts it through
 // m.Sphere.Transform. That pairing is exactly what Bounds exists for, and it is
 // the half of the picking loop a demo with only debug shapes in it could not
 // show.
@@ -170,23 +170,31 @@ func trackZ(time float32) float32 {
 	return -trackSpan + 4*trackSpan*phase
 }
 
-// mainCamera is the perspective camera flying the corridor, resolved for a
-// given demo time.
-//
-// It is a whole CameraDescr rather than a transform because the coordinate
-// helpers take one: WorldToScreen and ScreenToRay are pure package-level
-// functions over a camera and a target size, with no plugin instance and no
-// lookup against last frame's state, so the demo hands them the same value it
-// recorded. That is what makes the nameplate and the click agree with the
-// picture by construction rather than by a frame's luck.
-func mainCamera(time float32) scene.CameraDescr {
+// mainPlace is where the perspective camera flying the corridor stands at a
+// given demo time, and which way it faces. It is the camera Entity's
+// m.Transform, and the eye and frustum Entities ride the same one.
+func mainPlace(time float32) m.Transform {
 	eye := m.Vec3{Y: eyeHeight, Z: trackZ(time)}
-	return scene.CameraDescr{
-		Transform: m.LookAt(eye, eye.Add(m.Vec3{Y: eyeTilt, Z: 1}), m.Vec3{Y: 1}),
-		FovY:      fieldOfView,
-		Near:      nearPlane,
-		Far:       farPlane,
-		CullMask:  LayerWorld,
+	return m.LookAt(eye, eye.Add(m.Vec3{Y: eyeTilt, Z: 1}), m.Vec3{Y: 1})
+}
+
+// mainCamera is the perspective camera's Component, less its passes, which
+// the target System writes every frame.
+//
+// Its placement is not in it: a Camera stands at its Entity's m.Transform. So
+// every coordinate question is asked of a pair, the Component and mainPlace at
+// the demo time, through scene.ViewProjection - a pure function over a camera,
+// a placement and a target size, with no plugin instance and no lookup against
+// last frame's state. The demo hands it the same values the Entity holds, which
+// is what makes the nameplate and the click agree with the picture by
+// construction rather than by a frame's luck.
+func mainCamera() scene.Camera {
+	return scene.Camera{
+		ID:       CameraMain,
+		FovY:     fieldOfView,
+		Near:     nearPlane,
+		Far:      farPlane,
+		CullMask: LayerWorld,
 
 		SunDirection:  sunDirection,
 		SunColor:      sunColor,
@@ -195,7 +203,15 @@ func mainCamera(time float32) scene.CameraDescr {
 	}
 }
 
-// mapCamera is the orthographic camera looking straight down.
+// mapPlace is where the minimap's two cameras stand: high above the corridor's
+// centre, looking straight down.
+func mapPlace() m.Transform {
+	return m.LookAt(m.Vec3{Y: mapHeight}, m.Vec3{}, m.Vec3{Z: -1})
+}
+
+// mapCamera is the orthographic camera looking straight down, under a given
+// id and cull mask: the minimap takes the world layer, and its overlay twin
+// the overlay layer.
 //
 // Height is the orthographic twin of FovY: world units across the target's
 // height, with the width derived from the target's aspect. The minimap's target
@@ -207,9 +223,9 @@ func mainCamera(time float32) scene.CameraDescr {
 // its clip w is 1 everywhere. That is not a nicety here: it is why the minimap
 // keeps a nameplate the main view has dropped, and the two panels disagreeing
 // about a plate is the visible half of the ok contract.
-func mapCamera(mask scene.LayerMask) scene.CameraDescr {
-	return scene.CameraDescr{
-		Transform:  m.LookAt(m.Vec3{Y: mapHeight}, m.Vec3{}, m.Vec3{Z: -1}),
+func mapCamera(id scene.CameraID, mask scene.LayerMask) scene.Camera {
+	return scene.Camera{
+		ID:         id,
 		Projection: scene.Orthographic,
 		Height:     mapExtent,
 		Near:       mapNear,
@@ -270,27 +286,88 @@ func modelTransform() m.Transform {
 }
 
 // frustumCorners is the four points the main camera's view covers at
-// frustumReach units down its corner rays, which is what the minimap draws.
+// frustumReach units down its corner rays, in the camera's own space - which
+// is what the minimap draws, riding the camera's placement.
 //
-// It goes through ScreenToRay rather than through a matrix of its own, and that
-// is the point: the outline is built from the same helper the click is, so the
-// two cannot disagree. m.Ray.Dir is unit length - NewRay normalises, and
-// ScreenToRay builds its result with it - so At(frustumReach) is exactly that
-// many world units along the ray from the near plane, with no scale to guess.
-func frustumCorners(camera scene.CameraDescr) ([4]m.Vec3, bool) {
+// They are in the camera's own space because the lines are Entities placed at
+// the camera's m.Transform: the camera flies and the outline flies with it, and
+// nothing about the lines' geometry changes, so nothing is rebaked as the
+// camera moves. The camera's own space is the camera stood at the identity,
+// facing -Z.
+//
+// It goes through m.ScreenToRay rather than through a matrix of its own, and
+// that is the point: the outline is built from the same helper the click is,
+// over the same scene.ViewProjection, so the two cannot disagree. m.Ray.Dir is
+// unit length - NewRay normalises, and ScreenToRay builds its result with it -
+// so At(frustumReach) is exactly that many world units along the ray from the
+// near plane, with no scale to guess.
+func frustumCorners() ([4]m.Vec3, bool) {
+	var out [4]m.Vec3
+	viewProjection, err := scene.ViewProjection(mainCamera(), m.Transform{}, mainPanel.size)
+	if err != nil {
+		return out, false
+	}
 	corners := [4]m.Vec2{
 		{},
 		{X: mainPanel.size.X},
 		{X: mainPanel.size.X, Y: mainPanel.size.Y},
 		{Y: mainPanel.size.Y},
 	}
-	var out [4]m.Vec3
 	for i, corner := range corners {
-		ray, ok := scene.ScreenToRay(camera, mainPanel.size, corner)
+		ray, ok := m.ScreenToRay(viewProjection, mainPanel.size, corner)
 		if !ok {
 			return out, false
 		}
 		out[i] = ray.At(frustumReach)
 	}
 	return out, true
+}
+
+// composited is one panel and the camera that fills it, standing where it
+// stands, which is the triple every coordinate question in this demo is asked
+// of.
+type composited struct {
+	view   panel
+	camera scene.Camera
+	place  m.Transform
+}
+
+// viewProjection is the matrix the panel's camera draws its target through,
+// at the panel's own target size. ok is false for a camera the renderer would
+// refuse, and then the panel answers no coordinate question at all.
+func (c composited) viewProjection() (m.Mat4, bool) {
+	viewProjection, err := scene.ViewProjection(c.camera, c.place, c.view.size)
+	return viewProjection, err == nil
+}
+
+// worldToScreen is where a world point lands on the panel's target, in its
+// texels, and ok false for a point at or behind the eye plane.
+func (c composited) worldToScreen(world m.Vec3) (m.Vec2, bool) {
+	viewProjection, ok := c.viewProjection()
+	if !ok {
+		return m.Vec2{}, false
+	}
+	screen, ok := m.WorldToScreen(viewProjection, c.view.size, world)
+	return m.Vec2{X: screen.X, Y: screen.Y}, ok
+}
+
+// screenToRay is the ray through one texel of the panel's target.
+func (c composited) screenToRay(texel m.Vec2) (m.Ray, bool) {
+	viewProjection, ok := c.viewProjection()
+	if !ok {
+		return m.Ray{}, false
+	}
+	return m.ScreenToRay(viewProjection, c.view.size, texel)
+}
+
+// panels is the two of them at a given demo time, main first: a click is
+// tested against them in order, and they do not overlap, so the order is
+// documentation rather than policy. The overlay camera is not one: it draws
+// onto the minimap's target from the minimap's place, so it asks nothing the
+// minimap does not already answer.
+func panels(time float32) [2]composited {
+	return [2]composited{
+		{view: mainPanel, camera: mainCamera(), place: mainPlace(time)},
+		{view: mapPanel, camera: mapCamera(CameraMap, LayerWorld), place: mapPlace()},
+	}
 }

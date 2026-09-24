@@ -1,20 +1,22 @@
-// Command cameras is the scene plugin's multi-camera demo: two cameras, two
-// render targets, a depth prepass, and the coordinate helpers that let a 2D
-// label and a mouse click agree with what a 3D camera drew.
+// Command cameras is the scene plugin's multi-camera demo: three Camera
+// Entities, two render targets, a depth prepass, and the coordinate helpers
+// that let a 2D label and a mouse click agree with what a 3D camera drew.
 //
 //	go run ./cmd/scene/cameras
 //
-// It adds no assets. The world is box's debug vocabulary and one of pbr's
-// Khronos models, arranged so that two cameras looking at it from different
-// places have different things to say.
+// It adds no assets. The world is scene's debug shapes and one of pbr's
+// Khronos models, every one an Entity, arranged so that two cameras looking at
+// it from different places have different things to say.
 //
-// What it exercises: multiple cameras and the shared pass-ordering space;
-// orthographic projection beside perspective; CullMask; negative camera ids and
-// the duplicate-id error; gfx.TemporaryTarget composited by canvas as the
+// What it exercises: multiple Camera Components and the shared pass-ordering
+// space; orthographic projection beside perspective; CullMask against each
+// Entity's Layers; negative camera ids and the duplicate-id error;
+// gfx.TemporaryTarget named by a Pass's Target and composited by canvas as the
 // split-screen answer; DepthAuto beside an explicit DepthTarget; Pass.Order as
-// an offset and gfx's pass merging; a multi-tag material and a NoTarget()
-// depth-only pass; WorldToScreen, ScreenToRay, the per-target viewport, the
-// behind-the-camera ok, and m.Ray.IntersectSphere.
+// an offset and gfx's pass merging; a two-tag Material and a NoTarget()
+// depth-only pass; scene.ViewProjection feeding m.WorldToScreen and
+// m.ScreenToRay, the per-target viewport, the behind-the-camera ok, and
+// m.Ray.IntersectSphere.
 //
 // # The two panels
 //
@@ -45,6 +47,21 @@
 //
 // Input may run, pause and pick freely, and touching it voids nothing: the
 // assertions live in cameras_test.go rather than in the running app.
+//
+// # The Systems
+//
+// One per file, each named for its System, in the order they run on every
+// update:
+//
+//	boundssystem.go     the model's pick sphere, once model answers Bounds
+//	controlsystem.go    the keys, the clock, the pointer and the pick
+//	duplicatesystem.go  the impostor camera while D is held
+//	tracksystem.go      the main camera and its riders along the track
+//	tintsystem.go       the picked cube's colour and the wire box around a pick
+//	targetsystem.go     this frame's render targets, into each Camera's Passes
+//	hudsystem.go        the composite, the nameplates and the HUD
+//
+// setupsystem.go spawns the world once, on the init event.
 //
 // # One pass some backends skip
 //
@@ -86,7 +103,7 @@
 //	space   run and pause
 //	left/right  step the camera along its track while paused
 //	r       return to the reference pose
-//	d       hold to record the main camera twice, provoking the duplicate-id error
+//	d       hold to spawn a second camera under the main camera's id, provoking the duplicate-id error
 //	click   pick a cube, the obelisk or the model, in either panel
 package main
 
@@ -96,12 +113,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/dvoyni/cog-examples/internal/assets"
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
 	"github.com/dvoyni/cog/bundles/mcp/mcpplugin"
@@ -112,7 +130,6 @@ import (
 	"github.com/dvoyni/cog/extensions/gogpu"
 	"github.com/dvoyni/cog/extensions/gogpu/gogpuplugin"
 	"github.com/dvoyni/cog/kernel"
-	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/app"
 	"github.com/dvoyni/cog/slots/app/appplugin"
 	"github.com/dvoyni/cog/slots/gfx"
@@ -140,8 +157,8 @@ func main() {
 	}
 	permanentfs.Configure(config)
 
-	// The demo plugin is last because it records into the queues the plugins
-	// before it declare.
+	// The demo plugin is last because its Systems order themselves against
+	// scene's, which the plugins before it register.
 	demo := New()
 	plugins := []kernel.Plugin{
 		storageplugin.New(),
@@ -150,9 +167,10 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		modelplugin.New(), sceneplugin.New(),
+		modelplugin.New(),
 		gogpuplugin.New(),
 		mcpplugin.New(),
+		ecsplugin.New(), sceneplugin.New(),
 		demo,
 	}
 
@@ -176,62 +194,38 @@ func main() {
 // Name is the demo plugin's name.
 const Name kernel.PluginName = "cameras"
 
-type windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
-type updateEventHandler kernel.Subscription[app.UpdateEvent]
+type (
+	setupSystem     kernel.Subscription[app.InitEvent]
+	boundsSystem    kernel.Subscription[app.UpdateEvent]
+	controlSystem   kernel.Subscription[app.UpdateEvent]
+	duplicateSystem kernel.Subscription[app.UpdateEvent]
+	trackSystem     kernel.Subscription[app.UpdateEvent]
+	tintSystem      kernel.Subscription[app.UpdateEvent]
+	targetSystem    kernel.Subscription[app.UpdateEvent]
+	hudSystem       kernel.Subscription[app.UpdateEvent]
 
-// Cameras is the demo's gameplay plugin: it records the whole frame and owns
-// the clock, the pick, and the numbers the HUD prints.
+	windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
+)
+
+// Cameras is the demo's gameplay plugin: it registers the Components and the
+// Systems that drive the world. Its state is a resource, so every System names
+// what it touches and the scheduler keeps them apart.
 type Cameras struct {
-	step   int
-	paused bool
-
-	// picked indexes targets, and is -1 when the last click hit nothing. The
-	// bool from pick is checked rather than the index compared, because an
-	// index nobody checked would leave the last thing tinted for ever.
-	picked  int
-	targets []pickable
-
-	// obelisk is the durable mesh the multi-tag material draws, baked once on
-	// the first frame that has a lookup to bake it with. material is built at
-	// construction: it holds no GPU handle, and scene keys a material by
-	// content, so the same value interns to one id every frame.
-	obelisk  model.MeshRef
-	material scene.Material
-
-	// The frame's two composited textures, published by record for draw2D to
-	// sample. They are frame-local handles and are rebuilt every frame; holding
-	// one across a frame boundary would name a texture the pool has already
-	// handed to something else.
-	mainTexture gfx.TextureDescr
-	mapTexture  gfx.TextureDescr
-
-	// duplicate is held while D is down, and makes the frame record CameraMain
-	// twice. reports counts what the engine reported and lastReport is the most
-	// recent one, both printed by the HUD: an error a demo provokes on purpose
-	// has to be visible in the demo, or it is indistinguishable from one it did
-	// not provoke.
-	duplicate  bool
-	reports    int
-	lastReport string
-
-	// pointer is the last pointer position in canvas coordinates, kept so the
-	// HUD can say which panel the cursor is over before anything is clicked.
-	pointer m.Vec2
-
-	stats stats
-	rate  rate
+	state   *State
+	reports *reportLog
 }
 
 // New builds the demo plugin at its documented starting pose, paused, with
 // nothing picked.
 func New() *Cameras {
-	return &Cameras{step: startStep, paused: true, picked: -1, material: newObeliskMaterial()}
+	reports := &reportLog{}
+	return &Cameras{state: newState(reports), reports: reports}
 }
 
 func (p *Cameras) Name() kernel.PluginName { return Name }
 
 func (p *Cameras) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
+	return []kernel.PluginName{canvas.Name, ecs.Name, gfx.Name, input.Name, model.Name, scene.Name, storage.Name}
 }
 
 func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
@@ -246,8 +240,36 @@ func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
 	}
 	registrar.ProvideAdapter[assets.StorageReadMount](mount)
 
+	ecs.RegisterComponent[Cube](registrar, uint32(len(cubes)))
+	ecs.RegisterComponent[Rider](registrar, riders)
+	ecs.RegisterComponent[Outline](registrar, 1)
+	ecs.RegisterComponent[Impostor](registrar, 1)
+	registrar.InitResource(p.state)
+
+	registrar.Subscribe[setupSystem](ecs.ToHandler[app.InitEvent](registrar, setup))
+
+	// The update Systems run as one chain, because each reads what the one
+	// before it decided: the pick needs the model's bounds, the impostor and
+	// the tint need the keys, and the composite needs this frame's targets.
+	// Every one that spawns, moves or edits an Entity runs Before the scene
+	// System that reads it, so a step draws the world as that step left it.
+	registrar.Subscribe[boundsSystem](ecs.ToHandler[app.UpdateEvent](registrar, bounds)).First()
+	registrar.Subscribe[controlSystem](ecs.ToHandler[app.UpdateEvent](registrar, control)).
+		After[boundsSystem]()
+	registrar.Subscribe[duplicateSystem](ecs.ToHandler[app.UpdateEvent](registrar, duplicate)).
+		After[controlSystem]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[trackSystem](ecs.ToHandler[app.UpdateEvent](registrar, track)).
+		After[controlSystem]().Before[scene.RecordOnUpdate]()
+	// A debug shape's colour and size are baked into its mesh and params by
+	// scene's debug Systems, so an edit to one runs Before the first of them.
+	registrar.Subscribe[tintSystem](ecs.ToHandler[app.UpdateEvent](registrar, tint)).
+		After[controlSystem]().Before[scene.DebugOnUpdate]()
+	registrar.Subscribe[targetSystem](ecs.ToHandler[app.UpdateEvent](registrar, target)).
+		After[duplicateSystem]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[hudSystem](ecs.ToHandler[app.UpdateEvent](registrar, hud)).
+		After[targetSystem]()
+
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
-	registrar.Subscribe[updateEventHandler](p.frame)
 	return nil
 }
 
@@ -269,8 +291,7 @@ func (p *Cameras) Register(registrar *kernel.Registrar, _ any) error {
 // the frame, because the prepass writes into a texture of its own that nothing
 // samples.
 func (p *Cameras) report(err error) error {
-	p.reports++
-	p.lastReport = err.Error()
+	p.reports.add(err)
 	if duplicate, ok := err.(scene.ErrCameraAlreadyRecorded); ok && duplicate.Camera == CameraMain {
 		log.Printf("cameras: %v (expected: D is held)", err)
 		return nil
@@ -301,396 +322,4 @@ func setViewport() (kernel.Lock, kernel.Observe[app.WindowSizeChangeEvent]) {
 			setDesiredViewport(k,
 				gfx.SetDesiredViewportRequest{Mode: gfx.ViewportFit, Width: width, Height: height})
 		}
-}
-
-// frame records everything: the two cameras, the world, the overlay, the
-// composite and the HUD.
-//
-// It holds gfx's queue as well as scene's and canvas's, which no sibling demo
-// does. Minting a render target takes the gfx queue, and scene deliberately
-// offers no allocator of its own: a scene recorder does not hold that lock, so
-// an app that renders a camera into a temporary target locks both and hands the
-// target across. That is the whole handshake, and it is three lines.
-func (p *Cameras) frame() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var sceneQueue kernel.Write[*scene.OpQueue]
-	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var gfxQueue kernel.Write[*gfx.OpQueue]
-	var lookup kernel.Write[*model.Lookup]
-	var inputState kernel.Read[*input.State]
-	var viewport kernel.Read[*gfx.Viewport]
-	var files kernel.Read[storage.FileSystem]
-	var resources kernel.Write[*gfx.ResourceQueue]
-	return func(access kernel.ResourceAccess) {
-			sceneQueue = access.GetWrite[*scene.OpQueue]()
-			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			gfxQueue = access.GetWrite[*gfx.OpQueue]()
-			lookup = access.GetWrite[*model.Lookup]()
-			inputState = access.GetRead[*input.State]()
-			viewport = access.GetRead[*gfx.Viewport]()
-			files = access.GetRead[storage.FileSystem]()
-			resources = access.GetWrite[*gfx.ResourceQueue]()
-		}, func(k kernel.Kernel, _ app.UpdateEvent) {
-			q := sceneQueue.Get()
-			la := model.NewLookupAccess(k, lookup.Get())
-			device := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
-			p.rate.measure(time.Now())
-			p.readStats(q)
-			p.advance(inputState.Get())
-			p.buildTargets(device)
-			p.click(inputState.Get(), viewport.Get())
-			p.record(q, gfxQueue.Get(), la)
-			p.draw2D(canvasQueue.Get())
-		}
-}
-
-// advance steps the demo's own clock and reads the keys.
-//
-// Input is read before the step so a held arrow moves the camera on the very
-// frame it is pressed. The arrows work only while paused, because they are for
-// walking the track to a frame worth looking at rather than for driving.
-func (p *Cameras) advance(state *input.State) {
-	if state != nil {
-		if state.JustPressed(input.KeySpace) {
-			p.paused = !p.paused
-		}
-		if state.JustPressed(input.KeyR) {
-			p.step, p.picked = startStep, -1
-		}
-		p.duplicate = state.Pressed(input.KeyD)
-		if p.paused {
-			if state.Pressed(input.KeyRight) {
-				p.step++
-			}
-			if state.Pressed(input.KeyLeft) {
-				p.step--
-			}
-		}
-	}
-	if !p.paused {
-		p.step++
-	}
-}
-
-// time is the demo's clock: accumulated fixed steps, so step N is the same
-// frame on every machine and a test drives N steps directly.
-func (p *Cameras) time() float32 { return float32(p.step) * fixedStep }
-
-// buildTargets assembles this frame's pickable list: four cubes, the obelisk,
-// and the model if it is resident.
-//
-// The model is the entry that has to ask scene anything. Its bounds are the
-// file's, which the app does not know and cannot hard-code without going stale
-// the first time the asset changes, so it comes from Bounds on the device
-// facade and
-// goes through m.Sphere.Transform - exact under the uniform scale a
-// m.Transform carries. A file that could not be loaded is simply not in the
-// list, which is the right answer: a click cannot pick what is not drawn.
-func (p *Cameras) buildTargets(la model.LookupDeviceAccess) {
-	p.targets = p.targets[:0]
-	for i := range cubes {
-		p.targets = append(p.targets, pickable{name: cubes[i].name, sphere: cubeSphere(i)})
-	}
-	p.targets = append(p.targets, pickable{name: "obelisk", sphere: obeliskSphere()})
-	if bounds, ok := la.Bounds(model.ModelRef{Path: modelPath}); ok {
-		local := m.Sphere{Center: m.Vec3{X: bounds.X, Y: bounds.Y, Z: bounds.Z}, Radius: bounds.W}
-		p.targets = append(p.targets, pickable{
-			name:   "model",
-			sphere: local.Transform(modelTransform().Mat4()),
-		})
-	}
-}
-
-// click turns a mouse press into a pick, and it is the whole screen-to-world
-// half of this demo.
-//
-// The order is what matters. A click is a point on the screen; a camera answers
-// about points on its own target; so the click is mapped into a panel's texels
-// first - which is where the panel's rect and its target size stop being
-// interchangeable - and only then handed to that panel's camera. Hitting
-// neither panel picks nothing rather than picking through the nearer camera.
-//
-// The two panels are two cameras and one world, so clicking the same cube in
-// either picks the same entry. That is the criterion, and it is also the
-// reason nothing here is written twice.
-func (p *Cameras) click(state *input.State, view *gfx.Viewport) {
-	if state == nil || view == nil || view.WindowWidth <= 0 || view.WindowHeight <= 0 {
-		return
-	}
-	// The pointer arrives in window pixels; canvas draws in the logical screen
-	// the window is fitted to, and ScreenToWorld undoes that fit.
-	pointer := state.Pointer()
-	logical := m.Vec2{
-		X: float32(pointer.X) * view.Width / view.WindowWidth,
-		Y: float32(pointer.Y) * view.Height / view.WindowHeight,
-	}
-	p.pointer = canvas.ScreenToWorld(
-		m.Rect{Width: screenWidth, Height: screenHeight}, canvas.AspectInscribe,
-		m.Vec2{X: view.Width, Y: view.Height}, logical)
-	if !state.JustPressed(input.KeyMouseLeft) {
-		return
-	}
-	for _, panel := range p.panels() {
-		texel, ok := panel.view.texel(p.pointer)
-		if !ok {
-			continue
-		}
-		ray, ok := scene.ScreenToRay(panel.camera, panel.view.size, texel)
-		if !ok {
-			continue
-		}
-		if hit, ok := pick(ray, p.targets); ok {
-			p.picked = hit
-		} else {
-			p.picked = -1
-		}
-		return
-	}
-	p.picked = -1
-}
-
-// composited is one panel and the camera that fills it, which is the pair every
-// coordinate question in this demo is asked of.
-type composited struct {
-	view   panel
-	camera scene.CameraDescr
-}
-
-// panels is the two of them, main first: a click is tested against them in
-// order, and they do not overlap, so the order is documentation rather than
-// policy.
-func (p *Cameras) panels() [2]composited {
-	return [2]composited{
-		{view: mainPanel, camera: mainCamera(p.time())},
-		{view: mapPanel, camera: mapCamera(LayerWorld)},
-	}
-}
-
-// The depth and colour clears the passes name. A Pass takes each as an
-// m.Maybe, whose zero value preserves, so a clear is spelled m.Some(value).
-//
-// The depth clear is 1.0, which is worth saying out loud: depth here is
-// conventional, near maps to 0 and far to 1 and the compare is Less, so the
-// naive ClearDepth of zero clears to the near plane and hides the whole scene.
-var (
-	clearFar     = m.Some[float32](1)
-	clearMain    = m.Some(mainClearColor)
-	clearMinimap = m.Some(mapClearColor)
-)
-
-// record allocates this frame's targets, declares the three cameras with their
-// passes, and records the world.
-func (p *Cameras) record(q *scene.OpQueue, g *gfx.OpQueue, la model.LookupAccess) {
-	mainTarget, mainTexture := g.TemporaryTarget(
-		int(mainPanel.size.X), int(mainPanel.size.Y), gfx.FormatRGBA8Srgb)
-	mapTarget, mapTexture := g.TemporaryTarget(
-		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatRGBA8Srgb)
-	// Two depth textures, and they are deliberately not the same one.
-	//
-	// mapDepth is the minimap's own, named rather than pooled because
-	// DepthStore is inferred as StoreKeep exactly when a pass names a depth
-	// texture - which is what lets the minimap's colour pass and the overlay
-	// camera's pass merge into one GPU pass.
-	//
-	// prepassDepth is the depth-only pass's, and nothing else in the frame
-	// touches it. That independence is the point: a NoTarget() pass has no
-	// colour attachment to take a size from, so it must name a depth texture or
-	// it is a reported error, and this is the shape a shadow map takes - render
-	// depth from somewhere, sample it later. Scene v1 has no shadows, so
-	// nothing samples it, and a backend that cannot encode a colourless pass
-	// therefore drops it without changing a pixel of the frame. Feeding it into
-	// the minimap's colour pass instead would have made that skip render the
-	// whole minimap against undefined depth.
-	_, mapDepthTexture := g.TemporaryTarget(
-		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
-	_, prepassDepthTexture := g.TemporaryTarget(
-		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
-	mapDepth := gfx.DepthTarget(mapDepthTexture)
-	prepassDepth := gfx.DepthTarget(prepassDepthTexture)
-	p.mainTexture, p.mapTexture = mainTexture, mapTexture
-
-	camera := mainCamera(p.time())
-	camera.Passes = []scene.Pass{{
-		Target: mainTarget, ClearColor: clearMain, ClearDepth: clearFar,
-		// Depth is left at its zero value, which is DepthAuto: a pooled texture
-		// shared with every other same-size automatic pass in the frame. That
-		// is why it must clear depth - it would otherwise inherit whatever the
-		// last pass at this size left there.
-	}}
-	q.Camera(CameraMain, camera)
-	if p.duplicate {
-		// The same id, recorded twice in one frame. Camera is a registration,
-		// not a free parameter, so a repeat means two systems each believe they
-		// own that camera: it is reported and the first record wins. The second
-		// record here is deliberately absurd - looking at the ground from
-		// underneath - so that "the first record wins" is a thing the picture
-		// says rather than a thing this comment says.
-		wrong := camera
-		wrong.Transform = m.LookAt(m.Vec3{Y: -4}, m.Vec3{}, m.Vec3{Y: 1})
-		q.Camera(CameraMain, wrong)
-	}
-
-	minimap := mapCamera(LayerWorld)
-	minimap.Passes = []scene.Pass{
-		{
-			// The depth prepass: no colour target at all, its own depth
-			// texture, one pass earlier than the camera. Order is an offset
-			// from the camera id rather than an absolute, so -1 here means
-			// "just before this camera" without the demo knowing what number
-			// the camera took.
-			Tag: TagDepth, Target: gfx.NoTarget(), Depth: prepassDepth,
-			ClearDepth: clearFar, Order: -1,
-		},
-		{
-			Target: mapTarget, Depth: mapDepth,
-			ClearColor: clearMinimap, ClearDepth: clearFar,
-		},
-	}
-	q.Camera(CameraMap, minimap)
-
-	// The overlay camera: the same pose and projection as the minimap, a
-	// different cull mask, and a pass that clears nothing. Clearing nothing is
-	// what makes it merge with the pass above into one GPU pass - same target,
-	// same depth texture, both loads preserving - so the second camera costs a
-	// pass in scene's bookkeeping and none on the GPU.
-	overlay := mapCamera(LayerOverlay)
-	overlay.Passes = []scene.Pass{{Target: mapTarget, Depth: mapDepth}}
-	q.Camera(CameraOverlay, overlay)
-
-	p.recordWorld(q, la)
-	p.recordOverlay(q, camera)
-}
-
-// recordWorld records everything on the world layer: the ground, the four
-// cubes, the obelisk and the model. Every camera that draws the world layer
-// sees all of it.
-func (p *Cameras) recordWorld(q *scene.OpQueue, la model.LookupAccess) {
-	q.Plane(LayerWorld, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
-	for i := range cubes {
-		q.Box(LayerWorld, cubeTransform(i), p.tint(cubes[i].name, cubes[i].color))
-	}
-	if p.obelisk.ID() == 0 {
-		vertices, indices := obeliskMesh()
-		p.obelisk = la.BakeMesh(vertices, indices, gfx.TopologyTriangleList)
-	}
-	q.Mesh(LayerWorld, p.obelisk, scene.MeshDraw{
-		Transform: obeliskTransform(),
-		Material:  p.material,
-	})
-	q.Model(LayerWorld, modelPath, scene.ModelDraw{Transform: modelTransform()})
-}
-
-// tint is the highlight: the picked thing takes the highlight colour and every
-// other thing keeps its own.
-//
-// It is a colour swap rather than a material override because a debug shape's
-// colour is a parameter of the call that recorded it, so highlighting one costs
-// nothing and reaches every camera at once - which is what makes the criterion
-// checkable through the composited minimap as well as the main view.
-func (p *Cameras) tint(name string, color m.Color) m.Color {
-	if p.pickedName() == name {
-		return highlightColor
-	}
-	return color
-}
-
-// pickedName is what the last click landed on, or the empty string.
-func (p *Cameras) pickedName() string {
-	if p.picked < 0 || p.picked >= len(p.targets) {
-		return ""
-	}
-	return p.targets[p.picked].name
-}
-
-// recordOverlay draws the main camera's frustum onto the overlay layer, which
-// only the minimap's overlay camera sees.
-//
-// The outline is built with ScreenToRay from the main panel's four corners, so
-// it is the same helper the click uses, evaluated for the same camera at the
-// same size. Two things that must agree are therefore computed by one function
-// rather than by two that can drift.
-func (p *Cameras) recordOverlay(q *scene.OpQueue, camera scene.CameraDescr) {
-	corners, ok := frustumCorners(camera)
-	if !ok {
-		return
-	}
-	eye := camera.Transform.Position
-	q.Sphere(LayerOverlay, eye, 0.22, eyeColor)
-	for i, corner := range corners {
-		q.Line3D(LayerOverlay, eye, corner, 0.05, frustumColor)
-		q.Line3D(LayerOverlay, corner, corners[(i+1)%len(corners)], 0.05, frustumColor)
-	}
-	if picked := p.picked; picked >= 0 && picked < len(p.targets) {
-		// A wire box around whatever is picked, on the overlay layer, so the
-		// minimap says what the click chose even when the thing itself is off
-		// the main view's edge.
-		sphere := p.targets[picked].sphere
-		size := m.Vec3{X: sphere.Radius * 2, Y: sphere.Radius * 2, Z: sphere.Radius * 2}
-		q.WireBox(LayerOverlay, sphere.Center, size, 0.05, highlightColor)
-	}
-}
-
-// RecordedWorldDraws is how many draws the world layer flushes to: the ground
-// plane, four cubes, the obelisk's one mesh, and the model's one primitive.
-const RecordedWorldDraws = 1 + len(cubes) + 1 + 1
-
-// RecordedOverlayDraws is how many the overlay layer flushes to with nothing
-// picked: the eye sphere and the frustum's eight lines. A pick adds a wire box,
-// which is twelve draws, because each edge is culled on its own.
-const (
-	RecordedOverlayDraws = 1 + 8
-	WireBoxDraws         = 12
-)
-
-// stats is what the previous frame's flush decided, read back out of the scene
-// queue at the top of each update and printed by the HUD. It is the previous
-// frame's because Passes publishes the frame the last flush consumed, and the
-// flush runs at the end of the update tick this handler is part of.
-type stats struct {
-	passes    int
-	ops       int
-	recorded  int
-	culled    int
-	instances int
-	depthDraw int // what the depth-tagged pass packed, which is the multi-tag material's whole story
-	batches   int
-}
-
-// readStats reads the previous frame's flush result back out of the queue.
-func (p *Cameras) readStats(q *scene.OpQueue) {
-	views := q.Passes(nil)
-	p.stats = stats{passes: len(views), ops: len(q.Ops(nil))}
-	for i := range views {
-		p.stats.recorded += views[i].Recorded
-		p.stats.culled += views[i].Culled
-		p.stats.instances += views[i].Instances
-		p.stats.batches += len(views[i].Batches)
-		if views[i].Tag == TagDepth {
-			p.stats.depthDraw += views[i].Instances
-		}
-	}
-}
-
-// rate is the HUD's frames-per-second meter, and the demo's only wall clock. It
-// counts frames over a window rather than averaging 1/interval per frame,
-// because a per-frame average is dominated by its own worst sample: two ticks a
-// microsecond apart during startup read as a million, and an exponential
-// average carries a thousandth of that for a hundred frames afterwards.
-type rate struct {
-	window    time.Time
-	frames    int
-	perSecond float32
-}
-
-const ratePeriod = 250 * time.Millisecond
-
-func (r *rate) measure(now time.Time) {
-	if r.window.IsZero() {
-		r.window = now
-		return
-	}
-	r.frames++
-	if elapsed := now.Sub(r.window); elapsed >= ratePeriod {
-		r.perSecond = float32(float64(r.frames) / elapsed.Seconds())
-		r.frames, r.window = 0, now
-	}
 }

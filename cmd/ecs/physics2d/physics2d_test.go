@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog/bundles/canvas"
-	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/ecsphysics2d"
 	"github.com/dvoyni/cog/bundles/ecsphysics2d/ecsphysics2dplugin"
 	"github.com/dvoyni/cog/libs/m"
@@ -36,8 +35,10 @@ const restTicks = 600
 // every resting tolerance here is quoted in.
 const slop = 0.005
 
-// rig is the demo composed exactly as main does, minus the GPU, with the census
-// read back through the demo's own command.
+// rig is the demo composed as main does, minus the GPU, with the census read
+// back through the demo's own command. headless.New brings ecs itself, so only
+// the physics plugin and the demo are passed; the scene renderer it also
+// brings draws nothing here, since the demo spawns no scene Components.
 type rig struct {
 	engine *headless.Engine
 	t      *testing.T
@@ -45,7 +46,7 @@ type rig struct {
 
 func start(t *testing.T) *rig {
 	t.Helper()
-	return &rig{engine: headless.New(t, ecsplugin.New(), ecsphysics2dplugin.New(), New()), t: t}
+	return &rig{engine: headless.New(t, ecsphysics2dplugin.New(), New()), t: t}
 }
 
 // steps drives n more ticks and reads the census the last of them left.

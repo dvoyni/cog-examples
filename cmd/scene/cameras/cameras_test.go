@@ -10,148 +10,230 @@ import (
 	"github.com/dvoyni/cog-examples/internal/headless"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/input"
+	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
 )
 
-// run starts the demo headless over the vendored asset set and steps until the
-// model is loaded, which is when the frame it records is the frame the
-// reference screenshot was taken of.
+// run starts the demo headless over the vendored asset set, waits for the
+// model to be resident, and steps until the model is pickable, which is when
+// the frame it draws is the frame the reference screenshot was taken of.
 //
-// The loop settles on its first pass: a load runs inside the flush that named
-// the file, so the frame that draws the model is the frame that loaded it.
+// Preload loads without stepping, so the first frame scene draws already has
+// the model in it; the loop after it waits for the bounds System, which asks
+// on the first step the backend is up.
 func run(t *testing.T) (*headless.Engine, *Cameras) {
 	t.Helper()
 	demo := New()
 	engine := headless.New(t, demo)
+	engine.LookupDevice(func(la model.LookupDeviceAccess) {
+		la.Preload(modelPath)
+		if err := la.State(modelPath); err != nil {
+			t.Fatalf("Preload left %q unloaded: %v", modelPath, err)
+		}
+	})
 	deadline := time.Now().Add(60 * time.Second)
-	for len(demo.targets) < len(cubes)+2 {
+	for !demo.state.resident {
 		if time.Now().After(deadline) {
 			t.Fatalf("the model never became pickable; engine reported %v", engine.Errors())
 		}
 		engine.Steps(1)
-		time.Sleep(time.Millisecond)
 	}
-	// One more pair of steps: the frame that first sees the model resident is
-	// also the first to record its draw, and Passes publishes the frame the
-	// last flush consumed.
-	engine.Steps(2)
 	if errs := engine.Errors(); len(errs) > 0 {
 		t.Fatalf("the engine reported %d errors, first: %v", len(errs), errs[0])
 	}
 	return engine, demo
 }
 
-// The frame's four passes, named. Scene publishes in camera-id order and then
-// in each camera's own declaration order, so this sequence is what the demo
-// arranged; the Order values beside it are what gfx actually sorts by, and the
-// test asserts both because they are two different facts.
-type expectedPass struct {
-	camera scene.CameraID
-	tag    scene.PassTag
-	order  gfx.Order
+// frame is what one step sent the backend: its passes in the order gfx began
+// them, and its draws, each indexing those passes.
+type frame struct {
+	passes []gfx.PassDesc
+	draws  []headless.DrawCall
 }
 
-var expectedPasses = [...]expectedPass{
-	{CameraMain, scene.TagForward, gfx.Order(CameraMain)},
-	{CameraMap, TagDepth, gfx.Order(CameraMap) - 1},
-	{CameraMap, scene.TagForward, gfx.Order(CameraMap)},
-	{CameraOverlay, scene.TagForward, gfx.Order(CameraOverlay)},
+// step takes one step and keeps what it sent the backend. The backend
+// accumulates across every step since the engine started, so this takes the
+// tail and rebases the draws onto it.
+func step(t *testing.T, engine *headless.Engine) frame {
+	t.Helper()
+	backend := engine.Backend()
+	passes, draws := len(backend.Passes), len(backend.Draws)
+	engine.Steps(1)
+	f := frame{
+		passes: slices.Clone(backend.Passes[passes:]),
+		draws:  slices.Clone(backend.Draws[draws:]),
+	}
+	for i := range f.draws {
+		f.draws[i].Pass -= passes
+	}
+	return f
 }
 
-func TestTheFrameEmitsFourPassesInOneAscendingOrder(t *testing.T) {
+// label is the backend label of one camera's pass under one tag, which is
+// scene's spelling: scene.camera<id>.<tag>.
+func label(camera scene.CameraID, tag scene.PassTag) string {
+	return fmt.Sprintf("scene.camera%d.%s", camera, tag)
+}
+
+// pass is the index of the pass carrying a label in this frame, and fails the
+// test when there is none.
+func (f frame) pass(t *testing.T, label string) int {
+	t.Helper()
+	for i := range f.passes {
+		if f.passes[i].Label == label {
+			return i
+		}
+	}
+	t.Fatalf("no pass labelled %q reached the backend: %v", label, f.labels())
+	return -1
+}
+
+// drawsIn is every draw the frame made in one pass.
+func (f frame) drawsIn(pass int) []headless.DrawCall {
+	var out []headless.DrawCall
+	for _, draw := range f.draws {
+		if draw.Pass == pass {
+			out = append(out, draw)
+		}
+	}
+	return out
+}
+
+func (f frame) labels() []string {
+	out := make([]string, len(f.passes))
+	for i := range f.passes {
+		out[i] = f.passes[i].Label
+	}
+	return out
+}
+
+// The draws each layer makes, one per Entity: every debug shape bakes a mesh
+// of its own, and no two world Entities share a mesh and a colour, so nothing
+// batches.
+const (
+	// worldDraws is the ground plane, four cubes, the obelisk's one mesh, and
+	// the model's one primitive.
+	worldDraws = 1 + len(cubes) + 1 + 1
+	// overlayDraws is the eye sphere and the frustum's eight lines, with
+	// nothing picked. A pick adds the wire box, which is one mesh.
+	overlayDraws = 1 + 8
+	// behindTheEye is how many cubes stand behind the main camera at the
+	// reference pose, where it is at the middle of the corridor.
+	behindTheEye = 2
+)
+
+func TestTheFrameBeginsItsCameraPassesInOneAscendingOrderBeforeTheComposite(t *testing.T) {
 	// Pass.Order is an offset from the camera id, not an absolute, so the depth
 	// prepass lands one before its own camera without the demo knowing what
 	// number that camera took. The whole frame - three cameras and canvas's
 	// layers - shares one flat ordering space with no reserved ranges in it, so
-	// the only thing that keeps the prepass before its colour pass and both
-	// before the composite is that these numbers ascend.
+	// the only thing that keeps the prepass before its colour pass and all of
+	// them before the composite is that these numbers ascend. gfx begins passes
+	// in that order, so the order the backend saw them in is the sort.
 	engine, _ := run(t)
-	passes := engine.Passes()
-	if len(passes) != len(expectedPasses) {
-		t.Fatalf("published %d passes, want %d", len(passes), len(expectedPasses))
+	f := step(t, engine)
+	want := []string{
+		label(CameraMain, scene.TagForward),
+		label(CameraMap, TagDepth),
+		label(CameraMap, scene.TagForward),
 	}
-	for i, want := range expectedPasses {
-		got := passes[i]
-		if got.CameraID != want.camera || got.Tag != want.tag || got.Order != want.order {
-			t.Errorf("pass %d = camera %d tag %q order %d, want camera %d tag %q order %d",
-				i, got.CameraID, got.Tag, got.Order, want.camera, want.tag, want.order)
+	var scenePasses []string
+	lastScene, firstOther := -1, -1
+	for i, got := range f.labels() {
+		if strings.HasPrefix(got, "scene.") {
+			scenePasses = append(scenePasses, got)
+			lastScene = i
+		} else if firstOther < 0 {
+			firstOther = i
 		}
-		if i > 0 && passes[i-1].Order >= got.Order {
-			t.Errorf("pass %d orders %d then %d, which do not ascend", i, passes[i-1].Order, got.Order)
-		}
+	}
+	if !slices.Equal(scenePasses, want) {
+		t.Errorf("the camera passes began as %v, want %v", scenePasses, want)
+	}
+	if firstOther < 0 || firstOther < lastScene {
+		t.Errorf("the composite does not follow every camera pass: %v", f.labels())
 	}
 }
 
 func TestEachCameraSeesOnlyTheLayersItsCullMaskNames(t *testing.T) {
 	// The overlay layer carries the main camera's own frustum, which is the one
-	// thing in the frame that must not appear in the main camera. Recorded is
-	// what a camera's cull mask selected, before its frustum has rejected
-	// anything, so these numbers are the mask and nothing else.
+	// thing in the frame that must not appear in the main camera. The minimap's
+	// two cameras draw the two layers into one merged pass, so it holds every
+	// Entity of both; the main camera holds the world alone, less what stands
+	// behind it.
 	engine, _ := run(t)
-	passes := engine.Passes()
-	for i, view := range passes {
-		want := RecordedWorldDraws
-		if view.CameraID == CameraOverlay {
-			want = RecordedOverlayDraws
-		}
-		if view.Recorded != want {
-			t.Errorf("pass %d (camera %d) recorded %d draws, want %d",
-				i, view.CameraID, view.Recorded, want)
-		}
+	f := step(t, engine)
+	if got := len(f.drawsIn(f.pass(t, label(CameraMap, scene.TagForward)))); got != worldDraws+overlayDraws {
+		t.Errorf("the minimap drew %d draws, want the world's %d and the overlay's %d",
+			got, worldDraws, overlayDraws)
+	}
+	if got := len(f.drawsIn(f.pass(t, label(CameraMain, scene.TagForward)))); got != worldDraws-behindTheEye {
+		t.Errorf("the main camera drew %d draws, want the world's %d less the %d behind it and no overlay",
+			got, worldDraws, behindTheEye)
 	}
 }
 
 func TestOnlyTheObeliskAppearsInTheDepthPass(t *testing.T) {
 	// Tag participation is purely a material property. Every debug shape and
-	// the model take the bundled PBR, which has one forward entry and no depth
-	// entry, so the depth pass draws the one thing whose material carries one -
-	// and it selected all of them, which is what separates a tag filter from a
+	// the model take a material serving forward alone, so the depth pass draws
+	// the one thing whose Material carries a depth tag - though the minimap's
+	// camera sees all of them, which is what separates a tag filter from a
 	// cull.
 	engine, _ := run(t)
-	depth := passOf(t, engine, CameraMap, TagDepth)
-	if depth.Instances != 1 {
-		t.Errorf("the depth pass packed %d instances, want the obelisk alone", depth.Instances)
+	f := step(t, engine)
+	depth := f.drawsIn(f.pass(t, label(CameraMap, TagDepth)))
+	if len(depth) != 1 || depth[0].Instances != 1 {
+		t.Errorf("the depth pass made %+v, want one draw of the obelisk alone", depth)
 	}
-	if depth.Recorded != RecordedWorldDraws {
-		t.Errorf("the depth pass recorded %d draws, want the whole world layer", depth.Recorded)
-	}
-	forward := passOf(t, engine, CameraMap, scene.TagForward)
-	if forward.Instances <= depth.Instances {
-		t.Errorf("the forward pass packed %d instances, want more than the depth pass's %d",
-			forward.Instances, depth.Instances)
+	forward := f.drawsIn(f.pass(t, label(CameraMap, scene.TagForward)))
+	if len(forward) <= len(depth) {
+		t.Errorf("the forward pass made %d draws, want more than the depth pass's %d", len(forward), len(depth))
 	}
 }
 
 func TestTheMainCameraCullsWhatIsBehindItAndTheMinimapCullsNothing(t *testing.T) {
 	// At the reference pose the camera stands at the middle of the corridor, so
 	// two of the four cubes are behind it and the minimap, looking straight
-	// down from above, holds the whole world at once. This is the per-camera
-	// cull count, and it is the number that proves the two cameras have their
-	// own frusta rather than sharing one.
+	// down from above, holds the whole world at once. The draw counts are the
+	// per-camera cull, and they are what proves the two cameras have their own
+	// frusta rather than sharing one.
 	engine, demo := run(t)
-	main := passOf(t, engine, CameraMain, scene.TagForward)
-	minimap := passOf(t, engine, CameraMap, scene.TagForward)
-	if minimap.Culled != 0 {
-		t.Errorf("the minimap culled %d draws; it looks down at the whole world", minimap.Culled)
+	f := step(t, engine)
+	if got := len(f.drawsIn(f.pass(t, label(CameraMap, scene.TagForward)))); got != worldDraws+overlayDraws {
+		t.Errorf("the minimap drew %d, want all %d of the world and the overlay: it culls nothing",
+			got, worldDraws+overlayDraws)
 	}
-	if main.Culled == 0 {
-		t.Error("the main camera culled nothing at the reference pose, where two cubes stand behind it")
+	if got := len(f.drawsIn(f.pass(t, label(CameraMain, scene.TagForward)))); got != worldDraws-behindTheEye {
+		t.Errorf("the main camera drew %d, want %d: the world less the cubes behind it",
+			got, worldDraws-behindTheEye)
 	}
 
-	// Which ones, against the pass's own published frustum rather than against
-	// the count: asserting that a specific cube was rejected by a specific
-	// frustum is the whole point of publishing it.
-	camera := mainCamera(demo.time())
+	// Which ones, against the frustum of the matrix scene draws the main
+	// camera through: asserting that a specific cube is rejected by a specific
+	// frustum is what the count cannot say.
+	main := panels(demo.state.time())[0]
+	viewProjection, ok := main.viewProjection()
+	if !ok {
+		t.Fatal("scene refused the main camera's view-projection")
+	}
+	frustum := m.FrustumFromMat4(viewProjection)
+	behind := 0
 	for i := range cubes {
 		sphere := cubeSphere(i)
-		visible := main.Frustum.ContainsSphere(sphere.Center, sphere.Radius)
-		ahead := cubes[i].position.Z > camera.Transform.Position.Z
+		visible := frustum.ContainsSphere(sphere.Center, sphere.Radius)
+		ahead := cubes[i].position.Z > main.place.Position.Z
 		if visible != ahead {
 			t.Errorf("cube %q at z %+.1f is %v to the frustum of a camera at z %+.2f",
-				cubes[i].name, cubes[i].position.Z, visible, camera.Transform.Position.Z)
+				cubes[i].name, cubes[i].position.Z, visible, main.place.Position.Z)
 		}
+		if !visible {
+			behind++
+		}
+	}
+	if behind != behindTheEye {
+		t.Errorf("%d cubes are outside the main frustum, want %d", behind, behindTheEye)
 	}
 }
 
@@ -163,27 +245,28 @@ func TestTheMinimapsTwoCamerasMergeIntoOneGpuPass(t *testing.T) {
 	// own, and the merge predicate needs StoreKeep on both of the
 	// predecessor's attachments. A DepthAuto pass stores discard and would not
 	// have merged.
-	engine, _ := run(t)
-	if scenePasses := len(engine.Passes()); scenePasses != len(expectedPasses) {
-		t.Fatalf("scene published %d passes, want %d", scenePasses, len(expectedPasses))
-	}
+	//
 	// A merged run is encoded under the label of the pass that opened it, so
 	// the overlay camera's label is absent from the GPU stream exactly when it
-	// merged. That is a sharper observable than a count: the backend
-	// accumulates passes across every frame since the engine started, so a
-	// count would have to know how many frames ran, and the label says which
-	// pass rather than how many.
+	// merged, and that is a sharper observable than a count.
+	engine, _ := run(t)
+	f := step(t, engine)
 	overlay := fmt.Sprintf("scene.camera%d", CameraOverlay)
-	for _, label := range passLabels(engine) {
-		if strings.HasPrefix(label, overlay) {
-			t.Fatalf("gfx encoded %q as a pass of its own, so it did not merge", label)
+	for _, got := range f.labels() {
+		if strings.HasPrefix(got, overlay) {
+			t.Fatalf("gfx encoded %q as a pass of its own, so it did not merge", got)
 		}
 	}
-	// And the pass it merged into did reach the GPU, so the absence above is a
-	// merge rather than a pass that never happened.
-	head := fmt.Sprintf("scene.camera%d.%s", CameraMap, scene.TagForward)
-	if !slices.Contains(passLabels(engine), head) {
-		t.Errorf("no pass labelled %q reached the backend: %v", head, passLabels(engine))
+	// And the pass it merged into did reach the GPU carrying the overlay's
+	// draws, so the absence above is a merge rather than a pass that never
+	// happened.
+	head := f.pass(t, label(CameraMap, scene.TagForward))
+	if got := len(f.drawsIn(head)); got != worldDraws+overlayDraws {
+		t.Errorf("the merged pass made %d draws, want the minimap's %d and the overlay's %d",
+			got, worldDraws, overlayDraws)
+	}
+	if f.passes[head].DepthStore != gfx.StoreKeep {
+		t.Error("the minimap's colour pass discards its depth, so nothing could merge onto it")
 	}
 }
 
@@ -206,37 +289,47 @@ func TestTheDepthOnlyPassBuildsAPipelineWithNoColourTarget(t *testing.T) {
 	}
 }
 
-func TestRecordingTheSameCameraTwiceReportsAndKeepsTheFirst(t *testing.T) {
-	// Camera is a registration, not a free parameter, so a repeated id means
-	// two systems each believe they own that camera. The demo provokes it on
+func TestTwoCamerasHoldingOneIdReportAndDrawOnce(t *testing.T) {
+	// A Camera's id is its identity, so two Entities holding one means two
+	// Systems each believe they own that camera. The demo provokes it on
 	// purpose, which is also why it installs an error handler of its own: the
 	// kernel's default terminates the engine on the first report.
 	engine, demo := run(t)
-	before := len(engine.Passes())
 	engine.Input(input.KeyChange(input.KeyD, 0, true))
-	engine.Steps(2)
-	engine.Input(input.KeyChange(input.KeyD, 0, false))
-	if !demo.duplicate {
-		t.Fatal("holding D did not reach the demo, so nothing was recorded twice")
+	engine.Steps(1)
+	f := step(t, engine)
+	if !demo.state.duplicate {
+		t.Fatal("holding D did not reach the demo, so no second camera was spawned")
 	}
 
 	errs := engine.Errors()
 	if len(errs) == 0 {
-		t.Fatal("recording a camera twice reported nothing")
+		t.Fatal("two cameras under one id reported nothing")
 	}
 	duplicate, ok := errs[len(errs)-1].(scene.ErrCameraAlreadyRecorded)
 	if !ok || duplicate.Camera != CameraMain {
 		t.Fatalf("last report = %v, want a duplicate of camera %d", errs[len(errs)-1], CameraMain)
 	}
-	// The first record wins, so the frame still has its four passes and the
-	// main camera still looks down the corridor rather than up from under the
-	// ground, which is what the second record asked for.
-	if got := len(engine.Passes()); got != before {
-		t.Errorf("passes = %d after the duplicate, want the same %d", got, before)
+	// One of the two is drawn and the other refused, so the frame still begins
+	// the main camera's pass once. Which one is scene's walk of its Camera
+	// Store, which the ECS leaves unspecified, so it is not asserted.
+	mainPasses := 0
+	for _, got := range f.labels() {
+		if got == label(CameraMain, scene.TagForward) {
+			mainPasses++
+		}
 	}
-	main := passOf(t, engine, CameraMain, scene.TagForward)
-	if main.Culled == 0 {
-		t.Error("the main camera's frustum changed, so the second record won")
+	if mainPasses != 1 {
+		t.Errorf("the main camera's pass began %d times with D held, want once", mainPasses)
+	}
+
+	// Letting go despawns the impostor, and the reports stop.
+	engine.Input(input.KeyChange(input.KeyD, 0, false))
+	engine.Steps(1)
+	reported := len(engine.Errors())
+	engine.Steps(2)
+	if got := len(engine.Errors()); got != reported {
+		t.Errorf("the engine went on reporting after D was let go: %v", engine.Errors()[reported:])
 	}
 }
 
@@ -247,29 +340,25 @@ func TestANameplateRoundTripsBackToTheCubeThroughEitherPanel(t *testing.T) {
 	// panel, at that panel's own target size - and leaves the visible half,
 	// that a plate is glued to its cube on screen, to eyes.
 	_, demo := run(t)
-	for _, panel := range demo.panels() {
+	for _, panel := range panels(demo.state.time()) {
 		hits := 0
 		for i := range cubes {
 			// The centre rather than the plate's anchor: the anchor is above
 			// the top face and outside the cube's bounding sphere, so a ray
 			// through it is meant to miss. What this asserts is that the two
 			// helpers are inverses of each other for this camera at this size.
-			screen, ok := scene.WorldToScreen(panel.camera, panel.view.size, cubes[i].position)
-			if !ok {
-				continue
-			}
-			texel := m.Vec2{X: screen.X, Y: screen.Y}
-			if !panel.view.contains(texel) {
+			texel, ok := panel.worldToScreen(cubes[i].position)
+			if !ok || !panel.view.contains(texel) {
 				continue
 			}
 			hits++
-			ray, ok := scene.ScreenToRay(panel.camera, panel.view.size, texel)
+			ray, ok := panel.screenToRay(texel)
 			if !ok {
 				t.Errorf("no ray through %q's own plate", cubes[i].name)
 				continue
 			}
-			hit, ok := pick(ray, demo.targets)
-			if !ok || demo.targets[hit].name != cubes[i].name {
+			hit, ok := pick(ray, demo.state.targets)
+			if !ok || demo.state.targets[hit].name != cubes[i].name {
 				t.Errorf("the ray through %q's plate picked %v (ok %v)",
 					cubes[i].name, hit, ok)
 			}
@@ -287,18 +376,19 @@ func TestAPointBehindThePerspectiveCameraHasNoScreenPositionAndTheOrthographicOn
 	// everywhere, so it never fails the test - which is why the minimap keeps a
 	// plate the main view has dropped.
 	_, demo := run(t)
-	camera := mainCamera(demo.time())
-	behind := camera.Transform.Position.Sub(m.Vec3{Z: 4})
-	if _, ok := scene.WorldToScreen(camera, mainPanel.size, behind); ok {
+	views := panels(demo.state.time())
+	main, minimap := views[0], views[1]
+	behind := main.place.Position.Sub(m.Vec3{Z: 4})
+	if _, ok := main.worldToScreen(behind); ok {
 		t.Error("a point four units behind the eye came back with a screen position")
 	}
-	if _, ok := scene.WorldToScreen(mapCamera(LayerWorld), mapPanel.size, behind); !ok {
+	if _, ok := minimap.worldToScreen(behind); !ok {
 		t.Error("the orthographic camera refused a point it can see")
 	}
 	// And a point in front but off the side of the target stays true, because
 	// an off-screen indicator arrow is the second most common use of this.
-	aside := camera.Transform.Position.Add(m.Vec3{X: 40, Z: 6})
-	screen, ok := scene.WorldToScreen(camera, mainPanel.size, aside)
+	aside := main.place.Position.Add(m.Vec3{X: 40, Z: 6})
+	screen, ok := main.worldToScreen(aside)
 	if !ok {
 		t.Error("a point in front of the camera but off the side was refused")
 	} else if screen.X >= 0 && screen.X <= mainPanel.size.X {
@@ -312,45 +402,53 @@ func TestEachPanelAnswersAtItsOwnTargetSize(t *testing.T) {
 	// camera at the main panel's size has to give a different answer from
 	// asking it at its own, or nothing in this demo is per target.
 	_, demo := run(t)
-	camera := mapCamera(LayerWorld)
+	own := panels(demo.state.time())[1]
+	foreign := own
+	foreign.view = mainPanel
 	anchor := nameplateAnchor(0)
-	own, ok := scene.WorldToScreen(camera, mapPanel.size, anchor)
+	ownAt, ok := own.worldToScreen(anchor)
 	if !ok {
 		t.Fatal("the minimap cannot see the first cube")
 	}
-	foreign, ok := scene.WorldToScreen(camera, mainPanel.size, anchor)
+	foreignAt, ok := foreign.worldToScreen(anchor)
 	if !ok {
 		t.Fatal("the minimap's camera refused the main panel's size")
 	}
-	if own == foreign {
-		t.Errorf("both sizes answered %v, so the viewport is not being read", own)
+	if ownAt == foreignAt {
+		t.Errorf("both sizes answered %v, so the viewport is not being read", ownAt)
 	}
-	_ = demo
 }
 
 func TestAClickInEitherPanelPicksThroughThatPanelsOwnCamera(t *testing.T) {
 	// The criterion, driven the way a hand drives it: a pointer position in
-	// window pixels and a mouse button, through the demo's own handler.
+	// window pixels and a mouse button, through the demo's own System.
 	//
 	// It is the same cube through both panels, and the minimap is the harder
 	// half - the click has to be mapped into 512 texels of a target composited
 	// into 400 canvas units before an orthographic camera is asked about it,
 	// and a scale dropped anywhere in that chain lands the ray somewhere else.
 	engine, demo := run(t)
-	for _, panel := range demo.panels() {
-		screen, ok := scene.WorldToScreen(panel.camera, panel.view.size, cubes[3].position)
-		if !ok || !panel.view.contains(m.Vec2{X: screen.X, Y: screen.Y}) {
+	for _, panel := range panels(demo.state.time()) {
+		texel, ok := panel.worldToScreen(cubes[3].position)
+		if !ok || !panel.view.contains(texel) {
 			t.Fatalf("panel %v cannot see the cube this test clicks", panel.view.rect)
 		}
-		click(engine, panel.view.canvas(m.Vec2{X: screen.X, Y: screen.Y}))
-		if got := demo.pickedName(); got != cubes[3].name {
+		click(engine, panel.view.canvas(texel))
+		if got := demo.state.pickedName(); got != cubes[3].name {
 			t.Fatalf("clicking %q through panel %v picked %q", cubes[3].name, panel.view.rect, got)
 		}
+	}
+	// The pick reaches the frame: the wire box around it joins the minimap's
+	// overlay.
+	f := step(t, engine)
+	if got := len(f.drawsIn(f.pass(t, label(CameraMap, scene.TagForward)))); got != worldDraws+overlayDraws+1 {
+		t.Errorf("the minimap drew %d with a cube picked, want %d and the wire box",
+			got, worldDraws+overlayDraws)
 	}
 	// And a click in the gap between the panels picks nothing, rather than
 	// picking through whichever camera is nearer.
 	click(engine, m.Vec2{X: (mainPanel.rect.X + mainPanel.rect.Width + mapPanel.rect.X) / 2, Y: 300})
-	if got := demo.pickedName(); got != "" {
+	if got := demo.state.pickedName(); got != "" {
 		t.Errorf("a click between the panels picked %q", got)
 	}
 }
@@ -372,28 +470,4 @@ func click(engine *headless.Engine, at m.Vec2) {
 	engine.Steps(1)
 	engine.Input(input.KeyChange(input.KeyMouseLeft, 0, false))
 	engine.Steps(1)
-}
-
-// passOf finds one published pass by camera and tag.
-func passOf(t *testing.T, engine *headless.Engine, camera scene.CameraID, tag scene.PassTag) scene.PassView {
-	t.Helper()
-	for _, view := range engine.Passes() {
-		if view.CameraID == camera && view.Tag == tag {
-			return view
-		}
-	}
-	t.Fatalf("no pass for camera %d tag %q", camera, tag)
-	return scene.PassView{}
-}
-
-// passLabels is the labels of the GPU passes the last frame encoded. The
-// backend accumulates across every frame since the engine started, so this
-// takes the tail: one frame's worth, ending at the frame's present.
-func passLabels(engine *headless.Engine) []string {
-	all := engine.Backend().Passes
-	labels := make([]string, 0, len(all))
-	for _, desc := range all {
-		labels = append(labels, desc.Label)
-	}
-	return labels
 }

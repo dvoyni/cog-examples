@@ -1,4 +1,4 @@
-// Command box is the scene plugin's zero-asset demo: the whole debug
+// Command box is the scene plugin's zero-asset demo: the whole debug-shape
 // vocabulary, one camera, and a HUD, with no file on disk anywhere in the
 // frame. Even the HUD's text costs nothing: canvas embeds a font and draws with
 // it when a text op names none. It is the floor of the API and the smoke test
@@ -7,11 +7,23 @@
 //
 //	go run ./cmd/scene/box
 //
-// What it exercises: the debug vocabulary (Box, Sphere, Plane, Line3D,
-// WireBox); Transform TRS and WithScale, the uniform spelling of its per-axis Scale; LookAt; an empty Passes
-// yielding the implicit forward pass at the camera id; sun and hemispheric
-// ambient; a point light and a spot light; the linear pipeline and the present
-// pass; every-zero-value-is-the-default; and the m additions.
+// What it exercises: the five debug-shape Components (DebugBox, DebugSphere,
+// DebugPlane, DebugLine, DebugWireBox), each on an Entity of its own placed by
+// its m.Transform; Transform TRS and WithScale, the uniform spelling of its
+// per-axis Scale; LookAt; an empty Passes yielding the implicit forward pass at
+// the camera id; sun and hemispheric ambient; a point light and a spot light
+// placed by their Transforms; the linear pipeline and the present pass;
+// every-zero-value-is-the-default; and the m additions.
+//
+// Every System is in a file of its own, named for it, and the Components the
+// demo declares are in components.go:
+//
+//	setupSystem  spawns the camera, the eight shapes and the two lights  (init)
+//	clockSystem  steps the demo clock and reads the keys                 (update)
+//	spinSystem   turns the spinning box                                  (update)
+//	orbitSystem  carries the sphere and its lamp round the origin        (update)
+//	eyeSystem    places the camera on its orbit                          (update)
+//	hudSystem    counts the world and prints it                          (update)
 //
 // # The reference pose
 //
@@ -28,35 +40,35 @@
 //
 // # What only eyes can judge
 //
-// The sphere carries a smooth light-to-dark terminator and the spinning box's
-// top face stays brighter than its sides all the way round, while the wire box
-// and the three axis lines hold their exact colours whichever way they face.
+// Every shape holds the exact colour it was given whichever way it faces: a
+// debug shape is drawn unlit, its Color straight out of the fragment stage, so
+// the sun, the ambient and the two lights reach none of them. A shape that
+// darkens as it turns is one wrongly routed through the lit path.
 //
-// One sentence, three failures: a dead sun or a dead ambient flattens the
-// terminator, a wrong normal matrix makes the box's shading swim or pop as it
-// turns, and a self-lit shape wrongly routed through the lit path changes
-// brightness with its facing instead of staying the colour it was given.
+// The spinning box turns about a tilted axis without its size or place
+// drifting, which is the TRS order; the wire box's corners close, because each
+// edge runs half a width past the corner it meets; and the three axis lines
+// meet at the origin in their own colours, red along X, green along Y, blue
+// along Z. The ground is one-sided and faces up, so orbiting below it shows
+// the shapes from underneath with no floor in the way.
 //
-// A warm pool of light travels the ground with the orbiting sphere and fades
-// to nothing before it reaches the resting box, and a cool cone sits on the
-// resting box with a soft edge on the ground around it. A pool that reaches
-// everywhere is a Range that did not pack; a cone with a hard edge is a cone
-// whose inner and outer angles collapsed together.
+// The warm lamp riding above the orbiting sphere and the cool spot over the
+// resting box are real Light Entities in the frame, so a Mesh or a Model
+// added beside the shapes is lit by them; the debug shapes themselves are not.
 package main
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/dvoyni/cog-examples/internal/permanentfs"
 	"github.com/dvoyni/cog/bundles/canvas"
 	"github.com/dvoyni/cog/bundles/canvas/canvasplugin"
+	"github.com/dvoyni/cog/bundles/ecs"
+	"github.com/dvoyni/cog/bundles/ecs/ecsplugin"
 	"github.com/dvoyni/cog/bundles/input"
 	"github.com/dvoyni/cog/bundles/input/inputplugin"
-	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/model/modelplugin"
 	"github.com/dvoyni/cog/bundles/scene"
 	"github.com/dvoyni/cog/bundles/scene/sceneplugin"
@@ -102,8 +114,8 @@ func main() {
 	}
 	permanentfs.Configure(config)
 
-	// The demo plugin is last because it records into the queues the plugins
-	// before it declare.
+	// The demo plugin is last because its Systems read the Components and
+	// resources the plugins before it register.
 	plugins := []kernel.Plugin{
 		storageplugin.New(),
 		permanentfs.New(), // storage's PermanentFS Adapter for this platform
@@ -111,8 +123,9 @@ func main() {
 		appplugin.New(),
 		gfxplugin.New(),
 		canvasplugin.New(),
-		modelplugin.New(), sceneplugin.New(),
+		modelplugin.New(),
 		gogpuplugin.New(),
+		ecsplugin.New(), sceneplugin.New(),
 		New(),
 	}
 
@@ -136,113 +149,58 @@ func main() {
 // Name is the demo plugin's name.
 const Name kernel.PluginName = "box"
 
-type windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
-type updateEventHandler kernel.Subscription[app.UpdateEvent]
+// Box is the demo's gameplay plugin: it registers the demo's Components, its
+// State and its Systems. Everything it draws is an Entity, and the plugin
+// itself holds nothing.
+type Box struct{}
 
-// The demo's fixed timestep. Demo time is accumulated fixed steps, never wall
-// clock, so frame N is reproducible and a test drives N steps directly: the
-// update event's Dt is deliberately ignored.
-const (
-	stepsPerSecond = 60
-	fixedStep      = 1.0 / float32(stepsPerSecond)
-)
-
-// The documented starting pose, where the reference screenshot is taken.
-const (
-	orbitRadius    = 5.6
-	startAzimuth   = 0.9
-	startElevation = 0.38
-	orbitSpeed     = 1.2 // radians per second held down
-	fieldOfViewY   = 1.0472
-)
-
-// orbitTarget is the point the camera looks at and orbits, a little above the
-// ground plane so the plane fills the lower half of the frame.
-var orbitTarget = m.Vec3{Y: 0.5}
-
-// Box is the demo's gameplay plugin: it records the whole frame and owns the
-// step counter, the orbit and the numbers the HUD prints.
-type Box struct {
-	step      int
-	paused    bool
-	azimuth   float32
-	elevation float32
-	stats     stats
-	rate      rate
-}
-
-// rate is the HUD's frames-per-second meter, and the demo's only wall clock.
-//
-// It cannot come from the update event's Dt: that is app's *fixed*
-// timestep, so reading it back would report the rate the demo was asked to run
-// at rather than the rate it managed. Nor can it come from the step counter,
-// which is the whole point of accumulated fixed steps - step 120 is step 120
-// whether it took two seconds or twenty. So this is measured against
-// time.Now(), and it is deliberately the only thing in the demo that is: it
-// feeds the HUD and nothing else, and no assertion reads it.
-// It counts frames over a window rather than averaging 1/interval per frame.
-// A per-frame average is dominated by its own worst sample: two ticks a
-// microsecond apart during startup are a reading of a million, and an
-// exponential average carries a thousandth of that for a hundred frames
-// afterwards, so the HUD spends its first seconds reporting a number that never
-// happened. A count over a window cannot do that - a spike is one frame in the
-// count, whatever its interval was.
-type rate struct {
-	window    time.Time
-	frames    int
-	perSecond float32
-}
-
-// ratePeriod is how long the meter counts before republishing. Long enough that
-// the number holds still to be read, short enough that a stall shows up while
-// the human is still looking at what caused it.
-const ratePeriod = 250 * time.Millisecond
-
-// measure counts one update tick, which is one recorded frame here, and
-// republishes the rate once the window is full.
-func (r *rate) measure(now time.Time) {
-	if r.window.IsZero() {
-		r.window = now
-		return
-	}
-	r.frames++
-	if elapsed := now.Sub(r.window); elapsed >= ratePeriod {
-		r.perSecond = float32(float64(r.frames) / elapsed.Seconds())
-		r.frames, r.window = 0, now
-	}
-}
-
-// stats is what the previous frame's flush decided, read back out of the scene
-// queue at the top of each update and printed by the HUD. It is the previous
-// frame's because Passes publishes the frame the last flush consumed, and the
-// flush runs at the end of the update tick this handler is part of.
-type stats struct {
-	passes    int
-	ops       int
-	recorded  int
-	culled    int
-	instances int
-	lights    int
-	batches   int
-	// sphereVisible is whether the published frustum contains the orbiting
-	// sphere's world bounds, computed here from the pass's own m.Frustum
-	// rather than from the counts, so the HUD says which shape survived and
-	// not only how many did.
-	sphereVisible bool
-}
-
-// New builds the demo plugin at its documented starting pose.
-func New() *Box { return &Box{azimuth: startAzimuth, elevation: startElevation} }
+// New builds the demo plugin. The documented starting pose is NewState's.
+func New() *Box { return &Box{} }
 
 func (p *Box) Name() kernel.PluginName { return Name }
 
 func (p *Box) Dependencies() []kernel.PluginName {
-	return []kernel.PluginName{canvas.Name, gfx.Name, input.Name, scene.Name, storage.Name}
+	return []kernel.PluginName{canvas.Name, ecs.Name, gfx.Name, input.Name, scene.Name, storage.Name}
 }
 
+type (
+	setupOnInit   kernel.Subscription[app.InitEvent]
+	clockOnUpdate kernel.Subscription[app.UpdateEvent]
+	spinOnUpdate  kernel.Subscription[app.UpdateEvent]
+	orbitOnUpdate kernel.Subscription[app.UpdateEvent]
+	eyeOnUpdate   kernel.Subscription[app.UpdateEvent]
+	hudOnUpdate   kernel.Subscription[app.UpdateEvent]
+
+	windowSizeChangeEventHandler kernel.Subscription[app.WindowSizeChangeEvent]
+)
+
 func (p *Box) Register(registrar *kernel.Registrar, _ any) error {
+	ecs.RegisterComponent[Spin](registrar, 1)
+	ecs.RegisterComponent[Orbit](registrar, 2)
+	registrar.InitResource(NewState())
+	registrar.InitResource(&Meter{})
+
+	registrar.Subscribe[setupOnInit](ecs.ToHandler[app.InitEvent](registrar, setupSystem))
+	// The clock runs first, so every System after it places the world at the
+	// step it has just taken, and a held arrow moves the camera on the very
+	// frame it is pressed.
+	registrar.Subscribe[clockOnUpdate](ecs.ToHandler[app.UpdateEvent](registrar, clockSystem)).First()
+	// Every System that moves an Entity runs Before scene.RecordOnUpdate,
+	// so a step draws the world as that step left it rather than whichever side
+	// of the tie the scheduler happened to break.
+	registrar.Subscribe[spinOnUpdate](ecs.ToHandler[app.UpdateEvent](registrar, spinSystem)).
+		After[clockOnUpdate]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[orbitOnUpdate](ecs.ToHandler[app.UpdateEvent](registrar, orbitSystem)).
+		After[clockOnUpdate]().Before[scene.RecordOnUpdate]()
+	registrar.Subscribe[eyeOnUpdate](ecs.ToHandler[app.UpdateEvent](registrar, eyeSystem)).
+		After[clockOnUpdate]().Before[scene.RecordOnUpdate]()
+	// The HUD asks whether the sphere is in the camera's frustum, so it runs
+	// after both the orbit that moved the sphere and the eye that moved the
+	// camera.
+	registrar.Subscribe[hudOnUpdate](ecs.ToHandler[app.UpdateEvent](registrar, hudSystem)).
+		After[orbitOnUpdate]().After[eyeOnUpdate]()
+
 	registrar.Subscribe[windowSizeChangeEventHandler](setViewport)
-	registrar.Subscribe[updateEventHandler](p.draw)
 	return nil
 }
 
@@ -310,174 +268,15 @@ const (
 )
 
 // restPosition is where the resting box stands, and the point the spot light
-// aims at.
+// hangs over.
 var restPosition = m.Vec3{X: -3.4, Y: 0.5, Z: -2.1}
 
-// draw records the whole frame: the camera, the eight debug shapes, the two lights, and the HUD.
-func (p *Box) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
-	var sceneQueue kernel.Write[*scene.OpQueue]
-	var canvasQueue kernel.Write[*canvas.OpQueue]
-	var inputState kernel.Read[*input.State]
-	return func(access kernel.ResourceAccess) {
-			sceneQueue = access.GetWrite[*scene.OpQueue]()
-			canvasQueue = access.GetWrite[*canvas.OpQueue]()
-			inputState = access.GetRead[*input.State]()
-		}, func(_ kernel.Kernel, _ app.UpdateEvent) {
-			q := sceneQueue.Get()
-			p.rate.measure(time.Now())
-			p.readStats(q)
-			p.advance(inputState.Get())
-			p.record(q)
-			p.hud(canvasQueue.Get())
-		}
-}
+// DrawnShapes is how many debug shapes the demo spawns, and so how many draws
+// its camera makes at the documented pose, where nothing is culled: the plane,
+// two boxes, the sphere, the three axis lines and the wire box, whose twelve
+// edges are one mesh and so one draw.
+const DrawnShapes = 1 + 2 + 1 + 3 + 1
 
-// advance steps the demo's own clock and applies the orbit. Input is read
-// before the step so a held arrow moves the camera on the very frame it is
-// pressed, and pausing stops the spin without freezing the orbit: a paused
-// frame is still one a human wants to look around.
-func (p *Box) advance(state *input.State) {
-	if state != nil {
-		if state.JustPressed(input.KeySpace) {
-			p.paused = !p.paused
-		}
-		step := orbitSpeed * fixedStep
-		if state.Pressed(input.KeyLeft) {
-			p.azimuth -= step
-		}
-		if state.Pressed(input.KeyRight) {
-			p.azimuth += step
-		}
-		if state.Pressed(input.KeyUp) {
-			p.elevation = m.Clamp(p.elevation+step, -1.4, 1.4)
-		}
-		if state.Pressed(input.KeyDown) {
-			p.elevation = m.Clamp(p.elevation-step, -1.4, 1.4)
-		}
-		if state.JustPressed(input.KeyR) {
-			p.azimuth, p.elevation, p.step = startAzimuth, startElevation, 0
-		}
-	}
-	if !p.paused {
-		p.step++
-	}
-}
-
-// time is the demo's clock: accumulated fixed steps, so step N is the same
-// frame on every machine and a test can drive N steps directly.
-func (p *Box) time() float32 { return float32(p.step) * fixedStep }
-
-// eye is the camera's position on its orbit.
-func (p *Box) eye() m.Vec3 {
-	cosElevation := float32(math.Cos(float64(p.elevation)))
-	return orbitTarget.Add(m.Vec3{
-		X: orbitRadius * cosElevation * float32(math.Sin(float64(p.azimuth))),
-		Y: orbitRadius * float32(math.Sin(float64(p.elevation))),
-		Z: orbitRadius * cosElevation * float32(math.Cos(float64(p.azimuth))),
-	})
-}
-
-// spinCenter is where the orbiting sphere stands at the current step.
-func (p *Box) spinCenter() m.Vec3 {
-	angle := float64(p.time())
-	return m.Vec3{
-		X: spinRadius * float32(math.Cos(angle)),
-		Y: sphereRadius,
-		Z: spinRadius * float32(math.Sin(angle)),
-	}
-}
-
-// record records the frame's camera, its eight draw calls and its two lights.
-func (p *Box) record(q *scene.OpQueue) {
-	q.Camera(CameraMain, scene.CameraDescr{
-		Transform: m.LookAt(p.eye(), orbitTarget, m.Vec3{Y: 1}),
-		FovY:      fieldOfViewY,
-		Near:      0.1,
-		Far:       100,
-		// Everything else is left at its zero value on purpose, and every zero
-		// is the default: Projection is Perspective, CullMask is LayersAll,
-		// SunIntensity and AmbientIntensity are 1, and Passes is empty, which
-		// emits one implicit forward pass at the camera's own id.
-		SunDirection:  m.Vec3{X: -0.45, Y: -1, Z: -0.35},
-		SunColor:      m.NewColorSrgb(1, 0.98, 0.94, 1),
-		AmbientSky:    m.NewColorSrgb(0.18, 0.22, 0.30, 1),
-		AmbientGround: m.NewColorSrgb(0.10, 0.09, 0.08, 1),
-	})
-
-	// Lit shapes. The ground is a Plane, which is two-sided, so orbiting under
-	// it shows the floor rather than nothing.
-	q.Plane(0, m.Vec3{}, m.Vec2{X: groundSide, Y: groundSide}, groundColor)
-
-	// The spinning box is the TRS case: a position, a rotation and a scalar
-	// Scale, all three at once.
-	q.Box(0, m.At(0, 0.5, 0).
-		WithRotation(m.QuatAxisAngle(m.Vec3{X: 0.3, Y: 1, Z: 0}.Normalize(), p.time())).
-		WithScale(0.9), spinColor)
-
-	// The resting box is the zero-value case: an unrotated, unscaled transform
-	// whose Scale field is never written, and a zero Scale means 1.
-	q.Box(0, m.At(restPosition.X, restPosition.Y, restPosition.Z), restColor)
-
-	q.Sphere(0, p.spinCenter(), sphereRadius, sphereColor)
-
-	// A warm lamp rides above the orbiting sphere, so its pool on the ground
-	// moves, and a cool spot hangs over the resting box pointing straight
-	// down. Neither writes Kind: PointLight and SpotLight set it.
-	q.PointLight(0, model.LightDescr{
-		Position:  p.spinCenter().Add(m.Vec3{Y: lampHeight}),
-		Color:     lampColor,
-		Intensity: lampIntensity,
-		Range:     lampRange,
-	})
-	q.SpotLight(0, model.LightDescr{
-		Position:  restPosition.Add(m.Vec3{Y: coneHeight}),
-		Direction: m.Vec3{Y: -1},
-		Color:     coneColor,
-		Intensity: coneIntensity,
-		Range:     coneRange,
-		InnerCone: coneInner,
-		OuterCone: coneOuter,
-	})
-
-	// Self-lit shapes: base colour black, the given colour as emissive, so they
-	// keep their exact colour in a frame with no sun at all.
-	q.WireBox(0, m.Vec3{Y: 0.5}, m.Vec3{X: 1.6, Y: 1.6, Z: 1.6}, wireThickness, wireColor)
-	q.Line3D(0, m.Vec3{}, m.Vec3{X: axisLength}, axisThickness, axisXColor)
-	q.Line3D(0, m.Vec3{}, m.Vec3{Y: axisLength}, axisThickness, axisYColor)
-	q.Line3D(0, m.Vec3{}, m.Vec3{Z: axisLength}, axisThickness, axisZColor)
-}
-
-// RecordedDraws is how many draws the frame's eight calls flush to: the plane,
-// two boxes and the sphere are one each, the three axis lines are one each, and
-// the wire box is twelve, because each edge is culled on its own.
-const RecordedDraws = 1 + 2 + 1 + 3 + 12
-
-// RecordedOps is how many operations Ops reports: the camera registration, the
-// eight shape calls, whatever they flush to, and the two lights.
-const RecordedOps = 1 + 8 + RecordedLights
-
-// RecordedLights is how many punctual lights the frame records: the lamp and
-// the cone.
-const RecordedLights = 2
-
-// readStats reads the previous frame's flush result back out of the queue.
-// Passes publishes the frame the last flush consumed, so these are the numbers
-// for the frame before this one - which is what a HUD can print without
-// stalling the pipeline to ask about the frame it is still recording.
-func (p *Box) readStats(q *scene.OpQueue) {
-	views := q.Passes(nil)
-	p.stats = stats{passes: len(views), ops: len(q.Ops(nil))}
-	for i := range views {
-		p.stats.recorded += views[i].Recorded
-		p.stats.culled += views[i].Culled
-		p.stats.instances += views[i].Instances
-		p.stats.lights += views[i].Lights
-		p.stats.batches += len(views[i].Batches)
-	}
-	if len(views) > 0 {
-		// m.Frustum.ContainsSphere against the pass's own published frustum:
-		// the point of publishing it is that a caller can ask about one shape
-		// rather than only read a count.
-		p.stats.sphereVisible = views[0].Frustum.ContainsSphere(p.spinCenter(), sphereRadius)
-	}
-}
+// SpawnedLights is how many punctual lights the demo spawns: the lamp and the
+// cone.
+const SpawnedLights = 2

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/dvoyni/cog/bundles/model"
-	"github.com/dvoyni/cog/bundles/scene"
 )
 
 // The vendored files the morph path is judged against.
@@ -22,7 +21,7 @@ const (
 )
 
 // morphTargetsOf reads one resident model's flattened target list.
-func morphTargetsOf(t *testing.T, path string, draw scene.ModelDraw) ([]string, int) {
+func morphTargetsOf(t *testing.T, path string, draw modelDraw) ([]string, int) {
 	t.Helper()
 	e := drawing(t, path, draw)
 	var names []string
@@ -42,7 +41,7 @@ func morphTargetsOf(t *testing.T, path string, draw scene.ModelDraw) ([]string, 
 // reserves for them, which is a convention rather than a schema - so the one
 // thing worth pinning is a file an exporter actually wrote.
 func TestMorphStressTestDeclaresItsEightNamedShapes(t *testing.T) {
-	names, bytes := morphTargetsOf(t, morphStressAsset, scene.ModelDraw{})
+	names, bytes := morphTargetsOf(t, morphStressAsset, modelDraw{})
 	want := []string{"Key 1", "Key 2", "Key 3", "Key 4", "Key 5", "Key 6", "Key 7", "Key 8"}
 	if len(names) != len(want) {
 		t.Fatalf("MorphTargets = %v, want the file's eight shapes", names)
@@ -81,8 +80,8 @@ func TestMorphStressTestDeclaresItsEightNamedShapes(t *testing.T) {
 // a tangent and carries tangent deltas, the quantized one authors neither. A
 // mask taken from the targets alone would give both the same stride.
 func TestTheMorphCubeAndItsQuantizedTwinDifferByTheirAuthoredTangent(t *testing.T) {
-	plain, plainBytes := morphTargetsOf(t, morphCubeAsset, scene.ModelDraw{})
-	quantized, quantizedBytes := morphTargetsOf(t, morphCubeQuantized, scene.ModelDraw{})
+	plain, plainBytes := morphTargetsOf(t, morphCubeAsset, modelDraw{})
+	quantized, quantizedBytes := morphTargetsOf(t, morphCubeQuantized, modelDraw{})
 	// Neither file names its shapes, and an unnamed target is an empty string
 	// rather than a gap: the list is indexed by slot, not searched.
 	if len(plain) != 2 || len(quantized) != 2 {
@@ -110,8 +109,8 @@ func TestTheMorphCubeAndItsQuantizedTwinDifferByTheirAuthoredTangent(t *testing.
 // They go through the same decode every attribute does, so the file draws
 // rather than failing on a component type the core specification forbids there.
 func TestTheQuantizedMorphCubeLoadsAndDraws(t *testing.T) {
-	e := drawing(t, morphCubeQuantized, scene.ModelDraw{})
-	if batches(t, e) == 0 {
+	e := drawing(t, morphCubeQuantized, modelDraw{})
+	if drawn(t, e) == 0 {
 		t.Error("the quantized morph cube drew nothing")
 	}
 	if errs := e.Errors(); len(errs) != 0 {
@@ -122,7 +121,7 @@ func TestTheQuantizedMorphCubeLoadsAndDraws(t *testing.T) {
 // A weights channel is a clip like any other: it produces no joint, so the
 // model bakes an empty pose buffer, and it still plays by name.
 func TestMorphStressTestPlaysItsWeightsOnlyClips(t *testing.T) {
-	e := drawing(t, morphStressAsset, scene.ModelDraw{})
+	e := drawing(t, morphStressAsset, modelDraw{})
 	clips := clipsOf(t, e, morphStressAsset)
 	names := map[string]float32{}
 	for _, clip := range clips {
@@ -148,36 +147,14 @@ func TestMorphStressTestPlaysItsWeightsOnlyClips(t *testing.T) {
 	}
 	// Playing one still draws both primitives as one batch each: a clip changes
 	// the weights an instance carries, not how many draws there are.
-	playing := drawing(t, morphStressAsset, scene.ModelDraw{
+	playing := drawing(t, morphStressAsset, modelDraw{
 		Plays: []model.ClipPlay{{Clip: "TheWave", Time: 0.9, Loop: true, Weight: 1}},
 	})
-	if got, want := batches(t, playing), batches(t, e); got != want {
-		t.Errorf("a playing file drew %d batches and a still one %d; a clip is not a draw",
+	if got, want := drawn(t, playing), drawn(t, e); got != want {
+		t.Errorf("a playing file drew %d primitives and a still one %d; a clip is not a draw",
 			got, want)
 	}
 	if errs := playing.Errors(); len(errs) != 0 {
 		t.Errorf("playing one of the file's own clips reported %v", errs)
-	}
-}
-
-// MorphWeights is positional over the flattened list, so an array that outlives
-// an edit to the file is the failure worth naming. The tail is ignored, the
-// model still draws, and it reports once rather than once a frame.
-func TestAnOverLongMorphWeightsReportsOnceAndStillDraws(t *testing.T) {
-	weights := make([]float32, 12)
-	weights[0] = 1
-	e := drawing(t, morphStressAsset, scene.ModelDraw{MorphWeights: weights})
-	e.Steps(3)
-	over := 0
-	for _, err := range e.Errors() {
-		if _, ok := err.(model.ErrModelMorphWeightsOverLength); ok {
-			over++
-		}
-	}
-	if over != 1 {
-		t.Errorf("reported %d over-length weight arrays, want one: %v", over, e.Errors())
-	}
-	if batches(t, e) == 0 {
-		t.Error("the model vanished; an over-long array costs the tail, not the model")
 	}
 }

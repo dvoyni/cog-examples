@@ -3,11 +3,13 @@ package main
 import (
 	"github.com/dvoyni/cog/bundles/model"
 	"github.com/dvoyni/cog/bundles/scene"
+	"github.com/dvoyni/cog/libs/m"
 	"github.com/dvoyni/cog/slots/gfx"
 )
 
-// The demo's own material: a whole gfx.MaterialDescr with inline WGSL, which is
-// what a custom vertex layout obliges a caller to supply.
+// The demo's own material: a scene.Material of one forward tag, inline WGSL and
+// the state it draws with, which is what a custom vertex layout obliges a
+// caller to supply.
 //
 // # What it includes
 //
@@ -29,15 +31,14 @@ import (
 //
 // Every binding a material declares has to be bound on every draw that uses it,
 // or gfx drops the draw and reports gfx.ErrStorageBufferUnsupplied. The renderer
-// binds three parameters on every draw: sceneFrame, sceneInstances and
-// scenePbrMaterial. The prelude brings sceneFrame; this material declares
-// sceneInstances itself, because the instance record is not published and the
-// vertex stage needs the world rows. It declares no parameter and no storage
-// buffer of its own - the bundled shader already holds all eight the browser
-// floor allows - so every colour the demo shows rides in its vertices.
-//
-// scenePbrMaterial is bound but useless here: a mesh draw's record is the
-// bundled PBR's white paint, and a MeshDraw carries no colour to change it with.
+// offers the same bindings to every static draw - sceneFrame, sceneInstances,
+// sceneAnim and sceneMeshes, and the material's own numbers and textures - and
+// gfx binds only the ones a shader declares. The prelude brings sceneFrame;
+// this material declares sceneInstances itself, because the instance record is
+// not published and the vertex stage needs the world rows. It declares nothing
+// else - no uniform block, no texture, no storage buffer of its own - so every
+// colour the demo shows rides in its vertices, and a Params colour on one of
+// its Entities would have nowhere to land.
 //
 // The group and binding numbers of sceneInstances are scene's own, because gfx
 // binds by reflected name and scene binds that name at 0/1.
@@ -53,10 +54,10 @@ const shaderSource = "//#include " + model.PbrPath + `
 
 // Scene's 64-byte instance record. world0..world2 are the *rows* of the 4x3
 // world matrix, translation in w, so a row-wise dot is the matrix product.
-// animOffset and flags are read by the bundled shader's skinning path and not
-// by this one: every buffer-built draw carries SCENE_NOSKIN and animates
-// nothing, so there is no pose to fetch and the fields are declared only to
-// keep the record's size right.
+// The last four words are read by the bundled shader's animation and UV paths
+// and not by this one: a Mesh draws the static variant and animates nothing,
+// and this vertex carries no UVs to decode, so they are declared only to keep
+// the record's size right.
 struct ProceduralInstance {
     world0: vec4<f32>,
     world1: vec4<f32>,
@@ -101,7 +102,7 @@ fn vs_main(vertex: VertexIn, @builtin(instance_index) index: u32) -> VertexOut {
     var out: VertexOut;
     out.clipPosition = sceneFrame.viewProjection * vec4<f32>(world, 1.0);
     out.world = world;
-    // Every instance this demo records scales uniformly, so the basis is its
+    // Every instance this demo draws scales uniformly, so the basis is its
     // own normal matrix and no inverse-transpose is needed. A demo that
     // squashed something through a non-uniform Scale would have to take one,
     // exactly as the bundled shader does for SCENE_NONUNIFORM.
@@ -129,8 +130,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) frontFacing: bool) -> @location
 `
 
 // materialShader is the demo's shader and materialState the state it draws
-// with, apart so that scene's Material and ecsscene's MaterialTag are built from
-// the same two values.
+// with: the two halves of the one MaterialTag below.
 //
 // Two-sided because half the demo is surfaces with no inside - a rebuilt band
 // and an undulating sheet - and back-face culling on those means holes that
@@ -145,15 +145,14 @@ func materialState() gfx.MaterialState {
 	return state
 }
 
-// newMaterial builds the demo's scene material: one forward entry, no
-// parameters, and two-sided.
+// sharedMaterial is the Material every caller-built Mesh carries: one tag,
+// whose zero Tag is the forward pass, and no params.
 //
-// It is a plain value with no GPU handle in it, so the demo builds it once at
-// construction rather than waiting for a backend, and passes the same slice on
-// every draw: scene keys a material by content, so two draws naming this one
-// intern to a single id and sort together.
-func newMaterial() scene.Material {
-	return scene.Material{{
-		Descr: gfx.MaterialWithState(materialShader(), materialState()),
-	}}
-}
+// It is a plain value with no GPU handle in it, so it is built once rather than
+// waiting for a backend, and every Entity holds the same value: scene keys a
+// Material by content, so the ridge, the ribbon and the beacon resolve to one
+// material and are told apart only by the mesh each draws.
+var sharedMaterial = scene.Material{Tags: m.NewList(scene.MaterialTag{
+	Shader: materialShader(),
+	State:  materialState(),
+})}

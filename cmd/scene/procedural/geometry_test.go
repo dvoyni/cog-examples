@@ -57,7 +57,7 @@ func TestTheRidgeIsAnIndexedGridWithUnitNormals(t *testing.T) {
 }
 
 // The ridge spans the unit square in X and Z and stays inside ridgeBounds,
-// which is the sphere the draw hands the culler: a custom layout gets no baked
+// which is the sphere its Mesh hands the culler: a custom layout gets no baked
 // sphere of its own, so a ridge that outgrew this radius would be culled while
 // still on screen.
 func TestTheRidgeStaysInsideTheBoundsItDeclares(t *testing.T) {
@@ -136,7 +136,7 @@ func TestTheRibbonIsANonIndexedClosedStrip(t *testing.T) {
 
 // The beacon is the indexed case at its smallest: six vertices carrying eight
 // faces, so twenty-four indices address six positions. Its radius is one, which
-// is the sphere its draw declares and its transform scales.
+// is the sphere its Mesh declares and its transform scales.
 func TestTheBeaconIsAUnitOctahedron(t *testing.T) {
 	vertices, indices := beaconGeometry(m.Vec3{X: 1})
 	if len(vertices) != 6 {
@@ -174,5 +174,55 @@ func TestEachBeaconGenerationIsADifferentColour(t *testing.T) {
 	}
 	if first, wrapped := beaconTint(0), beaconTint(len(beaconTints)); first != wrapped {
 		t.Errorf("generation %d is %v, want it to wrap back to %v", len(beaconTints), wrapped, first)
+	}
+}
+
+// The ground faces up from above and down from below: two quads, each wound
+// counter-clockwise seen from the side its normal points to, so the bundled
+// PBR's back-face cull keeps exactly the one facing the camera wherever the
+// orbit puts it.
+func TestTheGroundHasAFaceForEitherSide(t *testing.T) {
+	vertices, indices := groundGeometry(groundSide)
+	if len(vertices) != 8 || len(indices) != 12 {
+		t.Fatalf("the ground has %d vertices and %d indices, want 8 and 12", len(vertices), len(indices))
+	}
+	for i := 0; i < len(indices); i += 3 {
+		a, b, c := vertices[indices[i]], vertices[indices[i+1]], vertices[indices[i+2]]
+		facing := b.Position.Sub(a.Position).Cross(c.Position.Sub(a.Position))
+		if facing.Dot(a.Normal) <= 0 {
+			t.Errorf("ground triangle %d winds against its normal %v", i/3, a.Normal)
+		}
+	}
+	for i, vertex := range vertices {
+		if x, z := vertex.Position.X, vertex.Position.Z; max(x, -x, z, -z) != groundSide/2 {
+			t.Errorf("ground vertex %d is at %v, want a corner of the %v square", i, vertex.Position, groundSide)
+		}
+	}
+}
+
+// The reference sphere is the unit sphere, wound outward and smooth: every
+// vertex one from the origin with its normal equal to its position, and every
+// triangle facing away from the centre. It is drawn at referenceRadius, the
+// beacon's own world radius, by its transform's scale.
+func TestTheReferenceSphereIsAnOutwardUnitSphere(t *testing.T) {
+	vertices, indices := sphereGeometry()
+	if want := sphereSegments * (2*sphereRings - 2) * 3; len(indices) != want {
+		t.Fatalf("the sphere has %d indices, want %d", len(indices), want)
+	}
+	for i, vertex := range vertices {
+		if radius := vertex.Position.Length(); math.Abs(float64(radius-1)) > 1e-5 {
+			t.Errorf("sphere vertex %d is %v from the origin, want 1", i, radius)
+		}
+		if vertex.Normal != vertex.Position {
+			t.Errorf("sphere vertex %d has normal %v at %v, want them equal", i, vertex.Normal, vertex.Position)
+		}
+	}
+	for i := 0; i < len(indices); i += 3 {
+		a := vertices[indices[i]].Position
+		b := vertices[indices[i+1]].Position
+		c := vertices[indices[i+2]].Position
+		if outward := b.Sub(a).Cross(c.Sub(a)).Dot(a.Add(b).Add(c)); outward <= 0 {
+			t.Errorf("sphere triangle %d winds inward", i/3)
+		}
 	}
 }

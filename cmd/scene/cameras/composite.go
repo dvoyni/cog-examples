@@ -39,7 +39,7 @@ import (
 //
 // So the composite declares a shader that samples and returns, with no ramp
 // and no clip test. It declares two of the three uniforms canvas binds and
-// neither of the two it does not read: gfx resolves a recorder's parameters by
+// neither of the two it does not read: gfx resolves a draw's parameters by
 // name against the reflected layout and drops the ones the shader never
 // declared, so canvasClip and keyColor cost nothing to omit.
 const compositeShader = `

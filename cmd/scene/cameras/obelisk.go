@@ -12,19 +12,20 @@ import (
 //
 // # Why it takes a whole mesh and two shaders
 //
-// Tag participation is purely a material property. A draw gets no say in which
-// passes it appears in - layers give per-camera exclusion, the pass list gives
-// per-pass control, and a material lacking an entry for a pass's tag is
+// Tag participation is purely a material property. An Entity gets no say in
+// which passes it appears in - layers give per-camera exclusion, the pass list
+// gives per-pass control, and a material lacking an entry for a pass's tag is
 // skipped in that pass. So "what does a depth pass draw" is answered entirely
-// by which materials carry a depth entry, and the bundled PBR carries only
-// forward. That is not a gap: every debug shape and every glTF model in this
-// frame is bundled-PBR, so the depth pass draws exactly one thing, and that one
-// number is the whole demonstration.
+// by which Material Components carry a depth tag, and a draw with no Material
+// - every glTF model here - takes the default scene shader, which serves
+// forward alone; the debug shapes' own material does the same. That is not a
+// gap: the depth pass draws exactly one thing, and that one number is the whole
+// demonstration.
 //
-// The bundled PBR is also unreachable as an entry - scene does not export it -
-// so a caller wanting two tags supplies both, which is the honest shape anyway:
-// a tag entry is a whole gfx.MaterialDescr rather than a shader, because
-// pipeline state is strictly per material and the depth entry wants different
+// A Material tag names a shader and a state rather than a finished material,
+// and each is laid over what the mesh's "file" provides - for a Mesh, the
+// bundled PBR's ingredients. So a caller wanting two tags writes two entries,
+// each with the pipeline state it wants, and the depth entry wants different
 // state from the forward one.
 //
 // # The two entries, and why their state differs
@@ -42,50 +43,39 @@ import (
 //
 // # What the shaders declare
 //
-// Scene binds three parameters on every draw whatever the material: sceneFrame,
-// sceneInstances and scenePbrMaterial. Those are the whole contract, and a
-// declared binding that nothing binds fails CreateBindGroup, whose error is
-// swallowed - the frame's entire command buffer vanishes with nothing reported.
-// So each shader declares only the prefix it reads and no parameters of its
-// own. The depth shader declares no fragment stage and so binds nothing beyond
-// the two storage buffers its vertex stage reads.
+// The frame block is model's own, included by its published storage path, so
+// it cannot drift from what scene packs. The instance record is not published,
+// so its 64 bytes are spelled out here. Everything else scene would bind - the
+// bundled PBR's textures, samplers and numbers - is matched by name against
+// what a shader declares, and a shader declaring none of it simply never reads
+// it, which is what lets these two replace the bundled PBR rather than extend
+// it.
 //
 // The group and binding numbers are these shaders' own. gfx binds by reflected
 // name, never by slot.
 
-// obeliskShared is the declarations both shaders need: scene's frame block and
-// its instance record. It is a string constant concatenated into each shader
-// rather than shared through an include, because these declarations are this
-// demo's own and scene publishes no source for them. What scene does publish is
-// included by absolute storage name - see VertexDecodePath below.
-const obeliskShared = `
-struct SceneFrame {
-    view: mat4x4<f32>,
-    projection: mat4x4<f32>,
-    viewProjection: mat4x4<f32>,
-    cameraPosition: vec4<f32>,
-    sunDirection: vec4<f32>,
-    sunColor: vec4<f32>,
-    ambientSky: vec4<f32>,
-    ambientGround: vec4<f32>,
-};
-
-// Scene's 64-byte instance record. world0..world2 are the rows of the 4x3 world
-// matrix, translation in w, so a row-wise dot is the matrix product.
+// obeliskInstance is scene's 64-byte instance record, which both shaders read.
+// It is a string constant concatenated into each shader rather than shared
+// through an include, because model publishes no source for it. What model
+// does publish - the frame block and the vertex decode - is included by
+// absolute storage name.
+const obeliskInstance = `
+// world0..world2 are the rows of the 4x3 world matrix, translation in w, so a
+// row-wise dot is the matrix product.
 struct SceneInstance {
     world0: vec4<f32>,
     world1: vec4<f32>,
     world2: vec4<f32>,
     animOffset: u32,
     flags: u32,
-    spare: vec2<u32>,
+    joint: u32,
+    mesh: u32,
 };
 
 struct SceneInstances {
     data: array<SceneInstance>,
 };
 
-@group(0) @binding(0) var<storage, read> sceneFrame: SceneFrame;
 @group(0) @binding(1) var<storage, read> sceneInstances: SceneInstances;
 
 fn worldOf(instance: SceneInstance, local: vec3<f32>) -> vec3<f32> {
@@ -101,19 +91,18 @@ fn worldOf(instance: SceneInstance, local: vec3<f32>) -> vec3<f32> {
 // obeliskForwardShader shades the obelisk in a colour pass: Lambert plus
 // scene's hemispheric ambient, which is the bundled PBR's own diffuse term for
 // a rough dielectric with the specular lobe left off. The ground beside it
-// takes the bundled PBR, and two materials reading the same sun out of the same
-// sceneFrame should agree about where it is.
+// takes a flat colour, and the model the bundled PBR; two materials reading
+// the same sun out of the same sceneFrame should agree about where it is.
 //
-// It includes scene's published vertex decode, because the standard layout
+// It includes model's published vertex decode, because the standard layout
 // stores the normal as oct32 in four bytes: @location(1) is a vec2<f32> and
-// sceneDecodeNormal makes a direction of it. Declaring the vec3<f32> this used
-// to be is refused at pipeline time - gfx requires a declared input's type to
-// equal what the layout supplies - which is the only reason it is not a silent
-// mis-shade, since WebGPU would have filled the third component with zero and
-// lit the obelisk from a direction lying in the XY plane.
-const obeliskForwardShader = "//#include " + model.VertexDecodePath + obeliskShared + `
-const PI: f32 = 3.14159265359;
-
+// sceneDecodeNormal makes a direction of it. Declaring a vec3<f32> is refused
+// at pipeline time - gfx requires a declared input's type to equal what the
+// layout supplies - which is the only reason it is not a silent mis-shade,
+// since WebGPU would have filled the third component with zero and lit the
+// obelisk from a direction lying in the XY plane.
+const obeliskForwardShader = "//#include " + model.VertexDecodePath + "\n" +
+	"//#include " + model.FramePath + obeliskInstance + `
 // Linear, not sRGB: everything past the vertex stage is.
 const stone: vec3<f32> = vec3<f32>(0.62, 0.44, 0.26);
 
@@ -148,13 +137,11 @@ fn vs_main(vertex: VertexIn, @builtin(instance_index) index: u32) -> VertexOut {
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let normal = normalize(in.normal);
-    // sunDirection is the sun's direction of travel, so the direction towards
-    // it is its negation, and it is already normalised. Every colour in
+    // sceneSun's direction is already towards the sun, and every colour in
     // sceneFrame is linear radiance with its intensity premultiplied.
-    let nDotL = max(dot(normal, -sceneFrame.sunDirection.xyz), 0.0);
-    let ambient = mix(sceneFrame.ambientGround.rgb, sceneFrame.ambientSky.rgb,
-                      normal.y * 0.5 + 0.5);
-    return vec4<f32>(stone / PI * sceneFrame.sunColor.rgb * nDotL + stone * ambient, 1.0);
+    let sun = sceneSun();
+    let nDotL = max(dot(normal, sun.direction), 0.0);
+    return vec4<f32>(stone / 3.14159265359 * sun.radiance * nDotL + stone * sceneAmbient(normal), 1.0);
 }
 `
 
@@ -166,7 +153,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 // It reads only location 0. A shader may read fewer attributes than the
 // pipeline's vertex layout supplies, so the other five of model.Vertex cost
 // nothing to leave undeclared.
-const obeliskDepthShader = obeliskShared + `
+const obeliskDepthShader = "//#include " + model.FramePath + obeliskInstance + `
 @vertex
 fn vs_main(@location(0) position: vec3<f32>, @builtin(instance_index) index: u32) -> @builtin(position) vec4<f32> {
     let instance = sceneInstances.data[index];
@@ -180,17 +167,23 @@ fn vs_main(@location(0) position: vec3<f32>, @builtin(instance_index) index: u32
 // costs nothing and needs no registration handshake.
 const TagDepth scene.PassTag = "depth"
 
-// newObeliskMaterial builds the two-entry material.
+// obeliskMaterial is the two-entry Material Component.
 //
-// It is a plain value with no GPU handle in it, so the demo builds it once at
-// construction and passes the same slice every frame: scene keys a material by
-// content, so this interns to one id whatever it is called from.
-func newObeliskMaterial() scene.Material {
-	return scene.Material{
-		{Tag: scene.TagForward, Descr: gfx.MaterialWithState(gfx.ShaderWithText(obeliskForwardShader), gfx.StateOpaque3D())},
-		{Tag: TagDepth, Descr: gfx.MaterialWithState(gfx.ShaderWithText(obeliskDepthShader), gfx.StateOpaque3D())},
-	}
-}
+// It is a plain value with no GPU handle in it, built once and held by the
+// obelisk's Entity from its spawn: scene keys a material when its Component
+// changes, and this one never does.
+var obeliskMaterial = scene.Material{Tags: m.NewList(
+	scene.MaterialTag{
+		Tag:    scene.TagForward,
+		Shader: gfx.ShaderWithText(obeliskForwardShader),
+		State:  gfx.StateOpaque3D(),
+	},
+	scene.MaterialTag{
+		Tag:    TagDepth,
+		Shader: gfx.ShaderWithText(obeliskDepthShader),
+		State:  gfx.StateOpaque3D(),
+	},
+)}
 
 // The obelisk's shape: a square pillar that tapers, so its four faces take four
 // different amounts of sun and a wrong normal is visible rather than merely
