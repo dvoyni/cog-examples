@@ -28,8 +28,8 @@ const referenceStep = 120
 // declare more. sceneFrame is the one binding model.PbrPath brings in, and
 // sceneInstances the one the material declares itself.
 var demoShaderLayout = gfx.ShaderLayout{Resources: []gfx.ShaderResource{
-	{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
-	{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
+	{Name: "sceneFrame", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 0},
+	{Name: "sceneInstances", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 1},
 }}
 
 // textShaderLabel is the label gfx gives a shader built from inline source,

@@ -168,7 +168,7 @@ func TestEveryDrawBindsExactlyWhatItsVariantDeclares(t *testing.T) {
 		declared := headless.SceneVariantResources(supply)
 		want := make([][2]int, 0, len(declared))
 		for _, resource := range declared {
-			if resource.StorageBuffer {
+			if resource.Kind.Base() == gfx.ResourceStorageBuffer {
 				want = append(want, [2]int{resource.Group, resource.Binding})
 			}
 		}

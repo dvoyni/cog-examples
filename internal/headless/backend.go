@@ -126,36 +126,35 @@ const sceneShaderPath = "builtin/model/scene.wgsl"
 // The uniform block is scenePbrMaterial, which gfx packs per draw from the
 // draw's params by member name; the offsets are the ones gogpu reflects.
 var sceneShaderLayout = gfx.ShaderLayout{
-	UniformSize: 160, UniformGroup: 1, UniformBinding: 0,
-	Uniforms: []gfx.UniformMember{
-		{Name: "baseColorFactor", Offset: 0}, {Name: "emissiveFactor", Offset: 16},
-		{Name: "baseColorTransform", Offset: 32}, {Name: "metallicRoughnessTransform", Offset: 48},
-		{Name: "normalTransform", Offset: 64}, {Name: "occlusionTransform", Offset: 80},
-		{Name: "emissiveTransform", Offset: 96},
-		{Name: "baseColorRotation", Offset: 112}, {Name: "metallicRoughnessRotation", Offset: 116},
-		{Name: "normalRotation", Offset: 120}, {Name: "occlusionRotation", Offset: 124},
-		{Name: "emissiveRotation", Offset: 128},
-		{Name: "metallicFactor", Offset: 132}, {Name: "roughnessFactor", Offset: 136},
-		{Name: "normalScale", Offset: 140}, {Name: "occlusionStrength", Offset: 144},
-		{Name: "alphaCutoff", Offset: 148}, {Name: "uvSets", Offset: 152},
-	},
 	Resources: []gfx.ShaderResource{
-		{Name: "sceneFrame", StorageBuffer: true, Group: 0, Binding: 0},
-		{Name: "sceneInstances", StorageBuffer: true, Group: 0, Binding: 1},
-		{Name: "sceneAnim", StorageBuffer: true, Group: 0, Binding: 2},
+		{Name: "scenePbrMaterial", Kind: gfx.ResourceUniformBuffer, Group: 1, Binding: 0, Size: 160, Members: []gfx.StorageMember{
+			{Name: "baseColorFactor", Offset: 0}, {Name: "emissiveFactor", Offset: 16},
+			{Name: "baseColorTransform", Offset: 32}, {Name: "metallicRoughnessTransform", Offset: 48},
+			{Name: "normalTransform", Offset: 64}, {Name: "occlusionTransform", Offset: 80},
+			{Name: "emissiveTransform", Offset: 96},
+			{Name: "baseColorRotation", Offset: 112}, {Name: "metallicRoughnessRotation", Offset: 116},
+			{Name: "normalRotation", Offset: 120}, {Name: "occlusionRotation", Offset: 124},
+			{Name: "emissiveRotation", Offset: 128},
+			{Name: "metallicFactor", Offset: 132}, {Name: "roughnessFactor", Offset: 136},
+			{Name: "normalScale", Offset: 140}, {Name: "occlusionStrength", Offset: 144},
+			{Name: "alphaCutoff", Offset: 148}, {Name: "uvSets", Offset: 152},
+		}},
+		{Name: "sceneFrame", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 0},
+		{Name: "sceneInstances", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 1},
+		{Name: "sceneAnim", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 2},
 		{Name: "baseColorTexture", Group: 1, Binding: 1},
-		{Name: "baseColorSampler", Sampler: true, Group: 1, Binding: 2},
+		{Name: "baseColorSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 2},
 		{Name: "metallicRoughnessTexture", Group: 1, Binding: 3},
-		{Name: "metallicRoughnessSampler", Sampler: true, Group: 1, Binding: 4},
+		{Name: "metallicRoughnessSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 4},
 		{Name: "normalTexture", Group: 1, Binding: 5},
-		{Name: "normalSampler", Sampler: true, Group: 1, Binding: 6},
+		{Name: "normalSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 6},
 		{Name: "occlusionTexture", Group: 1, Binding: 7},
-		{Name: "occlusionSampler", Sampler: true, Group: 1, Binding: 8},
+		{Name: "occlusionSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 8},
 		{Name: "emissiveTexture", Group: 1, Binding: 9},
-		{Name: "emissiveSampler", Sampler: true, Group: 1, Binding: 10},
-		{Name: "scenePoses", StorageBuffer: true, Group: 2, Binding: 0},
-		{Name: "sceneSkinJoints", StorageBuffer: true, Group: 2, Binding: 1},
-		{Name: "sceneMorphDeltas", StorageBuffer: true, Group: 2, Binding: 2},
+		{Name: "emissiveSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 10},
+		{Name: "scenePoses", Kind: gfx.ResourceStorageBuffer, Group: 2, Binding: 0},
+		{Name: "sceneSkinJoints", Kind: gfx.ResourceStorageBuffer, Group: 2, Binding: 1},
+		{Name: "sceneMorphDeltas", Kind: gfx.ResourceStorageBuffer, Group: 2, Binding: 2},
 	},
 }
 
@@ -421,7 +420,7 @@ func (b *Backend) rememberFormat(id gfx.TextureID, format gfx.TextureFormat) {
 }
 
 func (b *Backend) SetPipeline(id gfx.PipelineID)      { b.current = id }
-func (b *Backend) SetUniformBlock(int, int)                   {}
+func (b *Backend) SetUniformBlock(int, int)           {}
 func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
 func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
 func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
