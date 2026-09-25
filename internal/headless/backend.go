@@ -420,7 +420,7 @@ func (b *Backend) rememberFormat(id gfx.TextureID, format gfx.TextureFormat) {
 }
 
 func (b *Backend) SetPipeline(id gfx.PipelineID)      { b.current = id }
-func (b *Backend) SetUniformBlock(int, int)           {}
+func (b *Backend) SetUniformBlock(int, int, int, int) {}
 func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
 func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
 func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
