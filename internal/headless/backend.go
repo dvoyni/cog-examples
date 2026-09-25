@@ -379,7 +379,7 @@ type PlacedTransition struct {
 	BeforePass int
 }
 
-func (b *Backend) BakeUniforms([]gfx.UniformBlock) {}
+func (b *Backend) BakeUniforms([]byte) {}
 
 func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []byte) {
 	b.Bakes++
@@ -421,7 +421,7 @@ func (b *Backend) rememberFormat(id gfx.TextureID, format gfx.TextureFormat) {
 }
 
 func (b *Backend) SetPipeline(id gfx.PipelineID)      { b.current = id }
-func (b *Backend) SetUniformBlock(int)                   {}
+func (b *Backend) SetUniformBlock(int, int)                   {}
 func (b *Backend) SetTexture(gfx.TextureID, int, int) {}
 func (b *Backend) SetSampler(gfx.SamplerID, int, int) {}
 func (b *Backend) SetVertexBuffer(gfx.BufferID, int)  {}
