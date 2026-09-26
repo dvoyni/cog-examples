@@ -16,15 +16,15 @@ type Backend struct {
 	nextTexture    gfx.TextureID
 	nextBuffer     gfx.BufferID
 	nextID         uint32
-	// nextShader is every shader's id, reserved or created. It is its own
-	// atomic counter, as gogpu's is, because ResourceQueue.NewShader reserves
-	// on the update thread while the replay creates on the render thread.
+	// nextShader is every shader's id. It is its own atomic counter, as
+	// gogpu's is, because ResourceQueue.NewShader reserves on the update thread
+	// while the replay creates on the render thread.
 	nextShader atomic.Uint32
-	// shaders remembers each shader's label, which is its resource path, so
-	// ShaderLayout can answer for the right one.
+	// shaders remembers each shader's label, which is its resource path and
+	// supply, so ShaderPath and ShaderSupply can answer for it.
 	shaders map[gfx.ShaderID]string
 	// created is the reflected layout of every shader CreateShader made, by
-	// id, which ShaderLayout answers with before any mirror.
+	// id, which PipelineResources answers with.
 	created map[gfx.ShaderID]gfx.ShaderLayout
 	// formats remembers the format each texture was baked or allocated in, so
 	// TextureFormat can key a pipeline to the target it renders into.
@@ -49,7 +49,7 @@ type Backend struct {
 	// material actually bound, and so that declaring fewer of them is safe.
 	Buffers []BufferBinding
 	// Pipelines is every pipeline the frame created, in creation order. It is
-	// recorded because MaterialState is where glTF's alphaMode, doubleSided and
+	// recorded because DrawState is where glTF's alphaMode, doubleSided and
 	// a mirrored node transform actually land - as Blend, DepthWrite, Cull and
 	// FrontFace - and a pipeline description is the only place a test with no
 	// GPU can read them back. gfx interns pipelines, so this is one entry per
@@ -69,13 +69,6 @@ type Backend struct {
 	// reused frame to frame and a retained slice would report the newest frame
 	// for every step a test took.
 	Baked map[gfx.BufferID][]byte
-	// TextShaderLayout is the layout reported for a shader built from inline
-	// source rather than from a resource path. Only a demo with its own WGSL
-	// has one, and only that demo knows what it declares, so a test sets this
-	// rather than the file mirroring it the way it mirrors the bundled
-	// shader's below. Left zero, an inline shader reflects nothing, which is
-	// what every demo that has none wants.
-	TextShaderLayout gfx.ShaderLayout
 }
 
 // BufferBinding is one storage buffer bound to one slot of one draw.
@@ -112,64 +105,8 @@ type DrawCall struct {
 }
 
 // sceneShaderPath is the bundled scene shader, the one shader whose reflected
-// bindings scene's own packing depends on. The real WGSL is reflected for real
-// in the gogpu package, the only tree with a front end; here the layout stands
-// in so scene's bindings reach the backend at the group and binding the shader
-// declares.
+// bindings scene's own packing depends on.
 const sceneShaderPath = "builtin/model/scene.wgsl"
-
-// sceneShaderLayout mirrors model's builtin/model/scene.wgsl's declared
-// bindings with both defines supplied, all seventeen of them, and its one
-// uniform block, the material's numbers. sceneVariantLayout cuts it down to
-// what a variant actually declares.
-//
-// It has to be all seventeen rather than the ones a given assertion cares
-// about, because gfx resolves a draw's parameters by name against the
-// reflected layout: a binding this list omits is silently dropped on the way to
-// the backend, which is indistinguishable here from a flush that never packed
-// it. Group 2 and sceneAnim were missing until the animated demo needed to
-// assert that a skinned draw binds its poses, and the omission read as scene
-// not binding them at all.
-//
-// The seven storage buffers are also scene's budget against the browser floor of
-// eight, so a mirror that has drifted short of the real shader would let a demo
-// pass a limit check the browser will fail.
-//
-// The uniform block is scenePbrMaterial, which gfx packs per draw from the
-// draw's params by member name; the offsets are the ones gogpu reflects.
-var sceneShaderLayout = gfx.ShaderLayout{
-	Resources: []gfx.ShaderResource{
-		{Name: "scenePbrMaterial", Kind: gfx.ResourceUniformBuffer, Group: 1, Binding: 0, Size: 160, Members: []gfx.StorageMember{
-			{Name: "baseColorFactor", Offset: 0}, {Name: "emissiveFactor", Offset: 16},
-			{Name: "baseColorTransform", Offset: 32}, {Name: "metallicRoughnessTransform", Offset: 48},
-			{Name: "normalTransform", Offset: 64}, {Name: "occlusionTransform", Offset: 80},
-			{Name: "emissiveTransform", Offset: 96},
-			{Name: "baseColorRotation", Offset: 112}, {Name: "metallicRoughnessRotation", Offset: 116},
-			{Name: "normalRotation", Offset: 120}, {Name: "occlusionRotation", Offset: 124},
-			{Name: "emissiveRotation", Offset: 128},
-			{Name: "metallicFactor", Offset: 132}, {Name: "roughnessFactor", Offset: 136},
-			{Name: "normalScale", Offset: 140}, {Name: "occlusionStrength", Offset: 144},
-			{Name: "alphaCutoff", Offset: 148}, {Name: "uvSets", Offset: 152},
-		}},
-		{Name: "sceneFrame", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 0},
-		{Name: "sceneInstances", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 1},
-		{Name: "sceneAnim", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 2},
-		{Name: "sceneMeshes", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 3},
-		{Name: "baseColorTexture", Group: 1, Binding: 1},
-		{Name: "baseColorSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 2},
-		{Name: "metallicRoughnessTexture", Group: 1, Binding: 3},
-		{Name: "metallicRoughnessSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 4},
-		{Name: "normalTexture", Group: 1, Binding: 5},
-		{Name: "normalSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 6},
-		{Name: "occlusionTexture", Group: 1, Binding: 7},
-		{Name: "occlusionSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 8},
-		{Name: "emissiveTexture", Group: 1, Binding: 9},
-		{Name: "emissiveSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 10},
-		{Name: "scenePoses", Kind: gfx.ResourceStorageBuffer, Group: 2, Binding: 0},
-		{Name: "sceneSkinJoints", Kind: gfx.ResourceStorageBuffer, Group: 2, Binding: 1},
-		{Name: "sceneMorphDeltas", Kind: gfx.ResourceStorageBuffer, Group: 2, Binding: 2},
-	},
-}
 
 // Ready is true from the start: the fake has no device to wait for.
 func (b *Backend) Ready() bool { return true }
@@ -184,29 +121,17 @@ func (b *Backend) NewSampler(gfx.SamplerDesc) (gfx.SamplerID, error) {
 
 func (b *Backend) FreeSampler(gfx.SamplerID) {}
 
-func (b *Backend) NewShader(desc gfx.ShaderDesc) (gfx.ShaderID, error) {
-	id := b.ReserveShader()
-	if b.shaders == nil {
-		b.shaders = map[gfx.ShaderID]string{}
-	}
-	b.shaders[id] = desc.Label
-	return id, nil
-}
-
 func (b *Backend) FreeShader(gfx.ShaderID) {}
 
-// ReserveShader mints the id ResourceQueue.NewShader hands out, from the
-// counter NewShader mints from too, so the two never collide.
+// ReserveShader mints the id ResourceQueue.NewShader hands out.
 func (b *Backend) ReserveShader() gfx.ShaderID {
 	return gfx.ShaderID(b.nextShader.Add(1))
 }
 
-// CreateShader creates the module of a reserved id. It remembers the label, as
-// NewShader does, so ShaderPath and IsScenePipeline answer for a shader
-// compiled through gfx.CompileShaderCmd - which every scene and canvas draw
-// now is - and it reflects the bytes again, as gogpu does, so a module naga
-// refuses is refused here too and ShaderLayout answers with what the program
-// was built against.
+// CreateShader creates the module of a reserved id. It remembers the label, so
+// ShaderPath and IsScenePipeline answer for it, and it reflects the bytes
+// again, as gogpu does, so a module naga refuses is refused here too and
+// PipelineResources answers with what the program was built against.
 func (b *Backend) CreateShader(id gfx.ShaderID, desc gfx.ShaderDesc) error {
 	layout, err := reflectShaderLayout(string(desc.Code))
 	if err != nil {
@@ -228,67 +153,6 @@ func (b *Backend) CreateShader(id gfx.ShaderID, desc gfx.ShaderDesc) error {
 // from any thread, as the port requires.
 func (b *Backend) ReflectShader(code []byte) (gfx.ShaderLayout, error) {
 	return reflectShaderLayout(string(code))
-}
-
-// textShaderLabel is the label gfx gives a shader built from inline source.
-// Every resource shader is labelled by its path instead, so this is exactly the
-// set of shaders a demo wrote itself.
-const textShaderLabel = "gfx.shader"
-
-// sceneVariantLayout answers for one variant of the bundled scene shader, read
-// off the label's supply.
-//
-// The bundled shader is four modules, not one: a draw declares only the bindings
-// it reads, so a debug line or a static prop declares thirteen and three storage
-// buffers where a skinned, morphed draw declares seventeen and seven. A mirror
-// that answered seventeen for every variant would bind group 2 on a draw that
-// never declared it, which is the one thing this fake exists to catch.
-func sceneVariantLayout(label string) (gfx.ShaderLayout, bool) {
-	supply, ok := strings.CutPrefix(label, sceneShaderPath)
-	if !ok {
-		return gfx.ShaderLayout{}, false
-	}
-	skin := strings.Contains(supply, "SCENE_SKIN")
-	morph := strings.Contains(supply, "SCENE_MORPH")
-	declared := func(resource gfx.ShaderResource) bool {
-		switch resource.Name {
-		case "scenePoses", "sceneSkinJoints":
-			return skin
-		case "sceneMorphDeltas":
-			return morph
-		case "sceneAnim":
-			return skin || morph
-		}
-		return true
-	}
-	// Every variant declares the material's uniform block; only group 2 and
-	// sceneAnim vary.
-	layout := sceneShaderLayout
-	layout.Resources = make([]gfx.ShaderResource, 0, len(sceneShaderLayout.Resources))
-	for _, resource := range sceneShaderLayout.Resources {
-		if declared(resource) {
-			layout.Resources = append(layout.Resources, resource)
-		}
-	}
-	return layout, true
-}
-
-// ShaderLayout answers for the bundled scene shader, for whatever inline shader
-// the test declared, and for nothing else. Canvas's own bindings are not what a
-// demo test asserts, and a fake union layout would bind canvas's parameters at
-// scene's slots.
-func (b *Backend) ShaderLayout(id gfx.ShaderID) gfx.ShaderLayout {
-	if layout, ok := b.created[id]; ok {
-		return layout
-	}
-	label := b.shaders[id]
-	if layout, ok := sceneVariantLayout(label); ok {
-		return layout
-	}
-	if strings.HasPrefix(label, textShaderLabel) {
-		return b.TextShaderLayout
-	}
-	return gfx.ShaderLayout{}
 }
 
 func (b *Backend) NewPipeline(desc gfx.PipelineDesc) (gfx.PipelineID, error) {
@@ -351,11 +215,15 @@ func (b *Backend) PipelineSupply(id gfx.PipelineID) string {
 	return b.ShaderSupply(desc.Shader)
 }
 
-// SceneVariantResources is the bindings one variant of the bundled scene shader
-// declares, named by the supply PipelineSupply reports.
-func SceneVariantResources(supply string) []gfx.ShaderResource {
-	layout, _ := sceneVariantLayout(sceneShaderPath + " [" + supply + "]")
-	return layout.Resources
+// PipelineResources is every binding the shader behind a pipeline declares,
+// as naga reflected it when the shader was created. It is how a test says
+// which slots a draw through that pipeline had to bind.
+func (b *Backend) PipelineResources(id gfx.PipelineID) []gfx.ShaderResource {
+	desc, ok := b.pipelines[id]
+	if !ok {
+		return nil
+	}
+	return b.created[desc.Shader].Resources
 }
 
 func (b *Backend) FreePipeline(gfx.PipelineID) {}

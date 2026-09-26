@@ -139,7 +139,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) frontFacing: bool) -> @location
 // minded would carry a second material.
 func materialShader() gfx.ShaderDescr { return gfx.ShaderWithText(shaderSource) }
 
-func materialState() gfx.MaterialState {
+func materialState() gfx.DrawState {
 	state := gfx.StateOpaque3D()
 	state.Cull = gfx.CullNone
 	return state
