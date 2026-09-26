@@ -25,6 +25,7 @@ func rig(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 ) {
 	queue := resources.Get()
 	if queue == nil || !queue.Ready() {
@@ -37,7 +38,7 @@ func rig(
 			continue
 		}
 		if clips == nil {
-			la = model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), queue)
+			la = model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), queue, compile.Execute)
 			var ok bool
 			if clips, ok = la.Clips(foxPath, nil); !ok {
 				return

@@ -2,6 +2,7 @@ package headless
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/dvoyni/cog/slots/gfx"
 )
@@ -15,9 +16,16 @@ type Backend struct {
 	nextTexture    gfx.TextureID
 	nextBuffer     gfx.BufferID
 	nextID         uint32
+	// nextShader is every shader's id, reserved or created. It is its own
+	// atomic counter, as gogpu's is, because ResourceQueue.NewShader reserves
+	// on the update thread while the replay creates on the render thread.
+	nextShader atomic.Uint32
 	// shaders remembers each shader's label, which is its resource path, so
 	// ShaderLayout can answer for the right one.
 	shaders map[gfx.ShaderID]string
+	// created is the reflected layout of every shader CreateShader made, by
+	// id, which ShaderLayout answers with before any mirror.
+	created map[gfx.ShaderID]gfx.ShaderLayout
 	// formats remembers the format each texture was baked or allocated in, so
 	// TextureFormat can key a pipeline to the target it renders into.
 	formats map[gfx.TextureID]gfx.TextureFormat
@@ -111,11 +119,11 @@ type DrawCall struct {
 const sceneShaderPath = "builtin/model/scene.wgsl"
 
 // sceneShaderLayout mirrors model's builtin/model/scene.wgsl's declared
-// bindings with both defines supplied, all sixteen of them, and its one
+// bindings with both defines supplied, all seventeen of them, and its one
 // uniform block, the material's numbers. sceneVariantLayout cuts it down to
 // what a variant actually declares.
 //
-// It has to be all sixteen rather than the ones a given assertion cares
+// It has to be all seventeen rather than the ones a given assertion cares
 // about, because gfx resolves a draw's parameters by name against the
 // reflected layout: a binding this list omits is silently dropped on the way to
 // the backend, which is indistinguishable here from a flush that never packed
@@ -123,7 +131,7 @@ const sceneShaderPath = "builtin/model/scene.wgsl"
 // assert that a skinned draw binds its poses, and the omission read as scene
 // not binding them at all.
 //
-// The six storage buffers are also scene's budget against the browser floor of
+// The seven storage buffers are also scene's budget against the browser floor of
 // eight, so a mirror that has drifted short of the real shader would let a demo
 // pass a limit check the browser will fail.
 //
@@ -146,6 +154,7 @@ var sceneShaderLayout = gfx.ShaderLayout{
 		{Name: "sceneFrame", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 0},
 		{Name: "sceneInstances", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 1},
 		{Name: "sceneAnim", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 2},
+		{Name: "sceneMeshes", Kind: gfx.ResourceStorageBuffer, Group: 0, Binding: 3},
 		{Name: "baseColorTexture", Group: 1, Binding: 1},
 		{Name: "baseColorSampler", Kind: gfx.ResourceSampler, Group: 1, Binding: 2},
 		{Name: "metallicRoughnessTexture", Group: 1, Binding: 3},
@@ -176,8 +185,7 @@ func (b *Backend) NewSampler(gfx.SamplerDesc) (gfx.SamplerID, error) {
 func (b *Backend) FreeSampler(gfx.SamplerID) {}
 
 func (b *Backend) NewShader(desc gfx.ShaderDesc) (gfx.ShaderID, error) {
-	b.nextID++
-	id := gfx.ShaderID(b.nextID)
+	id := b.ReserveShader()
 	if b.shaders == nil {
 		b.shaders = map[gfx.ShaderID]string{}
 	}
@@ -186,6 +194,41 @@ func (b *Backend) NewShader(desc gfx.ShaderDesc) (gfx.ShaderID, error) {
 }
 
 func (b *Backend) FreeShader(gfx.ShaderID) {}
+
+// ReserveShader mints the id ResourceQueue.NewShader hands out, from the
+// counter NewShader mints from too, so the two never collide.
+func (b *Backend) ReserveShader() gfx.ShaderID {
+	return gfx.ShaderID(b.nextShader.Add(1))
+}
+
+// CreateShader creates the module of a reserved id. It remembers the label, as
+// NewShader does, so ShaderPath and IsScenePipeline answer for a shader
+// compiled through gfx.CompileShaderCmd - which every scene and canvas draw
+// now is - and it reflects the bytes again, as gogpu does, so a module naga
+// refuses is refused here too and ShaderLayout answers with what the program
+// was built against.
+func (b *Backend) CreateShader(id gfx.ShaderID, desc gfx.ShaderDesc) error {
+	layout, err := reflectShaderLayout(string(desc.Code))
+	if err != nil {
+		return err
+	}
+	if b.shaders == nil {
+		b.shaders = map[gfx.ShaderID]string{}
+	}
+	if b.created == nil {
+		b.created = map[gfx.ShaderID]gfx.ShaderLayout{}
+	}
+	b.shaders[id] = desc.Label
+	b.created[id] = layout
+	return nil
+}
+
+// ReflectShader is gfx's reflection port, and the real one: naga's parse and
+// lowering, as gogpu runs it. It touches no state of the fake, so it is safe
+// from any thread, as the port requires.
+func (b *Backend) ReflectShader(code []byte) (gfx.ShaderLayout, error) {
+	return reflectShaderLayout(string(code))
+}
 
 // textShaderLabel is the label gfx gives a shader built from inline source.
 // Every resource shader is labelled by its path instead, so this is exactly the
@@ -235,6 +278,9 @@ func sceneVariantLayout(label string) (gfx.ShaderLayout, bool) {
 // demo test asserts, and a fake union layout would bind canvas's parameters at
 // scene's slots.
 func (b *Backend) ShaderLayout(id gfx.ShaderID) gfx.ShaderLayout {
+	if layout, ok := b.created[id]; ok {
+		return layout
+	}
 	label := b.shaders[id]
 	if layout, ok := sceneVariantLayout(label); ok {
 		return layout

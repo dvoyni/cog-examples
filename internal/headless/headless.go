@@ -57,8 +57,8 @@ const Step = time.Second / 60
 
 // Engine is a running headless kernel with a demo plugin in it.
 type Engine struct {
-	t      testing.TB
-	kernel kernel.Executioner
+	t        testing.TB
+	kernel   kernel.Executioner
 	backend  *Backend
 	mainLoop *mainLoop
 	// reported is guarded because a model load reports from its own goroutine
@@ -256,12 +256,16 @@ func lookupDeviceCmdImpl() (kernel.Lock, kernel.Execute[lookupDeviceRequest, loo
 	var lookup kernel.Write[*model.Lookup]
 	var files kernel.Read[storage.FileSystem]
 	var resources kernel.Write[*gfx.ResourceQueue]
+	var compile gfx.ShaderCompiler
 	return func(access kernel.ResourceAccess) {
 			lookup = access.GetWrite[*model.Lookup]()
 			files = access.GetRead[storage.FileSystem]()
 			resources = access.GetWrite[*gfx.ResourceQueue]()
+			// The first load compiles the bundled shader. The command's lock is
+			// empty, so declaring it widens this command's set by nothing.
+			compile = access.Uses[gfx.CompileShaderCmd]()
 		}, func(k kernel.Kernel, req lookupDeviceRequest) lookupDeviceResponse {
-			req.run(model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get()))
+			req.run(model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile))
 			return lookupDeviceResponse{}
 		}
 }

@@ -12,7 +12,8 @@ import (
 // how the HUD finds the camera's passes in a frame snapshot.
 const tagGround scene.PassTag = "ground"
 
-// MoteTintParam is the uniform member the mote shader reads its colour from.
+// MoteTintParam is the uniform the mote shader reads its colour from, which
+// the param sets whole.
 const MoteTintParam = "moteTint"
 
 // sharedMote is the one mote material. Every mote's Material Component holds
@@ -141,11 +142,7 @@ fn lambert(albedo: vec3<f32>, position: vec3<f32>, normal: vec3<f32>) -> vec3<f3
 `
 
 const moteShader = `
-struct MoteParams {
-    moteTint: vec4<f32>,
-};
-
-@group(1) @binding(0) var<uniform> mote: MoteParams;
+@group(1) @binding(0) var<uniform> moteTint: vec4<f32>;
 
 @fragment
 fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
@@ -153,7 +150,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     if !front {
         normal = -normal;
     }
-    let tint = mote.moteTint.rgb;
+    let tint = moteTint.rgb;
     return vec4<f32>(lambert(tint, in.world, normal) + tint * 0.35, 1.0);
 }
 `

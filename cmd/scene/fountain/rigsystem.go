@@ -22,13 +22,14 @@ func rig(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	state *ecs.Write[*Fountain],
 ) {
 	f := state.Get()
 	if f.rigged || resources.Get() == nil || !resources.Get().Ready() {
 		return
 	}
-	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile.Execute)
 	clips, ok := la.Clips(FoxPath, nil)
 	if !ok {
 		return

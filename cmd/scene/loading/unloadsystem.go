@@ -34,6 +34,7 @@ func unload(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	state *ecs.Write[*Residency],
 ) {
 	r := state.Get()
@@ -43,7 +44,7 @@ func unload(
 	}
 	r.pending = pendingUnload{}
 	la := model.NewLookupAccess(k, lookup.Get())
-	device := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	device := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile.Execute)
 
 	var freed [len(stations)]bool
 	freePath := func(path string) {

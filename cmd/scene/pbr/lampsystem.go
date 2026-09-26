@@ -37,6 +37,7 @@ func lamps(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	spawn *ecs.Spawn[lamp],
 	state *ecs.Write[*Pbr],
 ) {
@@ -44,7 +45,7 @@ func lamps(
 	if p.declared > 0 || resources.Get() == nil || !resources.Get().Ready() {
 		return
 	}
-	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile.Execute)
 	fileLights, ok := la.ModelLights(stations[stationLights].path, nil)
 	if !ok {
 		return

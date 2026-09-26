@@ -24,13 +24,14 @@ func survey(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	state *ecs.Write[*Residency],
 ) {
 	if resources.Get() == nil || !resources.Get().Ready() {
 		return
 	}
 	r := state.Get()
-	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile.Execute)
 	for i := range stations {
 		s := la.State(stations[i].path)
 		if !r.known[i] || (r.states[i] == nil) != (s == nil) {

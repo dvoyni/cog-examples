@@ -26,6 +26,7 @@ func preload(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	state *ecs.Write[*Residency],
 ) {
 	r := state.Get()
@@ -33,7 +34,7 @@ func preload(
 		return
 	}
 	r.preloaded = true
-	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile.Execute)
 	for _, path := range PreloadOrder {
 		la.Preload(path)
 	}

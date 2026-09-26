@@ -24,6 +24,7 @@ func residency(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	state *ecs.Write[*Demo],
 ) {
 	queue := resources.Get()
@@ -31,7 +32,7 @@ func residency(
 		return
 	}
 	d := state.Get()
-	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), queue)
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), queue, compile.Execute)
 	for i, path := range ModelPaths {
 		d.clips, d.resident[i] = la.Clips(path, d.clips[:0])
 		d.memory.pose[i], _ = la.PoseBytes(path)

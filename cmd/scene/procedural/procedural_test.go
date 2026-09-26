@@ -23,9 +23,9 @@ import (
 // is accumulated fixed steps, so this is the same frame on every machine.
 const referenceStep = 120
 
-// demoShaderLayout is what material.go's WGSL declares, stated here rather than
-// reflected: the headless backend has no shader front end, and the point of the
-// assertions below is that this list is shorter than what scene offers - a
+// demoShaderLayout is what material.go's WGSL declares, stated here as what the
+// assertions below expect rather than read back from the backend's reflection:
+// the point of them is that this list is shorter than what scene offers - a
 // caller material may declare fewer bindings than scene binds, and must never
 // declare more. sceneFrame is the one binding model.PbrPath brings in, and
 // sceneInstances the one the material declares itself.
@@ -401,9 +401,10 @@ func TestABeaconSwapSkipsADrawOfTheReleasedRef(t *testing.T) {
 //
 // So the custom draws reached the backend, bound sceneFrame and sceneInstances
 // - the include resolved through model's mount, which is how sceneFrame is
-// declared at all - and bound nothing else. Every scene draw, bundled or
-// custom alike, binds those two: scene binds what describes the scene, never a
-// material's numbers, so the two kinds of draw differ only in their pipeline.
+// declared at all - and bound nothing else, while a bundled draw bound the
+// storage buffers its variant declares, sceneMeshes among them, and no more.
+// Scene binds what describes the scene, never a material's numbers, and each
+// draw takes only the part of it its own shader declares.
 func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 	_, f := referenceFrame(t)
 	custom := map[gfx.PipelineID]bool{}
@@ -440,8 +441,8 @@ func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 				t.Errorf("a custom-material draw bound %d/%d, which the material never declared",
 					binding.Group, binding.Binding)
 			}
-		case bundled[binding.Pipeline] && !declared[slot]:
-			t.Errorf("a bundled draw bound %d/%d beyond sceneFrame and sceneInstances",
+		case bundled[binding.Pipeline] && !variantDeclares(f.backend.PipelineSupply(binding.Pipeline), slot):
+			t.Errorf("a bundled draw bound %d/%d, which its variant never declared",
 				binding.Group, binding.Binding)
 		}
 	}
@@ -450,6 +451,17 @@ func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 			t.Errorf("the custom-material draws never bound %s", want.Name)
 		}
 	}
+}
+
+// variantDeclares reports whether the variant of the bundled scene shader a
+// supply names declares a binding at slot.
+func variantDeclares(supply string, slot headless.BufferBinding) bool {
+	for _, resource := range headless.SceneVariantResources(supply) {
+		if resource.Group == slot.Group && resource.Binding == slot.Binding {
+			return true
+		}
+	}
+	return false
 }
 
 // Scene binds a pass's whole slice of instances as one range, and each draw

@@ -24,13 +24,14 @@ func bounds(
 	lookup *ecs.Write[*model.Lookup],
 	files *ecs.Read[storage.FileSystem],
 	resources *ecs.Write[*gfx.ResourceQueue],
+	compile *ecs.Uses[gfx.CompileShaderCmd, gfx.CompileShaderRequest, gfx.CompileShaderResponse],
 	state *ecs.Write[*State],
 ) {
 	s := state.Get()
 	if s.resident || resources.Get() == nil || !resources.Get().Ready() {
 		return
 	}
-	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get())
+	la := model.NewLookupDeviceAccess(k, lookup.Get(), files.Get(), resources.Get(), compile.Execute)
 	sphere, ok := la.Bounds(model.ModelRef{Path: modelPath})
 	if !ok {
 		return

@@ -38,19 +38,15 @@ import (
 // identity, because the ramp's output is a function of red alone.
 //
 // So the composite declares a shader that samples and returns, with no ramp
-// and no clip test. It declares two of the three uniforms canvas binds and
-// neither of the two it does not read: gfx resolves a draw's parameters by
-// name against the reflected layout and drops the ones the shader never
-// declared, so canvasClip and keyColor cost nothing to omit.
+// and no clip test. It includes canvas's uniform block, which canvas sets
+// whole, and declares no keyColor: a parameter binds a whole binding by its
+// name and one the shader never declared is dropped, so keyColor costs nothing
+// to omit.
 const compositeShader = `
-// The prefix of canvas's uniform block this shader reads. canvasClip and
-// keyColor follow it and are not declared, which is what makes this shader a
-// passthrough rather than canvas's own.
-struct CanvasUniforms {
-    canvasViewport: vec4<f32>,
-    canvasLayer: mat4x4<f32>,
-};
-@group(0) @binding(0) var<uniform> u: CanvasUniforms;
+// Canvas's uniform block, of which this shader reads canvasViewport and
+// canvasLayer. It declares no keyColor and never reads canvasClip, which is
+// what makes this shader a passthrough rather than canvas's own.
+//#include builtin/canvas/uniforms.wgsl
 @group(1) @binding(0) var canvasSampler: sampler;
 @group(1) @binding(1) var canvasTexture: texture_2d<f32>;
 
@@ -85,7 +81,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 // of its own. The texture and sampler ride on the draw instead, because they
 // change per panel and a material carrying an inline texture would re-bake it
 // every frame.
-var compositeMaterial = gfx.MaterialWithState(gfx.ShaderWithText(compositeShader), gfx.StateOverlay2D())
+var compositeMaterial = canvas.MaterialWithState(gfx.ShaderWithText(compositeShader), gfx.StateOverlay2D())
 
 // compositeSampler is what a composited render target wants: linear filtering,
 // clamped, so the minimap's 512 texels resample smoothly into its 400 canvas
