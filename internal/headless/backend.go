@@ -21,6 +21,10 @@ type Backend struct {
 	// formats remembers the format each texture was baked or allocated in, so
 	// TextureFormat can key a pipeline to the target it renders into.
 	formats map[gfx.TextureID]gfx.TextureFormat
+	// allocated remembers each allocated texture's description, so an upload
+	// that fills a whole layer counts as a bake and one into a mipmapped
+	// texture counts toward MippedTextures. An atlas's region uploads do not.
+	allocated map[gfx.TextureID]gfx.TextureDesc
 
 	Passes   []gfx.PassDesc
 	Draws    []DrawCall
@@ -388,16 +392,16 @@ func (b *Backend) BakeBuffer(id gfx.BufferID, _ gfx.BufferKind, _ int, data []by
 	b.Baked[id] = append(b.Baked[id][:0], data...)
 }
 
-// BakeTexture counts durable texture uploads, which is how a test observes
-// scene's texture cache: nine glTF textures over three images have to reach
-// the GPU as three, not nine.
+// BakeTexture and a whole-layer UpdateTexture count texture uploads, which is
+// how a test observes scene's texture cache: nine glTF textures over three
+// images have to reach the GPU as three, not nine.
 //
-// MippedTextures counts the uploads that asked for a mip chain. It is recorded
-// apart from the total because it is the only observable for one of the four
-// WebGPU gaps the loader papers over - there is no mipmap generation API, so
-// the chain is a CPU box filter built at load and handed over with the base
-// level - and a count of uploads alone cannot tell a filtered texture from an
-// unfiltered one.
+// MippedTextures counts the uploads that asked for a mip chain or went into a
+// texture allocated with one. It is recorded apart from the total because it is
+// the only observable for one of the four WebGPU gaps the loader papers over -
+// there is no mipmap generation API, so the chain is a CPU box filter built at
+// load and handed over with the base level - and a count of uploads alone
+// cannot tell a filtered texture from an unfiltered one.
 func (b *Backend) BakeTexture(
 	id gfx.TextureID, _, _ int, format gfx.TextureFormat, _ []byte, mipmaps bool,
 ) {
@@ -409,8 +413,21 @@ func (b *Backend) BakeTexture(
 }
 func (b *Backend) AllocateTexture(id gfx.TextureID, desc gfx.TextureDesc) {
 	b.rememberFormat(id, desc.Format)
+	if b.allocated == nil {
+		b.allocated = map[gfx.TextureID]gfx.TextureDesc{}
+	}
+	b.allocated[id] = desc
 }
-func (b *Backend) UpdateTexture(gfx.TextureID, int, gfx.Region, []byte) {}
+func (b *Backend) UpdateTexture(id gfx.TextureID, _ int, region gfx.Region, _ []byte) {
+	desc := b.allocated[id]
+	if region != (gfx.Region{Width: desc.Width, Height: desc.Height}) {
+		return
+	}
+	b.BakedTextures++
+	if desc.Mipmaps {
+		b.MippedTextures++
+	}
+}
 
 func (b *Backend) rememberFormat(id gfx.TextureID, format gfx.TextureFormat) {
 	if b.formats == nil {

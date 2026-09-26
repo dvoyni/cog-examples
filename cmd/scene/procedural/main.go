@@ -15,12 +15,12 @@
 // changing size; ReleaseMesh and the generations that make a stale ref
 // detectable; Mesh.Bounds and Mesh.NeverCull; a Material tag of inline WGSL
 // over the static variant, which every Mesh draws; and, one layer down, gfx's
-// BakeBuffer, ReBakeBuffer and ReleaseBuffer - which is what the three mesh
+// NewBuffer, UploadBuffer and ReleaseBuffer - which is what the three mesh
 // calls are, applied by scene's load System when it drains model's queues:
 //
-//	BakeMesh    -> gfx.BakeBuffer     a durable buffer, uploaded once
-//	UpdateMesh  -> gfx.ReBakeBuffer   the same buffer id, new bytes, any length
-//	ReleaseMesh -> gfx.ReleaseBuffer  freed at the frame boundary
+//	BakeMesh    -> gfx.UploadBuffer(NewBuffer())  a durable buffer, uploaded once
+//	UpdateMesh  -> gfx.UploadBuffer               the same buffer id, new bytes, any length
+//	ReleaseMesh -> gfx.ReleaseBuffer              freed at the frame boundary
 //
 // # The objects
 //

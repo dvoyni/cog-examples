@@ -188,7 +188,7 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// a pass renders into and the texture a later pass samples. Its
 			// contents do not survive the frame, which is exactly right here -
 			// the panel is redrawn every frame anyway. A panel drawn once and kept
-			// would take gfx.ResourceQueue.AllocateRenderTarget instead.
+			// would take gfx.ResourceQueue.NewRenderTarget instead.
 			//
 			// Ask for FormatRGBA8Srgb: the atlas is sRGB, the engine blends
 			// linear, and gfx keys every pipeline to the frame buffer's colour
