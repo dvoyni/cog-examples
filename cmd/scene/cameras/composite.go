@@ -13,7 +13,7 @@ import (
 // projection-baked sub-rect does not clip: a point at NDC x = 1.5, which the
 // clipper would have discarded, is remapped to 0.25 and rasterises into the
 // neighbouring camera's half, and gfx exposes no scissor. So each camera
-// renders into its own gfx.TemporaryTarget and canvas draws the result. That
+// renders into its own gfx.NewTemporaryTarget and canvas draws the result. That
 // also means split-screen, minimap, picture-in-picture and render scale are all
 // one mechanism rather than four, and the composited panel can be bordered,
 // faded and animated because it is an ordinary 2D draw.

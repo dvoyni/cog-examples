@@ -15,7 +15,7 @@ import (
 // with it. The queue is an ordinary value, so this needs no plugins at all.
 func recorded(t *testing.T) (*canvas.OpQueue, gfx.TextureDescr) {
 	t.Helper()
-	// Stand-in handles for the pair TemporaryTarget hands back. They carry no
+	// Stand-in handles for the pair NewTemporaryTarget hands back. They carry no
 	// backend, which is all this level needs: the demo passes them through.
 	texture := gfx.TextureWithBytes(panelSize, panelSize, gfx.FormatRGBA8Srgb, nil, false, false)
 	demo := New()

@@ -6,7 +6,7 @@ import "github.com/dvoyni/cog/libs/m"
 // and the rectangle of the logical screen canvas composites that target onto.
 //
 // It is the whole reason this demo needs a type at all. Split-screen is spelled
-// as one gfx.TemporaryTarget per camera drawn by canvas, because a
+// as one gfx.NewTemporaryTarget per camera drawn by canvas, because a
 // projection-baked sub-rect does not clip - a point at NDC x = 1.5, which the
 // clipper would have discarded, is remapped to 0.25 and rasterises into the
 // neighbouring camera's half - and gfx exposes no scissor. So there is no

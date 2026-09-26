@@ -11,7 +11,7 @@
 // What it exercises: multiple Camera Components and the shared pass-ordering
 // space; orthographic projection beside perspective; CullMask against each
 // Entity's Layers; negative camera ids and the duplicate-id error;
-// gfx.TemporaryTarget named by a Pass's Target and composited by canvas as the
+// gfx.NewTemporaryTarget named by a Pass's Target and composited by canvas as the
 // split-screen answer; DepthAuto beside an explicit DepthTarget; Pass.Order as
 // an offset and gfx's pass merging; a two-tag Material and a NoTarget()
 // depth-only pass; scene.ViewProjection feeding m.WorldToScreen and
@@ -24,7 +24,7 @@
 // and back. The minimap is an orthographic camera looking straight down at the
 // same world, with the main camera's own frustum drawn on it.
 //
-// Neither renders to the screen. Each renders into a gfx.TemporaryTarget that
+// Neither renders to the screen. Each renders into a gfx.NewTemporaryTarget that
 // canvas composites, because scene has no viewport rectangle and will not grow
 // one: a projection-baked sub-rect does not clip, so a point at NDC x = 1.5 -
 // which the clipper would have discarded - is remapped to 0.25 and rasterises

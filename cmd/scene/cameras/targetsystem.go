@@ -37,9 +37,9 @@ func target(cameras *ecs.Query[cameraQuery], queue *ecs.Write[*gfx.OpQueue], sta
 	if g == nil {
 		return
 	}
-	mainTarget, mainTexture := g.TemporaryTarget(
+	mainTarget, mainTexture := g.NewTemporaryTarget(
 		int(mainPanel.size.X), int(mainPanel.size.Y), gfx.FormatRGBA8Srgb)
-	mapTarget, mapTexture := g.TemporaryTarget(
+	mapTarget, mapTexture := g.NewTemporaryTarget(
 		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatRGBA8Srgb)
 	// Two depth textures, and they are deliberately not the same one.
 	//
@@ -57,9 +57,9 @@ func target(cameras *ecs.Query[cameraQuery], queue *ecs.Write[*gfx.OpQueue], sta
 	// drops it without changing a pixel of the frame. Feeding it into the
 	// minimap's colour pass instead would have made that skip render the whole
 	// minimap against undefined depth.
-	_, mapDepthTexture := g.TemporaryTarget(
+	_, mapDepthTexture := g.NewTemporaryTarget(
 		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
-	_, prepassDepthTexture := g.TemporaryTarget(
+	_, prepassDepthTexture := g.NewTemporaryTarget(
 		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
 	mapDepth := gfx.DepthTarget(mapDepthTexture)
 	prepassDepth := gfx.DepthTarget(prepassDepthTexture)

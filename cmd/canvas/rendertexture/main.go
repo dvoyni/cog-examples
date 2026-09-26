@@ -184,7 +184,7 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			gfxQueue = access.GetWrite[*gfx.OpQueue]()
 		}, func(_ kernel.Kernel, event app.UpdateEvent) {
 			p.elapsed += float32(event.Dt)
-			// TemporaryTarget hands back both handles onto one texture: the target
+			// NewTemporaryTarget hands back both handles onto one texture: the target
 			// a pass renders into and the texture a later pass samples. Its
 			// contents do not survive the frame, which is exactly right here -
 			// the panel is redrawn every frame anyway. A panel drawn once and kept
@@ -193,7 +193,7 @@ func (p *Demo) draw() (kernel.Lock, kernel.Observe[app.UpdateEvent]) {
 			// Ask for FormatRGBA8Srgb: the atlas is sRGB, the engine blends
 			// linear, and gfx keys every pipeline to the frame buffer's colour
 			// format whatever the pass target is.
-			target, texture := gfxQueue.Get().TemporaryTarget(panelSize, panelSize, gfx.FormatRGBA8Srgb)
+			target, texture := gfxQueue.Get().NewTemporaryTarget(panelSize, panelSize, gfx.FormatRGBA8Srgb)
 			q := canvasQueue.Get()
 			p.recordPanel(q, target)
 			p.recordScreen(q, texture)
