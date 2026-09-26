@@ -1,3 +1,5 @@
+//go:build !js
+
 // Package web_test guards the browser build. The page itself is three
 // generated files and a shell script, so there is nothing here to unit test;
 // what there is to protect is the property the whole recipe rests on - that

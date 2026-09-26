@@ -11,6 +11,11 @@
 // It lives here rather than beside one demo because seven demos would otherwise
 // carry seven copies of the same twenty-odd stub methods. Nothing in it decides
 // anything: a demo's own main.go stays self-contained.
+//
+// A test that composes it is built with //go:build !js. Under GOOS=js the
+// composition takes jsstorage and the preloaded asset bundle, neither of which
+// a node run has, and over this same fake Backend it would only repeat the
+// desktop run; the README's "Tests under node" says what that run covers.
 package headless
 
 import (

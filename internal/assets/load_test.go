@@ -1,3 +1,5 @@
+//go:build !js
+
 package assets_test
 
 import (

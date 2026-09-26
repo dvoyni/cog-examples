@@ -181,6 +181,36 @@ matters: without it the demo logs `wgpu: no suitable GPU adapter found` and
 stops. Wait for `document.getElementById('status').className === 'hidden'`, then
 a few seconds for the first frame.
 
+## Tests under node
+
+The js/wasm tests run in node, through the Go runtime's `wasm_exec_node.js`:
+
+```
+GOOS=js GOARCH=wasm go test -exec="node $(go env GOROOT)/lib/wasm/wasm_exec_node.js" ./...
+```
+
+On Windows, copy `wasm_exec_node.js` to a path with no spaces first: from
+`C:\Program Files\Go` node reads the `-exec` argument as `C:\Program`, and every
+package fails before a test runs.
+
+**The headless demo tests are not in this run.** Every test file in a package
+that composes `internal/headless` is built with `//go:build !js`, so those
+packages report "no test files" here, and `go test ./...` on the desktop is
+where they run. Under `GOOS=js` a headless composition differs from the desktop
+one in two places only: `internal/permanentfs` composes `jsstorage`, whose own
+tests run under node in cog, and `internal/assets.Mount` reads the map
+`index.html` preloads. The GPU is the same fake Backend on both, so a node run
+would repeat the desktop run and catch none of the WebGPU limits the browser
+canary is for — while needing a `localStorage` and a fresh `__cogAssets` for
+every engine a test starts, since `Mount` deletes the global it reads. Without
+the tag each of them fails composition with `jsstorage: browser localStorage is
+unavailable`.
+
+What only js can check is covered on its own: `internal/assets`' `web_test.go`
+reads a hand-built `__cogAssets` map as the asset mount. `cmd/web`'s build test
+is desktop-only for a different reason: it runs `go build` over the checkout,
+which a wasm test cannot do.
+
 ## Assets
 
 The models the demos load are committed under `assets/`, one self-contained
