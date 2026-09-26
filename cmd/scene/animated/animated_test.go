@@ -152,10 +152,12 @@ func TestEveryDrawBindsExactlyWhatItsVariantDeclares(t *testing.T) {
 	backend := engine.Backend()
 
 	seen := map[string]map[[2]int]int{}
+	resources := map[string][]gfx.ShaderResource{}
 	for _, binding := range f.bindings {
 		supply := backend.PipelineSupply(binding.Pipeline)
 		if seen[supply] == nil {
 			seen[supply] = map[[2]int]int{}
+			resources[supply] = backend.PipelineResources(binding.Pipeline)
 		}
 		seen[supply][[2]int{binding.Group, binding.Binding}]++
 	}
@@ -167,7 +169,7 @@ func TestEveryDrawBindsExactlyWhatItsVariantDeclares(t *testing.T) {
 			len(seen), seen)
 	}
 	for supply, bound := range seen {
-		declared := headless.SceneVariantResources(supply)
+		declared := resources[supply]
 		want := make([][2]int, 0, len(declared))
 		for _, resource := range declared {
 			if resource.Kind.Base() == gfx.ResourceStorageBuffer {

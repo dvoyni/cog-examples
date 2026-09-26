@@ -46,7 +46,7 @@ func basinMaterial() scene.Material {
 	)}
 }
 
-func twoSided(state gfx.MaterialState) gfx.MaterialState {
+func twoSided(state gfx.DrawState) gfx.DrawState {
 	state.Cull = gfx.CullNone
 	return state
 }

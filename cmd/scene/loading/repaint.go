@@ -40,17 +40,12 @@ import (
 // front of the ones it reads. It binds no texture and no sampler, and reads
 // nothing of the material's uniform block.
 //
-// It still declares that block, through model's published prologue, fields
-// and epilogue, and it has to: the block is group 1, and the skinned and
-// morphed variants the vertex stage takes for the truck bind group 2. A shader
-// that leaves group 1 empty beneath a group 2 loses the whole frame on the
-// GPU with nothing reported, so declaring the block the bundled shader
-// declares keeps the groups dense.
+// So it declares nothing in group 1, where the material lives. The skinned
+// and morphed variants the vertex stage takes for the truck still bind group 2
+// above it, and the backend binds an empty group at the gap, so the shader
+// declares only what it reads.
 const repaintShaderSource = "//#include " + model.VertexStagePath + `
 //#include ` + model.FramePath + `
-//#include ` + model.MaterialProloguePath + `
-//#include ` + model.MaterialFieldsPath + `
-//#include ` + model.MaterialEpiloguePath + `
 
 const PI: f32 = 3.14159265359;
 

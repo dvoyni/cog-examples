@@ -44,7 +44,6 @@ func start(t *testing.T, extra ...kernel.Plugin) (*Procedural, *headless.Engine)
 	t.Helper()
 	demo := New()
 	engine := headless.New(t, append([]kernel.Plugin{demo}, extra...)...)
-	engine.Backend().TextShaderLayout = demoShaderLayout
 	return demo.state, engine
 }
 
@@ -441,7 +440,7 @@ func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 				t.Errorf("a custom-material draw bound %d/%d, which the material never declared",
 					binding.Group, binding.Binding)
 			}
-		case bundled[binding.Pipeline] && !variantDeclares(f.backend.PipelineSupply(binding.Pipeline), slot):
+		case bundled[binding.Pipeline] && !pipelineDeclares(f.backend, binding.Pipeline, slot):
 			t.Errorf("a bundled draw bound %d/%d, which its variant never declared",
 				binding.Group, binding.Binding)
 		}
@@ -453,10 +452,10 @@ func TestTheCustomMaterialBindsOnlyWhatItDeclares(t *testing.T) {
 	}
 }
 
-// variantDeclares reports whether the variant of the bundled scene shader a
-// supply names declares a binding at slot.
-func variantDeclares(supply string, slot headless.BufferBinding) bool {
-	for _, resource := range headless.SceneVariantResources(supply) {
+// pipelineDeclares reports whether the shader behind a pipeline - a variant of
+// the bundled scene shader - declares a binding at slot.
+func pipelineDeclares(backend *headless.Backend, pipeline gfx.PipelineID, slot headless.BufferBinding) bool {
+	for _, resource := range backend.PipelineResources(pipeline) {
 		if resource.Group == slot.Group && resource.Binding == slot.Binding {
 			return true
 		}
