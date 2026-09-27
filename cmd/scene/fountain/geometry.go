@@ -15,11 +15,11 @@ type Vertex struct {
 	Normal   m.Vec3
 }
 
-func (Vertex) VertexLayout() []gfx.VertexAttr { return vertexLayout[:] }
+func (Vertex) VertexLayout() []gfx.VertexAttribute { return vertexLayout[:] }
 
-var vertexLayout = [...]gfx.VertexAttr{
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Position)), gfx.Float32x3),
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Normal)), gfx.Float32x3),
+var vertexLayout = [...]gfx.VertexAttribute{
+	{Offset: int(unsafe.Offsetof(Vertex{}.Position)), Type: gfx.Float32x3},
+	{Offset: int(unsafe.Offsetof(Vertex{}.Normal)), Type: gfx.Float32x3},
 }
 
 // CubeGeometry is a unit cube about the origin, four vertices a face.

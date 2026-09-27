@@ -64,5 +64,5 @@ func setup(
 
 // tint is a slab's colour, as the bundled PBR's base colour factor.
 func tint(color m.Color) scene.Params {
-	return scene.Params{Values: m.NewList(gfx.ColorParam("baseColorFactor", color))}
+	return scene.Params{Values: m.NewList(gfx.ShaderParameterColor("baseColorFactor", color))}
 }

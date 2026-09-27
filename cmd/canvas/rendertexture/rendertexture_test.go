@@ -22,7 +22,7 @@ func recorded(t *testing.T) (*canvas.OpQueue, gfx.TextureDescr) {
 	texture := gfx.TextureWithBytes(panelSize, panelSize, gfx.FormatRGBA8Srgb, nil, false, false)
 	demo := New()
 	q := &canvas.OpQueue{}
-	demo.recordPanel(q, gfx.TextureTarget(texture, 0, 0))
+	demo.recordPanel(q, gfx.TargetDescrTexture(texture, 0, 0))
 	demo.recordScreen(q, texture)
 	return q, texture
 }
@@ -59,7 +59,7 @@ func TestBothScreenDrawsSourceTheSameTexture(t *testing.T) {
 
 	sourced := map[canvas.OpKind]int{}
 	for _, op := range q.Ops(nil) {
-		width, height := op.Texture.Size()
+		width, height := op.Texture.Params.Width, op.Texture.Params.Height
 		if op.Layer != layerScreen || width == 0 {
 			continue
 		}

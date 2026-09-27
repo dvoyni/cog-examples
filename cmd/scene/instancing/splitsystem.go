@@ -33,7 +33,7 @@ func split(crates *ecs.Query[splitQuery], state *ecs.Write[*Demo]) {
 	for _, it := range crates.All() {
 		if d.perCrate {
 			*it.Tint = scene.Params{Values: m.NewList(
-				gfx.FloatParam(crateSerialParam, float32(it.Crate.Serial)))}
+				gfx.ShaderParameterFloat(crateSerialParam, float32(it.Crate.Serial)))}
 		} else {
 			*it.Tint = scene.Params{}
 		}

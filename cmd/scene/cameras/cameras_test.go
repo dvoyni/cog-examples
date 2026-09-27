@@ -245,7 +245,7 @@ func TestTheMinimapsTwoCamerasMergeIntoOneGpuPass(t *testing.T) {
 	// clears, so gfx collapses them. The depth store is what makes it possible:
 	// scene infers StoreKeep exactly when a pass names a depth texture of its
 	// own, and the merge predicate needs StoreKeep on both of the
-	// predecessor's attachments. A DepthAuto pass stores discard and would not
+	// predecessor's attachments. A DepthDescrAuto pass stores discard and would not
 	// have merged.
 	//
 	// A merged run is encoded under the label of the pass that opened it, so

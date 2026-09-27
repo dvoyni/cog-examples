@@ -18,6 +18,6 @@ type driftQuery struct {
 func drift(q *ecs.Query[driftQuery]) {
 	for _, it := range q.All() {
 		tint := Drift(it.Place, it.Age, it.Motion)
-		it.Tint.Values.Set(0, gfx.ColorParam(MoteTintParam, tint))
+		it.Tint.Values.Set(0, gfx.ShaderParameterColor(MoteTintParam, tint))
 	}
 }

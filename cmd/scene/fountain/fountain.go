@@ -35,7 +35,7 @@ func (f *Fountain) throw() mote {
 		Place:  born.Place,
 		Draw:   scene.Mesh{Ref: f.cube, Bounds: MoteBounds},
 		Shade:  moteMaterial(),
-		Tint:   scene.Params{Values: m.NewList(gfx.ColorParam(MoteTintParam, Tint(born.Age)))},
+		Tint:   scene.Params{Values: m.NewList(gfx.ShaderParameterColor(MoteTintParam, Tint(born.Age)))},
 		Motion: born.Motion,
 		Age:    born.Age,
 	}

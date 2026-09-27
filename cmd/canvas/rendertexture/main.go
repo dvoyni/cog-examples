@@ -222,7 +222,7 @@ func (p *Demo) recordPanel(q *canvas.OpQueue, target gfx.TargetDescr) {
 			// axes spins the square about its middle.
 			Origin:   m.Vec2{X: 0.5, Y: 0.5},
 			Rotation: p.elapsed * squareSpin * float32(i),
-		}, nil, gfx.ColorParam("tint", color))
+		}, nil, gfx.ShaderParameterColor("tint", color))
 	}
 }
 

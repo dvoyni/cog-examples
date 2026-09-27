@@ -88,7 +88,7 @@ func setupSystem(
 // tint paints a box through the bundled PBR's base colour, the one number of
 // the material a colour needs.
 func tint(color m.Color) scene.Params {
-	return scene.Params{Values: m.NewList(gfx.ColorParam("baseColorFactor", color))}
+	return scene.Params{Values: m.NewList(gfx.ShaderParameterColor("baseColorFactor", color))}
 }
 
 // boxGeometry is the unit cube about the origin in the standard vertex, four

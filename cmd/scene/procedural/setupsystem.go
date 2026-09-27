@@ -102,5 +102,5 @@ func setup(
 // tint is a bundled-PBR draw's colour, as the parameter the bundled material
 // reads it from.
 func tint(color m.Color) scene.Params {
-	return scene.Params{Values: m.NewList(gfx.ColorParam("baseColorFactor", color))}
+	return scene.Params{Values: m.NewList(gfx.ShaderParameterColor("baseColorFactor", color))}
 }

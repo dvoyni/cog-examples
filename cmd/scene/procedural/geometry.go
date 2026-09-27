@@ -30,12 +30,12 @@ type Vertex struct {
 // agree with both the struct's memory layout and vs_main's inputs. The offsets
 // come from the struct rather than from arithmetic, so a field inserted above
 // moves the attribute with it.
-func (Vertex) VertexLayout() []gfx.VertexAttr { return demoVertexLayout[:] }
+func (Vertex) VertexLayout() []gfx.VertexAttribute { return demoVertexLayout[:] }
 
-var demoVertexLayout = [...]gfx.VertexAttr{
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Position)), gfx.Float32x3),
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Normal)), gfx.Float32x3),
-	gfx.Attr(int(unsafe.Offsetof(Vertex{}.Tint)), gfx.Float32x3),
+var demoVertexLayout = [...]gfx.VertexAttribute{
+	{Offset: int(unsafe.Offsetof(Vertex{}.Position)), Type: gfx.Float32x3},
+	{Offset: int(unsafe.Offsetof(Vertex{}.Normal)), Type: gfx.Float32x3},
+	{Offset: int(unsafe.Offsetof(Vertex{}.Tint)), Type: gfx.Float32x3},
 }
 
 // The two bundled-PBR shapes are model.Vertex meshes rather than the Vertex

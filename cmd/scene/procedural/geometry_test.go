@@ -18,10 +18,10 @@ func TestTheVertexIsTheDemosOwnThirtySixByteLayout(t *testing.T) {
 	if size := unsafe.Sizeof(Vertex{}); size != 36 {
 		t.Fatalf("Vertex is %d bytes, want 36", size)
 	}
-	want := []gfx.VertexAttr{
-		gfx.Attr(0, gfx.Float32x3),  // position
-		gfx.Attr(12, gfx.Float32x3), // normal
-		gfx.Attr(24, gfx.Float32x3), // tint
+	want := []gfx.VertexAttribute{
+		{Offset: 0, Type: gfx.Float32x3},  // position
+		{Offset: 12, Type: gfx.Float32x3}, // normal
+		{Offset: 24, Type: gfx.Float32x3}, // tint
 	}
 	layout := Vertex{}.VertexLayout()
 	if len(layout) != len(want) {

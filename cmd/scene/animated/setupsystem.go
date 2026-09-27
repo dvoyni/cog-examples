@@ -93,7 +93,7 @@ func setup(
 	}})
 	stages.New(stage{
 		Draw: scene.Mesh{Ref: ground},
-		Tint: scene.Params{Values: m.NewList(gfx.ColorParam("baseColorFactor", groundColor))},
+		Tint: scene.Params{Values: m.NewList(gfx.ShaderParameterColor("baseColorFactor", groundColor))},
 	})
 	d.spawned = 2
 

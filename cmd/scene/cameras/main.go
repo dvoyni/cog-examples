@@ -12,8 +12,8 @@
 // space; orthographic projection beside perspective; CullMask against each
 // Entity's Layers; negative camera ids and the duplicate-id error;
 // gfx.NewTemporaryTarget named by a Pass's Target and composited by canvas as the
-// split-screen answer; DepthAuto beside an explicit DepthTarget; Pass.Order as
-// an offset and gfx's pass merging; a two-tag Material and a NoTarget()
+// split-screen answer; DepthDescrAuto beside an explicit DepthDescrTarget; Pass.Order as
+// an offset and gfx's pass merging; a two-tag Material and a TargetDescrNone()
 // depth-only pass; scene.ViewProjection feeding m.WorldToScreen and
 // m.ScreenToRay, the per-target viewport, the behind-the-camera ok, and
 // m.Ray.IntersectSphere.

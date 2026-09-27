@@ -49,7 +49,7 @@ func target(cameras *ecs.Query[cameraQuery], queue *ecs.Write[*gfx.OpQueue], sta
 	// camera's pass merge into one GPU pass.
 	//
 	// prepassDepth is the depth-only pass's, and nothing else in the frame
-	// touches it. That independence is the point: a NoTarget() pass has no
+	// touches it. That independence is the point: a TargetDescrNone() pass has no
 	// colour attachment to take a size from, so it must name a depth texture or
 	// it is a reported error, and this is the shape a shadow map takes - render
 	// depth from somewhere, sample it later. scene has no shadows, so nothing
@@ -61,8 +61,8 @@ func target(cameras *ecs.Query[cameraQuery], queue *ecs.Write[*gfx.OpQueue], sta
 		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
 	_, prepassDepthTexture := g.NewTemporaryTarget(
 		int(mapPanel.size.X), int(mapPanel.size.Y), gfx.FormatDepth32F)
-	mapDepth := gfx.DepthTarget(mapDepthTexture)
-	prepassDepth := gfx.DepthTarget(prepassDepthTexture)
+	mapDepth := gfx.DepthDescrTarget(mapDepthTexture)
+	prepassDepth := gfx.DepthDescrTarget(prepassDepthTexture)
 	s.mainTexture, s.mapTexture = mainTexture, mapTexture
 
 	for _, it := range cameras.All() {
@@ -72,7 +72,7 @@ func target(cameras *ecs.Query[cameraQuery], queue *ecs.Write[*gfx.OpQueue], sta
 			// of the two scene draws, it draws into this frame's target.
 			writePasses(&it.Camera.Passes, scene.Pass{
 				Target: mainTarget, ClearColor: clearMain, ClearDepth: clearFar,
-				// Depth is left at its zero value, which is DepthAuto: a pooled
+				// Depth is left at its zero value, which is DepthDescrAuto(): a pooled
 				// texture shared with every other same-size automatic pass in
 				// the frame. That is why it must clear depth - it would
 				// otherwise inherit whatever the last pass at this size left
@@ -86,7 +86,7 @@ func target(cameras *ecs.Query[cameraQuery], queue *ecs.Write[*gfx.OpQueue], sta
 					// offset from the camera id rather than an absolute, so -1
 					// here means "just before this camera" without the demo
 					// knowing what number the camera took.
-					Tag: TagDepth, Target: gfx.NoTarget(), Depth: prepassDepth,
+					Tag: TagDepth, Target: gfx.TargetDescrNone(), Depth: prepassDepth,
 					ClearDepth: clearFar, Order: -1,
 				},
 				scene.Pass{

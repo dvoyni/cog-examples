@@ -109,7 +109,7 @@ func setup(
 			// team colour.
 			tinted.New(tintedStation{
 				Place: place, Model: drawn, Station: tag,
-				Tint: scene.Params{Values: m.NewList(gfx.ColorParam("baseColorFactor", s.tint))},
+				Tint: scene.Params{Values: m.NewList(gfx.ShaderParameterColor("baseColorFactor", s.tint))},
 			})
 		default:
 			plain.New(plainStation{Place: place, Model: drawn, Station: tag})

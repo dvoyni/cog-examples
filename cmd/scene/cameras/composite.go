@@ -23,7 +23,7 @@ import (
 //
 // canvas.Sprite names a texture by resource path. A frame-local render target
 // has no path and never will, so the route is DrawTriangles with the texture
-// bound through gfx.TextureParam - which is exactly the escape hatch it exists
+// bound through gfx.ShaderParameterTexture - which is exactly the escape hatch it exists
 // to be.
 //
 // The material has to be this demo's own, and that is a finding rather than a
@@ -109,7 +109,7 @@ func composite(q *canvas.OpQueue, layer canvas.Layer, p panel, texture gfx.Textu
 	q.DrawTriangles(layer,
 		[]canvas.Vertex{topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft},
 		&compositeMaterial,
-		gfx.TextureParam(canvas.TextureSlot, texture),
-		gfx.SamplerParam(canvas.SamplerSlot, compositeSampler),
+		gfx.ShaderParameterTexture(canvas.TextureSlot, texture),
+		gfx.ShaderParameterSampler(canvas.SamplerSlot, compositeSampler),
 	)
 }
