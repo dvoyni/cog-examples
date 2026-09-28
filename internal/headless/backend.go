@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"github.com/dvoyni/cog/libs/m"
 	"strings"
 	"sync/atomic"
 
@@ -327,9 +328,9 @@ func (b *Backend) AllocateTexture(id gfx.TextureID, desc gfx.TextureDesc) {
 	}
 	b.allocated[id] = desc
 }
-func (b *Backend) UpdateTexture(id gfx.TextureID, _ int, region gfx.Region, _ []byte) {
+func (b *Backend) UpdateTexture(id gfx.TextureID, _ int, region m.Recti, _ []byte) {
 	desc := b.allocated[id]
-	if region != (gfx.Region{Width: desc.Width, Height: desc.Height}) {
+	if region != (m.Recti{Width: desc.Width, Height: desc.Height}) {
 		return
 	}
 	b.BakedTextures++
