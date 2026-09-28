@@ -51,7 +51,7 @@ func run(t *testing.T) (*headless.Engine, *Cameras) {
 // frame is what one step sent the backend: its passes in the order gfx began
 // them, and its draws, each indexing those passes.
 type frame struct {
-	passes []gfx.PassDesc
+	passes []gfx.PassDescr
 	draws  []headless.DrawCall
 }
 

@@ -32,7 +32,7 @@ var cameraLabel = fmt.Sprintf("scene.camera%d.", CameraMain)
 // with Pass rebased onto them.
 type frame struct {
 	backend *headless.Backend
-	passes  []gfx.PassDesc
+	passes  []gfx.PassDescr
 	draws   []headless.DrawCall
 }
 
@@ -224,7 +224,7 @@ func TestTheSpotFacesStraightDown(t *testing.T) {
 	}
 }
 
-func labels(passes []gfx.PassDesc) []string {
+func labels(passes []gfx.PassDescr) []string {
 	out := make([]string, len(passes))
 	for i := range passes {
 		out[i] = passes[i].Label

@@ -105,7 +105,7 @@ func unexpectedErrors(engine *headless.Engine, demo *Loading) []error {
 // frame is what one step sent the backend: the passes scene began for its
 // cameras, and the draws made in them. Draws index frame.passes.
 type frame struct {
-	passes []gfx.PassDesc
+	passes []gfx.PassDescr
 	draws  []headless.DrawCall
 }
 

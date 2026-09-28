@@ -34,7 +34,7 @@ type Backend struct {
 	// texture counts toward MippedTextures. An atlas's region uploads do not.
 	allocated map[gfx.TextureID]gfx.TextureDesc
 
-	Passes   []gfx.PassDesc
+	Passes   []gfx.PassDescr
 	Draws    []DrawCall
 	Presents int
 	Bakes    int
@@ -236,7 +236,7 @@ func (b *Backend) ScreenFramebuffer() (gfx.TextureViewID, int, int) {
 
 // Limits reports the web floor rather than a generous native device's, so a
 // headless run fails on a limit a browser would fail on.
-func (b *Backend) Limits() gfx.Limits { return gfx.DefaultLimits() }
+func (b *Backend) Limits() gfx.PipelineLimits { return gfx.DefaultLimits() }
 
 // TextureFormat reports the format a texture was baked or allocated in, and
 // that a texture this backend has not seen is unknown.
@@ -245,18 +245,13 @@ func (b *Backend) TextureFormat(id gfx.TextureID) (gfx.TextureFormat, bool) {
 	return format, ok
 }
 
-func (b *Backend) TextureView(gfx.TextureID, int, int) gfx.TextureViewID {
-	b.nextID++
-	return gfx.TextureViewID(b.nextID)
-}
-
 func (b *Backend) Execute(queue *gfx.Queue) {
 	queue.ReplayBakes(b)
 	queue.ReplayPasses(b)
 	queue.ReplayReleases(b)
 }
 
-func (b *Backend) BeginPass(desc gfx.PassDesc) gfx.RenderPass {
+func (b *Backend) BeginPass(desc gfx.PassDescr) gfx.RenderPass {
 	b.Passes = append(b.Passes, desc)
 	return b
 }

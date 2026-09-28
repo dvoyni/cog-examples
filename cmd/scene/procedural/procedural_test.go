@@ -65,7 +65,7 @@ func run(t *testing.T, n int, extra ...kernel.Plugin) (*Procedural, *headless.En
 // step's passes.
 type frame struct {
 	backend *headless.Backend
-	passes  []gfx.PassDesc
+	passes  []gfx.PassDescr
 	draws   []headless.DrawCall
 	buffers []headless.BufferBinding
 }

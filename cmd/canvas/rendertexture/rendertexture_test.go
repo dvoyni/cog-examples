@@ -100,10 +100,10 @@ func TestTheFrameRendersThePanelThenSamplesIt(t *testing.T) {
 		t.Fatalf("GPU passes = %d, want the panel's then the screen's", len(backend.Passes))
 	}
 	panel, screen := backend.Passes[0], backend.Passes[1]
-	if panel.Screen || panel.NoColor || panel.Target == 0 {
+	if panel.Target.Kind != gfx.TargetTexture || panel.Target.Texture == 0 {
 		t.Errorf("first pass = %+v, want a texture attachment", panel)
 	}
-	if !screen.Screen {
+	if screen.Target.Kind != gfx.TargetScreen {
 		t.Errorf("second pass = %+v, want the screen", screen)
 	}
 	if len(backend.Transitions) != 1 {

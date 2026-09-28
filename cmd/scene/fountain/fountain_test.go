@@ -94,7 +94,7 @@ func TestTheHUDsArithmetic(t *testing.T) {
 // and what reached the backend while that step rendered.
 type frame struct {
 	snapshot gfx.FrameSnapshot
-	passes   []gfx.PassDesc
+	passes   []gfx.PassDescr
 	draws    []headless.DrawCall
 	backend  *headless.Backend
 }
@@ -260,7 +260,7 @@ func TestTheReferenceStepMatchesTheExpectedFigures(t *testing.T) {
 	}
 }
 
-func labels(passes []gfx.PassDesc) []string {
+func labels(passes []gfx.PassDescr) []string {
 	out := make([]string, len(passes))
 	for i := range passes {
 		out[i] = passes[i].Label

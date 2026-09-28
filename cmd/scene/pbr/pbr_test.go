@@ -47,7 +47,7 @@ func run(t *testing.T) (*headless.Engine, *Pbr) {
 // those passes, and its storage-buffer bindings.
 type frame struct {
 	backend  *headless.Backend
-	passes   []gfx.PassDesc
+	passes   []gfx.PassDescr
 	draws    []headless.DrawCall
 	bindings []headless.BufferBinding
 }
@@ -81,7 +81,7 @@ var forwardLabel = "scene.camera" + strconv.Itoa(int(CameraMain)) + ".forward"
 // sceneDraws is the frame's one scene pass and the draws scene made in it,
 // in the order they reached the backend. canvas's clear and HUD passes are
 // either side of it.
-func (f frame) sceneDraws(t *testing.T) (gfx.PassDesc, []headless.DrawCall) {
+func (f frame) sceneDraws(t *testing.T) (gfx.PassDescr, []headless.DrawCall) {
 	t.Helper()
 	pass := -1
 	for i := range f.passes {
