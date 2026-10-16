@@ -26,26 +26,12 @@ import (
 // bound through gfx.ShaderParameterTexture - which is exactly the escape hatch it exists
 // to be.
 //
-// The material has to be this demo's own, and that is a finding rather than a
-// preference. Canvas's built-in triangle shader runs every texel through the
-// key-colour ramp, and the ramp is not a no-op on a rendered image. A texel is
-// keyed when its red and blue agree within 0.2 in sRGB and its green is below
-// 0.2 in sRGB, and a keyed texel comes out grey at its own red intensity - so
-// every dark, low-green pixel of a 3D render is silently desaturated. A dark
-// warm shadow at linear (0.10, 0.02, 0.02) is keyed, because sRGB-encoding its
-// red and blue puts them 0.19 apart, and it leaves the shader as neutral grey.
-// The default key colour does not save it: no key colour makes the ramp an
-// identity, because the ramp's output is a function of red alone.
-//
-// So the composite declares a shader that samples and returns, with no ramp
-// and no clip test. It includes canvas's uniform block, which canvas sets
-// whole, and declares no keyColor: a parameter binds a whole binding by its
-// name and one the shader never declared is dropped, so keyColor costs nothing
-// to omit.
+// The composite declares its own shader that samples and returns, with no clip
+// test. It includes canvas's uniform block, which canvas sets whole.
 const compositeShader = `
 // Canvas's uniform block, of which this shader reads canvasViewport and
-// canvasLayer. It declares no keyColor and never reads canvasClip, which is
-// what makes this shader a passthrough rather than canvas's own.
+// canvasLayer. It never reads canvasClip, which is what makes this shader a
+// passthrough rather than canvas's own.
 //#include builtin/canvas/uniforms.wgsl
 @group(1) @binding(0) var canvasSampler: sampler;
 @group(1) @binding(1) var canvasTexture: texture_2d<f32>;
