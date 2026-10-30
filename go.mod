@@ -41,7 +41,7 @@ replace github.com/dvoyni/cog => ../cog
 // version cog pins; it comes out when cog's does.
 replace github.com/gogpu/naga => github.com/dvoyni/naga v0.19.1-0.20260910142728-7fd5ed312699
 
-replace github.com/gogpu/gogpu => github.com/dvoyni/gogpu v0.54.1-0.20260910171621-041de1a5716f
+replace github.com/gogpu/gogpu => ../../gogpu/gogpu
 
 // cog's vorbis pins, mirrored for the same reason: Go ignores a dependency's
 // replace, so without these the build resolves the decoders against upstream

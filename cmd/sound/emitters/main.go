@@ -290,6 +290,12 @@ func (p *emitters) ClipboardWrite(string) error {
 	return fmt.Errorf("emitters: no clipboard without a window")
 }
 
+// SetCursorHidden does nothing: there is no window and no cursor over it.
+func (p *emitters) SetCursorHidden(bool) {}
+
+// SetFullscreen does nothing: there is no window to put fullscreen.
+func (p *emitters) SetFullscreen(bool) {}
+
 // Run is the platform loop this demo stands in for.
 func (p *emitters) Run(k kernel.Executioner) error {
 	if err := p.loop.Init(k); err != nil {

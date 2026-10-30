@@ -335,3 +335,7 @@ func (d *mainLoop) Quit()                { d.quit() }
 
 // ClipboardWrite has no clipboard to write: a headless run has no system.
 func (d *mainLoop) ClipboardWrite(string) error { return nil }
+
+// SetCursorHidden and SetFullscreen do nothing: a headless run has no window.
+func (d *mainLoop) SetCursorHidden(bool) {}
+func (d *mainLoop) SetFullscreen(bool)   {}

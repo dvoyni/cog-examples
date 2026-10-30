@@ -226,6 +226,12 @@ func (b *buses) ClipboardWrite(string) error {
 	return fmt.Errorf("buses: no clipboard without a window")
 }
 
+// SetCursorHidden does nothing: there is no window and no cursor over it.
+func (b *buses) SetCursorHidden(bool) {}
+
+// SetFullscreen does nothing: there is no window to put fullscreen.
+func (b *buses) SetFullscreen(bool) {}
+
 // Run is the platform loop this demo stands in for: wake at the tick rate, hand
 // app the real seconds that passed, and let its accumulator decide how many
 // updates that is. Nothing is drawn, so Render is never called.

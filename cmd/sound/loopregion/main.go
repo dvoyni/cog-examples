@@ -206,6 +206,12 @@ func (l *loopRegion) ClipboardWrite(string) error {
 	return fmt.Errorf("loopregion: no clipboard without a window")
 }
 
+// SetCursorHidden does nothing: there is no window and no cursor over it.
+func (l *loopRegion) SetCursorHidden(bool) {}
+
+// SetFullscreen does nothing: there is no window to put fullscreen.
+func (l *loopRegion) SetFullscreen(bool) {}
+
 // Run is the platform loop this demo stands in for.
 func (l *loopRegion) Run(k kernel.Executioner) error {
 	if err := l.loop.Init(k); err != nil {

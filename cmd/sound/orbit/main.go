@@ -181,6 +181,12 @@ func (o *orbit) ClipboardWrite(string) error {
 	return fmt.Errorf("orbit: no clipboard without a window")
 }
 
+// SetCursorHidden does nothing: there is no window and no cursor over it.
+func (o *orbit) SetCursorHidden(bool) {}
+
+// SetFullscreen does nothing: there is no window to put fullscreen.
+func (o *orbit) SetFullscreen(bool) {}
+
 // Run is the platform loop this demo stands in for: wake at the tick rate, hand
 // app the real seconds that passed, and let its accumulator decide how many
 // updates that is. Nothing is drawn, so Render is never called.
